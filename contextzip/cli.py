@@ -1,5 +1,5 @@
 """
-cli.py — contextzip entry point.  Phase 1–4 complete.
+cli.py — contextzip entry point.  Phases 1–5 complete.
 """
 
 from __future__ import annotations
@@ -13,8 +13,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich import box
 
+from contextzip import __version__
 from contextzip.detector import detect
-from contextzip.filters import build_spec, resolve_files, summarise_exclusions
+from contextzip.filters import build_spec, resolve_files, summarise_exclusions, LARGE_FILE_WARN_BYTES
 from contextzip.packager import create_zip
 from contextzip.clipboard import handle as clipboard_handle, Tier
 
@@ -22,56 +23,55 @@ console = Console()
 
 
 # ---------------------------------------------------------------------------
-# CLI definition
+# CLI
 # ---------------------------------------------------------------------------
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
 @click.option(
     "--include", "-i",
-    multiple=True,
-    metavar="PATH",
+    multiple=True, metavar="PATH",
     help="Only include files under these paths (relative to project root). "
-         "Can be repeated: --include src --include app",
+         "Repeatable: --include src --include app",
 )
 @click.option(
     "--exclude", "-e",
-    multiple=True,
-    metavar="PATTERN",
+    multiple=True, metavar="PATTERN",
     help="Extra exclusion patterns on top of auto-rules (gitignore syntax). "
-         "Can be repeated: --exclude '*.log' --exclude temp.js",
+         "Repeatable: --exclude '*.log' --exclude temp.js",
 )
 @click.option(
     "--dry-run", "-n",
-    is_flag=True,
-    default=False,
+    is_flag=True, default=False,
     help="Show what would be included without creating the ZIP.",
 )
 @click.option(
     "--output", "-o",
-    default=None,
-    metavar="FILE",
-    help="Path for the output ZIP file. "
-         "Defaults to <project_name>_context_<timestamp>.zip in the system temp dir.",
+    default=None, metavar="FILE",
+    help="Output ZIP path. Defaults to <project>_context_<timestamp>.zip in temp dir.",
 )
 @click.option(
     "--no-clipboard",
-    is_flag=True,
-    default=False,
+    is_flag=True, default=False,
     help="Skip clipboard / folder-open step after creating the ZIP.",
 )
 @click.option(
+    "--no-gitignore",
+    is_flag=True, default=False,
+    help="Ignore the project's .gitignore file (use only built-in rules).",
+)
+@click.option(
     "--verbose", "-v",
-    is_flag=True,
-    default=False,
+    is_flag=True, default=False,
     help="Show every included and excluded file.",
 )
-@click.version_option(version="0.1.0", prog_name="contextzip")
+@click.version_option(version=__version__, prog_name="contextzip")
 def main(
     include: tuple[str, ...],
     exclude: tuple[str, ...],
     dry_run: bool,
     output: str | None,
     no_clipboard: bool,
+    no_gitignore: bool,
     verbose: bool,
 ) -> None:
     """
@@ -84,69 +84,121 @@ def main(
 
     project_dir = Path(os.getcwd()).resolve()
 
-    # ── Header ──────────────────────────────────────────────────────────────
+    # ── Header ───────────────────────────────────────────────────────────────
     console.print()
     console.print(
         Panel.fit(
-            f"[bold cyan]contextzip[/] [dim]v0.1.0[/]\n"
+            f"[bold cyan]contextzip[/] [dim]v{__version__}[/]\n"
             f"[dim]Project:[/] [white]{project_dir}[/]",
-            border_style="cyan",
-            padding=(0, 2),
+            border_style="cyan", padding=(0, 2),
         )
     )
     console.print()
 
-    # ── Detection ───────────────────────────────────────────────────────────
+    # ── Detection ────────────────────────────────────────────────────────────
     with console.status("[cyan]Detecting project ecosystem…[/]", spinner="dots"):
         detection = detect(project_dir)
 
     _print_detection(detection)
 
-    # ── Build exclusion spec ────────────────────────────────────────────────
+    # ── Build exclusion spec ─────────────────────────────────────────────────
+    gitignore_path = None if no_gitignore else (project_dir / ".gitignore")
+    used_gitignore = (
+        not no_gitignore
+        and gitignore_path is not None
+        and gitignore_path.is_file()
+    )
+
     with console.status("[cyan]Building exclusion rules…[/]", spinner="dots"):
         spec = build_spec(
             rule_modules=detection.rule_modules,
             extra_exclude=list(exclude) if exclude else None,
+            gitignore_path=gitignore_path,
         )
 
-    # ── Resolve files ────────────────────────────────────────────────────────
+    if used_gitignore:
+        console.print(f"  [dim]↳ .gitignore patterns applied[/]")
+        console.print()
+
+    # ── Resolve files ─────────────────────────────────────────────────────────
     with console.status("[cyan]Scanning project files…[/]", spinner="dots"):
-        included, excluded = resolve_files(
+        resolved = resolve_files(
             project_dir=project_dir,
             spec=spec,
             include_only=list(include) if include else None,
         )
 
-    # ── Results ─────────────────────────────────────────────────────────────
-    _print_results(included, excluded, project_dir, verbose)
+    # ── File scan summary ────────────────────────────────────────────────────
+    _print_scan_summary(resolved, project_dir, verbose)
 
-    # ── Dry run — stop here ──────────────────────────────────────────────────
+    # ── Warnings: large files ────────────────────────────────────────────────
+    if resolved.large_files:
+        console.print()
+        console.print(
+            f"  [yellow]⚠[/]  [bold]{len(resolved.large_files)} large file"
+            f"{'s' if len(resolved.large_files) != 1 else ''}[/] "
+            f"[dim](≥ {_human_size(LARGE_FILE_WARN_BYTES)}) will be included:[/]"
+        )
+        for p, size in resolved.large_files[:5]:
+            rel = p.relative_to(project_dir).as_posix()
+            console.print(f"    [yellow]·[/] [dim]{rel}[/]  [yellow]{_human_size(size)}[/]")
+        if len(resolved.large_files) > 5:
+            console.print(f"    [dim]… and {len(resolved.large_files) - 5} more[/]")
+        console.print(
+            f"  [dim]  Use --exclude to drop them if unneeded.[/]"
+        )
+
+    # ── Warnings: binary files ───────────────────────────────────────────────
+    if resolved.binary_files:
+        console.print()
+        console.print(
+            f"  [yellow]⚠[/]  [bold]{len(resolved.binary_files)} binary file"
+            f"{'s' if len(resolved.binary_files) != 1 else ''}[/] "
+            f"[dim]detected — AI tools may not read them:[/]"
+        )
+        for p in resolved.binary_files[:3]:
+            rel = p.relative_to(project_dir).as_posix()
+            console.print(f"    [yellow]·[/] [dim]{rel}[/]")
+        if len(resolved.binary_files) > 3:
+            console.print(f"    [dim]… and {len(resolved.binary_files) - 3} more[/]")
+
+    # ── Warnings: skipped files (symlinks, unreadable) ───────────────────────
+    if resolved.skipped:
+        console.print()
+        console.print(
+            f"  [red]⚠[/]  [bold]{len(resolved.skipped)} file"
+            f"{'s' if len(resolved.skipped) != 1 else ''}[/] "
+            f"[dim]skipped (unreadable or dangling symlink):[/]"
+        )
+        for p, reason in resolved.skipped[:3]:
+            console.print(f"    [red]·[/] [dim]{p.name}[/] — {reason}")
+
+    # ── Dry run ──────────────────────────────────────────────────────────────
     if dry_run:
         console.print()
         console.print(
             Panel.fit(
                 "[yellow]Dry run — no ZIP created.[/]\n"
                 "[dim]Remove --dry-run to produce the archive.[/]",
-                border_style="yellow",
-                padding=(0, 2),
+                border_style="yellow", padding=(0, 2),
             )
         )
         return
 
-    if not included:
+    if not resolved.included:
         console.print(
             "\n[red]Nothing to package.[/] All files were excluded — "
             "try [cyan]--include[/] to override."
         )
         return
 
-    # ── Phase 3: Create ZIP ──────────────────────────────────────────────────
+    # ── Create ZIP ───────────────────────────────────────────────────────────
     console.print()
     output_path = Path(output).resolve() if output else None
 
     try:
         result = create_zip(
-            included=included,
+            resolve_result=resolved,
             project_dir=project_dir,
             output_path=output_path,
             console=console,
@@ -157,7 +209,18 @@ def main(
 
     _print_package_result(result)
 
-    # ── Phase 4: Clipboard / folder-open ────────────────────────────────────
+    # ── Skipped during ZIP write ─────────────────────────────────────────────
+    if result.skipped_in_zip:
+        console.print()
+        console.print(
+            f"  [red]⚠[/]  [bold]{len(result.skipped_in_zip)} file"
+            f"{'s' if len(result.skipped_in_zip) != 1 else ''}[/] "
+            f"[dim]could not be written to ZIP:[/]"
+        )
+        for p, reason in result.skipped_in_zip[:3]:
+            console.print(f"    [red]·[/] [dim]{p.name}[/] — {reason}")
+
+    # ── Clipboard ────────────────────────────────────────────────────────────
     if not no_clipboard:
         console.print()
         with console.status("[cyan]Preparing clipboard…[/]", spinner="dots"):
@@ -174,68 +237,60 @@ def _print_detection(detection) -> None:
         ecosystem_line = "[yellow]Unknown[/] — applying base rules only"
     else:
         colours = {
-            "Next.js": "bright_blue",
-            "Node.js": "green",
-            "Python":  "yellow",
-            "Django":  "green",
-            "FastAPI": "cyan",
-            "Rust":    "red",
-            "Go":      "cyan",
-            "Ruby":    "red",
+            "Next.js": "bright_blue", "Node.js": "green",
+            "Python":  "yellow",      "Django":  "green",
+            "FastAPI": "cyan",         "Rust":    "red",
+            "Go":      "cyan",         "Ruby":    "red",
         }
         parts = [
-            f"[{colours.get(name, 'white')}]{name}[/]"
-            for name in detection.ecosystems
+            f"[{colours.get(n, 'white')}]{n}[/]"
+            for n in detection.ecosystems
         ]
         ecosystem_line = " [dim]+[/] ".join(parts)
 
-    confidence_colour = {"high": "green", "medium": "yellow", "low": "dim"}.get(
+    conf_colour = {"high": "green", "medium": "yellow", "low": "dim"}.get(
         detection.confidence, "dim"
     )
-    rules_str = ", ".join(detection.rule_modules)
-
     console.print(
         Panel(
             f"  [dim]Ecosystem :[/]   {ecosystem_line}\n"
-            f"  [dim]Confidence:[/]   [{confidence_colour}]{detection.confidence}[/]\n"
-            f"  [dim]Rules     :[/]   [dim]{rules_str}[/]",
+            f"  [dim]Confidence:[/]   [{conf_colour}]{detection.confidence}[/]\n"
+            f"  [dim]Rules     :[/]   [dim]{', '.join(detection.rule_modules)}[/]",
             title="[bold]Detection[/]",
-            border_style="blue",
-            padding=(0, 1),
+            border_style="blue", padding=(0, 1),
         )
     )
     console.print()
 
 
-def _print_results(
-    included: list[Path],
-    excluded: list[Path],
-    project_dir: Path,
-    verbose: bool,
-) -> None:
-    total = len(included) + len(excluded)
-    included_size = sum(p.stat().st_size for p in included if p.exists())
+def _print_scan_summary(resolved, project_dir: Path, verbose: bool) -> None:
+    total         = len(resolved.included) + len(resolved.excluded)
+    included_size = sum(p.stat().st_size for p in resolved.included if p.exists())
 
     table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
     table.add_column(style="dim")
     table.add_column()
-    table.add_row("Files scanned",   str(total))
+    table.add_row("Files scanned",   str(total + len(resolved.skipped)))
     table.add_row(
         "To be included",
-        f"[green]{len(included)}[/]  [dim]({_human_size(included_size)})[/]",
+        f"[green]{len(resolved.included)}[/]  [dim]({_human_size(included_size)})[/]",
     )
-    table.add_row("Excluded",        f"[red]{len(excluded)}[/]")
+    table.add_row("Excluded",        f"[red]{len(resolved.excluded)}[/]")
+    if resolved.skipped:
+        table.add_row("Skipped",     f"[yellow]{len(resolved.skipped)}[/]")
     console.print(table)
 
-    if verbose and included:
+    if verbose and resolved.included:
         console.print()
         console.print("[bold]Included files:[/]")
-        for p in included:
-            console.print(f"  [green]✓[/] {p.relative_to(project_dir).as_posix()}")
+        for p in resolved.included:
+            size_str = _human_size(p.stat().st_size) if p.exists() else "?"
+            rel      = p.relative_to(project_dir).as_posix()
+            console.print(f"  [green]✓[/] {rel}  [dim]{size_str}[/]")
 
-    if excluded:
+    if resolved.excluded:
         console.print()
-        buckets = summarise_exclusions(excluded, project_dir)
+        buckets = summarise_exclusions(resolved.excluded, project_dir)
         console.print("[bold]Top excluded directories / files:[/]")
         for label, count in list(buckets.items())[:8]:
             console.print(
@@ -246,11 +301,11 @@ def _print_results(
 
 def _print_package_result(result) -> None:
     ratio_colour = "green" if result.compression_ratio >= 0.3 else "yellow"
-
-    if result.grew:
-        size_detail = "[dim](ZIP overhead on tiny project)[/]"
-    else:
-        size_detail = f"[{ratio_colour}](↓ {result.compression_pct} smaller)[/]"
+    size_detail  = (
+        "[dim](ZIP overhead on tiny project)[/]"
+        if result.grew
+        else f"[{ratio_colour}](↓ {result.compression_pct} smaller)[/]"
+    )
 
     table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
     table.add_column(style="dim", min_width=18)
@@ -267,27 +322,23 @@ def _print_package_result(result) -> None:
         Panel(
             table,
             title="[bold green]✓ ZIP created[/]",
-            border_style="green",
-            padding=(0, 1),
+            border_style="green", padding=(0, 1),
         )
     )
 
 
 def _print_clipboard_result(cb) -> None:
-    """Render clipboard outcome — colour and border vary by tier."""
     tier_style = {
         Tier.FILE_ON_CLIPBOARD: ("green",  "✓ Ready to paste"),
         Tier.FOLDER_OPENED:     ("yellow", "✓ Folder opened"),
         Tier.PATH_ONLY:         ("dim",    "↳ Manual copy needed"),
     }
     border, title = tier_style.get(cb.tier, ("dim", "Clipboard"))
-
     console.print(
         Panel.fit(
             cb.message,
             title=f"[bold {border}]{title}[/]",
-            border_style=border,
-            padding=(0, 2),
+            border_style=border, padding=(0, 2),
         )
     )
 

@@ -1,7 +1,5 @@
 """
-cli.py — contextzip entry point.
-
-Phase 3: ZIP creation wired in; clipboard (Phase 4) still stubbed.
+cli.py — contextzip entry point.  Phase 1–4 complete.
 """
 
 from __future__ import annotations
@@ -18,6 +16,7 @@ from rich import box
 from contextzip.detector import detect
 from contextzip.filters import build_spec, resolve_files, summarise_exclusions
 from contextzip.packager import create_zip
+from contextzip.clipboard import handle as clipboard_handle, Tier
 
 console = Console()
 
@@ -58,7 +57,7 @@ console = Console()
     "--no-clipboard",
     is_flag=True,
     default=False,
-    help="Skip clipboard copy after creating the ZIP.",
+    help="Skip clipboard / folder-open step after creating the ZIP.",
 )
 @click.option(
     "--verbose", "-v",
@@ -158,12 +157,12 @@ def main(
 
     _print_package_result(result)
 
-    # ── TODO Phase 4: Clipboard ──────────────────────────────────────────────
+    # ── Phase 4: Clipboard / folder-open ────────────────────────────────────
     if not no_clipboard:
-        console.print(
-            "\n[dim]📋 Clipboard integration coming in Phase 4.[/]\n"
-            f"[dim]For now, your ZIP is at:[/] [cyan]{result.zip_path}[/]"
-        )
+        console.print()
+        with console.status("[cyan]Preparing clipboard…[/]", spinner="dots"):
+            cb = clipboard_handle(result.zip_path)
+        _print_clipboard_result(cb)
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +170,6 @@ def main(
 # ---------------------------------------------------------------------------
 
 def _print_detection(detection) -> None:
-    """Render a detection summary panel."""
     if detection.is_unknown:
         ecosystem_line = "[yellow]Unknown[/] — applying base rules only"
     else:
@@ -185,10 +183,10 @@ def _print_detection(detection) -> None:
             "Go":      "cyan",
             "Ruby":    "red",
         }
-        parts = []
-        for name in detection.ecosystems:
-            colour = colours.get(name, "white")
-            parts.append(f"[{colour}]{name}[/]")
+        parts = [
+            f"[{colours.get(name, 'white')}]{name}[/]"
+            for name in detection.ecosystems
+        ]
         ecosystem_line = " [dim]+[/] ".join(parts)
 
     confidence_colour = {"high": "green", "medium": "yellow", "low": "dim"}.get(
@@ -215,66 +213,81 @@ def _print_results(
     project_dir: Path,
     verbose: bool,
 ) -> None:
-    """Render file inclusion/exclusion summary."""
-
     total = len(included) + len(excluded)
     included_size = sum(p.stat().st_size for p in included if p.exists())
 
-    # Summary table
     table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
     table.add_column(style="dim")
     table.add_column()
-    table.add_row("Files scanned", str(total))
+    table.add_row("Files scanned",   str(total))
     table.add_row(
         "To be included",
         f"[green]{len(included)}[/]  [dim]({_human_size(included_size)})[/]",
     )
-    table.add_row("Excluded", f"[red]{len(excluded)}[/]")
+    table.add_row("Excluded",        f"[red]{len(excluded)}[/]")
     console.print(table)
 
-    # Verbose: show every included file
     if verbose and included:
         console.print()
         console.print("[bold]Included files:[/]")
         for p in included:
-            rel = p.relative_to(project_dir).as_posix()
-            console.print(f"  [green]✓[/] {rel}")
+            console.print(f"  [green]✓[/] {p.relative_to(project_dir).as_posix()}")
 
-    # Always show top excluded buckets
     if excluded:
         console.print()
         buckets = summarise_exclusions(excluded, project_dir)
         console.print("[bold]Top excluded directories / files:[/]")
         for label, count in list(buckets.items())[:8]:
-            console.print(f"  [red]✗[/] [dim]{label}[/]  [dim]({count} file{'s' if count != 1 else ''})[/]")
+            console.print(
+                f"  [red]✗[/] [dim]{label}[/]  "
+                f"[dim]({count} file{'s' if count != 1 else ''})[/]"
+            )
 
 
 def _print_package_result(result) -> None:
-    """Render a ZIP creation success panel with compression stats."""
     ratio_colour = "green" if result.compression_ratio >= 0.3 else "yellow"
+
+    if result.grew:
+        size_detail = "[dim](ZIP overhead on tiny project)[/]"
+    else:
+        size_detail = f"[{ratio_colour}](↓ {result.compression_pct} smaller)[/]"
 
     table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
     table.add_column(style="dim", min_width=18)
     table.add_column()
     table.add_row("Files packed",    f"[green]{result.file_count}[/]")
     table.add_row("Original size",   _human_size(result.uncompressed_bytes))
-    if result.grew:
-        size_detail = f"[dim](ZIP overhead on tiny project)[/]"
-    else:
-        size_detail = f"[{ratio_colour}](↓ {result.compression_pct} smaller)[/]"
     table.add_row(
         "Compressed size",
         f"[bold]{_human_size(result.compressed_bytes)}[/]  {size_detail}",
     )
     table.add_row("Saved to",        f"[cyan]{result.zip_path}[/]")
 
-    console.print()
     console.print(
         Panel(
             table,
             title="[bold green]✓ ZIP created[/]",
             border_style="green",
             padding=(0, 1),
+        )
+    )
+
+
+def _print_clipboard_result(cb) -> None:
+    """Render clipboard outcome — colour and border vary by tier."""
+    tier_style = {
+        Tier.FILE_ON_CLIPBOARD: ("green",  "✓ Ready to paste"),
+        Tier.FOLDER_OPENED:     ("yellow", "✓ Folder opened"),
+        Tier.PATH_ONLY:         ("dim",    "↳ Manual copy needed"),
+    }
+    border, title = tier_style.get(cb.tier, ("dim", "Clipboard"))
+
+    console.print(
+        Panel.fit(
+            cb.message,
+            title=f"[bold {border}]{title}[/]",
+            border_style=border,
+            padding=(0, 2),
         )
     )
 

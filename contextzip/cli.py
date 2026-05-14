@@ -1,8 +1,7 @@
 """
 cli.py — contextzip entry point.
 
-Phase 1 + 2: scaffold, detection, dry-run, and rich output.
-Packaging (Phase 3) and clipboard (Phase 4) are stubbed with clear TODOs.
+Phase 3: ZIP creation wired in; clipboard (Phase 4) still stubbed.
 """
 
 from __future__ import annotations
@@ -15,10 +14,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich import box
-from rich.text import Text
 
 from contextzip.detector import detect
 from contextzip.filters import build_spec, resolve_files, summarise_exclusions
+from contextzip.packager import create_zip
 
 console = Console()
 
@@ -122,6 +121,7 @@ def main(
     # ── Results ─────────────────────────────────────────────────────────────
     _print_results(included, excluded, project_dir, verbose)
 
+    # ── Dry run — stop here ──────────────────────────────────────────────────
     if dry_run:
         console.print()
         console.print(
@@ -141,20 +141,29 @@ def main(
         )
         return
 
-    # ── TODO Phase 3: Create ZIP ─────────────────────────────────────────────
+    # ── Phase 3: Create ZIP ──────────────────────────────────────────────────
     console.print()
-    console.print(
-        Panel.fit(
-            "[bold yellow]⚙  Phase 3 coming next[/]\n"
-            "[dim]ZIP creation will be wired in the next phase.[/]",
-            border_style="yellow",
-            padding=(0, 2),
+    output_path = Path(output).resolve() if output else None
+
+    try:
+        result = create_zip(
+            included=included,
+            project_dir=project_dir,
+            output_path=output_path,
+            console=console,
         )
-    )
+    except Exception as exc:
+        console.print(f"\n[red]Failed to create ZIP:[/] {exc}")
+        raise SystemExit(1)
+
+    _print_package_result(result)
 
     # ── TODO Phase 4: Clipboard ──────────────────────────────────────────────
     if not no_clipboard:
-        pass  # clipboard logic arrives in Phase 4
+        console.print(
+            "\n[dim]📋 Clipboard integration coming in Phase 4.[/]\n"
+            f"[dim]For now, your ZIP is at:[/] [cyan]{result.zip_path}[/]"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +247,36 @@ def _print_results(
         console.print("[bold]Top excluded directories / files:[/]")
         for label, count in list(buckets.items())[:8]:
             console.print(f"  [red]✗[/] [dim]{label}[/]  [dim]({count} file{'s' if count != 1 else ''})[/]")
+
+
+def _print_package_result(result) -> None:
+    """Render a ZIP creation success panel with compression stats."""
+    ratio_colour = "green" if result.compression_ratio >= 0.3 else "yellow"
+
+    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
+    table.add_column(style="dim", min_width=18)
+    table.add_column()
+    table.add_row("Files packed",    f"[green]{result.file_count}[/]")
+    table.add_row("Original size",   _human_size(result.uncompressed_bytes))
+    if result.grew:
+        size_detail = f"[dim](ZIP overhead on tiny project)[/]"
+    else:
+        size_detail = f"[{ratio_colour}](↓ {result.compression_pct} smaller)[/]"
+    table.add_row(
+        "Compressed size",
+        f"[bold]{_human_size(result.compressed_bytes)}[/]  {size_detail}",
+    )
+    table.add_row("Saved to",        f"[cyan]{result.zip_path}[/]")
+
+    console.print()
+    console.print(
+        Panel(
+            table,
+            title="[bold green]✓ ZIP created[/]",
+            border_style="green",
+            padding=(0, 1),
+        )
+    )
 
 
 def _human_size(n: int) -> str:

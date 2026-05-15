@@ -64,3 +64,15 @@ This project uses [Semantic Versioning](https://semver.org/).
 - Introduced new `contextzip.git` module for git integration and porcelain parsing
 - Added `resolve_files_from_git()` pipeline for pre-selected file resolution
 - Added structured `GitChanges` and `GitError` models for cleaner error handling and extensibility
+
+---
+
+## [0.2.1] — 2026-05-16
+
+### Fixed
+- `--exclude` / `-e` patterns containing Windows-style paths (e.g. `.\CHANGELOG.md`) were silently ignored due to backslash and leading `.\` — patterns are now normalized to forward-slash posix paths before matching
+- Files passed to `-e` were not being excluded from the ZIP despite appearing in the exclusion list
+
+### Improved
+- `-e` now accepts multiple space-separated patterns in a single flag invocation: `-e file1 file2 folder/` in addition to the existing repeatable form `-e file1 -e file2`
+- Folder exclusion via `-e folder/*` is now supported and normalized to `folder/` automatically

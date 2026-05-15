@@ -83,7 +83,9 @@ contextzip [OPTIONS]
 | Option | Description |
 |---|---|
 | `-i`, `--include PATH` | Only include files under this path. Repeatable. |
-| `-e`, `--exclude PATTERN` | Extra exclusion patterns (gitignore syntax). Space-separated or repeatable: `-e '*.log' file1 file2` or `-e '*.log' -e file1` |
+| `-e`, `--exclude PATTERN` | Extra exclusion patterns (gitignore syntax). Repeatable. |
+| `exclude` | Subcommand: exclude specific files/patterns. `contextzip exclude CHANGELOG.md LICENSE .github/` |
+| `include` | Subcommand: include only specific paths. `contextzip include src/ app/` |
 | `--git-changes` | Only include files reported by git as modified, staged, or untracked. |
 | `-n`, `--dry-run` | Preview what would be included, no ZIP created. |
 | `-o`, `--output FILE` | Custom output path for the ZIP file. |
@@ -109,7 +111,22 @@ contextzip --include src --include app
 
 **Exclude additional patterns beyond the auto-rules:**
 ```bash
-contextzip -e "*.log" "*.sqlite" "tests/"
+contextzip --exclude "*.log" --exclude "*.sqlite" --exclude "tests/"
+```
+
+**Exclude files using the subcommand (space-separated, no repetition):**
+```bash
+contextzip exclude CHANGELOG.md CONTRIBUTING.md LICENSE .github/
+```
+
+**Exclude with flags:**
+```bash
+contextzip exclude CHANGELOG.md --dry-run --verbose
+```
+
+**Include only specific directories using the subcommand:**
+```bash
+contextzip include src/ app/
 ```
 
 **Only package files changed in git:**
@@ -206,7 +223,7 @@ contextzip surfaces issues before they waste your time:
 contextzip/
 ├── contextzip/
 │   ├── __init__.py        # version string
-│   ├── cli.py             # Click entry point, all flags, rich output
+│   ├── cli.py             # Click entry point, all flags, subcommands (exclude, include), rich output
 │   ├── detector.py        # framework/language detection engine
 │   ├── filters.py         # pathspec-based file filtering + ResolveResult
 │   ├── git.py             # git status parsing + changed-file detection

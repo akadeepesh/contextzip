@@ -1,5 +1,27 @@
 """
 cli.py — contextzip entry point.  Phases 1–5 complete.
+
+Command surface
+───────────────
+Main command (unchanged, fully backwards-compatible):
+  contextzip [OPTIONS]
+    -i / --include PATH      only include files under these paths (repeatable)
+    -e / --exclude PATTERN   extra exclusion patterns (repeatable)
+    -n / --dry-run           preview without creating ZIP
+    -o / --output FILE       custom output path
+    --no-clipboard           skip clipboard / folder-open step
+    --no-gitignore           ignore project .gitignore
+    --git-changes            only package files changed in git
+    -v / --verbose           show every file decision
+
+Subcommands (new — all modifier flags available on each):
+  contextzip exclude PATTERN… [OPTIONS]
+  contextzip include PATH…    [OPTIONS]
+
+Both subcommands accept the same modifier flags as the main command so that
+the flags naturally follow the verb, matching the git / docker / cargo UX:
+  contextzip exclude CHANGELOG.md --dry-run --verbose
+  contextzip include src/ app/    --output ~/Desktop/out.zip
 """
 
 from __future__ import annotations
@@ -30,55 +52,88 @@ console = Console()
 
 
 # ---------------------------------------------------------------------------
-# CLI
+# Shared modifier-flag decorator
+# ---------------------------------------------------------------------------
+# Defined once so the main command and every subcommand declare exactly the
+# same flags without duplicating help strings.
+
+def _modifier_options(f):
+    """
+    Attach all run-modifier flags to a command.
+
+    Applied to both the main command and every subcommand so that flags
+    always follow the verb — matching the git / docker / cargo convention:
+      contextzip exclude CHANGELOG.md --dry-run --verbose
+    """
+    decorators = [
+        click.option(
+            "--dry-run", "-n",
+            is_flag=True, default=False,
+            help="Show what would be included without creating the ZIP.",
+        ),
+        click.option(
+            "--output", "-o",
+            default=None, metavar="FILE",
+            help="Output ZIP path. Defaults to <project>_context_<timestamp>.zip in temp dir.",
+        ),
+        click.option(
+            "--no-clipboard",
+            is_flag=True, default=False,
+            help="Skip clipboard / folder-open step after creating the ZIP.",
+        ),
+        click.option(
+            "--no-gitignore",
+            is_flag=True, default=False,
+            help="Ignore the project's .gitignore file (use only built-in rules).",
+        ),
+        click.option(
+            "--git-changes",
+            is_flag=True, default=False,
+            help=(
+                "Only include files that git reports as modified, added, or untracked. "
+                "Requires the project to be inside a git repository."
+            ),
+        ),
+        click.option(
+            "--verbose", "-v",
+            is_flag=True, default=False,
+            help="Show every included and excluded file.",
+        ),
+    ]
+    for dec in reversed(decorators):
+        f = dec(f)
+    return f
+
+
+# ---------------------------------------------------------------------------
+# CLI group
 # ---------------------------------------------------------------------------
 
-@click.command(context_settings={"help_option_names": ["-h", "--help"]})
+@click.group(
+    invoke_without_command=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 @click.option(
     "--include", "-i",
     multiple=True, metavar="PATH",
-    help="Only include files under these paths (relative to project root). "
-         "Repeatable: --include src --include app",
+    help=(
+        "Only include files under these paths (relative to project root). "
+        "Repeatable: --include src --include app  |  or use: contextzip include src app"
+    ),
 )
 @click.option(
     "--exclude", "-e",
-    multiple=True, metavar="PATTERN...",
-    help="Extra exclusion patterns on top of auto-rules (gitignore syntax). "
-         "Space-separated or repeatable: -e '*.log' file1 file2  OR  -e '*.log' -e file1",
+    multiple=True, metavar="PATTERN",
+    help=(
+        "Extra exclusion patterns on top of auto-rules (gitignore syntax). "
+        "Repeatable: -e '*.log' -e CHANGELOG.md  |  or use: contextzip exclude CHANGELOG.md *.log"
+    ),
 )
-@click.option(
-    "--dry-run", "-n",
-    is_flag=True, default=False,
-    help="Show what would be included without creating the ZIP.",
-)
-@click.option(
-    "--output", "-o",
-    default=None, metavar="FILE",
-    help="Output ZIP path. Defaults to <project>_context_<timestamp>.zip in temp dir.",
-)
-@click.option(
-    "--no-clipboard",
-    is_flag=True, default=False,
-    help="Skip clipboard / folder-open step after creating the ZIP.",
-)
-@click.option(
-    "--no-gitignore",
-    is_flag=True, default=False,
-    help="Ignore the project's .gitignore file (use only built-in rules).",
-)
-@click.option(
-    "--git-changes",
-    is_flag=True, default=False,
-    help="Only include files that git reports as modified, added, or untracked. "
-         "Requires the project to be inside a git repository.",
-)
-@click.option(
-    "--verbose", "-v",
-    is_flag=True, default=False,
-    help="Show every included and excluded file.",
-)
+@_modifier_options
 @click.version_option(version=__version__, prog_name="contextzip")
+@click.pass_context
 def main(
+    ctx: click.Context,
     include: tuple[str, ...],
     exclude: tuple[str, ...],
     dry_run: bool,
@@ -94,8 +149,132 @@ def main(
 
     Run from your project root to produce a smart, lightweight ZIP
     ready to paste directly into Claude, ChatGPT, or any AI interface.
-    """
 
+    \b
+    SUBCOMMANDS
+      contextzip exclude CHANGELOG.md LICENSE .github/
+      contextzip include src/ app/
+
+    Both subcommands accept the same flags as the main command:
+      contextzip exclude CHANGELOG.md --dry-run --verbose
+    """
+    # A subcommand was invoked — let it handle everything.
+    if ctx.invoked_subcommand is not None:
+        return
+
+    _run(
+        extra_exclude=list(exclude),
+        include_only=list(include),
+        dry_run=dry_run,
+        output=output,
+        no_clipboard=no_clipboard,
+        no_gitignore=no_gitignore,
+        git_changes=git_changes,
+        verbose=verbose,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: exclude
+# ---------------------------------------------------------------------------
+
+@main.command("exclude")
+@click.argument("patterns", nargs=-1, required=True, metavar="PATTERN…")
+@_modifier_options
+def cmd_exclude(
+    patterns: tuple[str, ...],
+    dry_run: bool,
+    output: str | None,
+    no_clipboard: bool,
+    no_gitignore: bool,
+    git_changes: bool,
+    verbose: bool,
+) -> None:
+    """
+    Exclude specific files or patterns and package everything else.
+
+    \b
+    EXAMPLES
+      contextzip exclude CHANGELOG.md CONTRIBUTING.md LICENSE
+      contextzip exclude .github/ tests/ '*.log'
+      contextzip exclude CHANGELOG.md --dry-run --verbose
+      contextzip exclude .github/ CHANGELOG.md --output ~/Desktop/out.zip
+
+    Patterns follow gitignore syntax. Folders are matched with or without
+    a trailing slash: both '.github' and '.github/' work.
+    """
+    _run(
+        extra_exclude=list(patterns),
+        include_only=None,
+        dry_run=dry_run,
+        output=output,
+        no_clipboard=no_clipboard,
+        no_gitignore=no_gitignore,
+        git_changes=git_changes,
+        verbose=verbose,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: include
+# ---------------------------------------------------------------------------
+
+@main.command("include")
+@click.argument("paths", nargs=-1, required=True, metavar="PATH…")
+@_modifier_options
+def cmd_include(
+    paths: tuple[str, ...],
+    dry_run: bool,
+    output: str | None,
+    no_clipboard: bool,
+    no_gitignore: bool,
+    git_changes: bool,
+    verbose: bool,
+) -> None:
+    """
+    Package only the specified paths and skip everything else.
+
+    \b
+    EXAMPLES
+      contextzip include src/ app/
+      contextzip include src/ app/ --dry-run
+      contextzip include src/ --output ~/Desktop/out.zip --verbose
+
+    Paths are matched as exact prefixes at directory boundaries:
+    'src' matches 'src/index.ts' but not 'src2/index.ts'.
+    """
+    _run(
+        extra_exclude=None,
+        include_only=list(paths),
+        dry_run=dry_run,
+        output=output,
+        no_clipboard=no_clipboard,
+        no_gitignore=no_gitignore,
+        git_changes=git_changes,
+        verbose=verbose,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Core execution logic (shared by main command + all subcommands)
+# ---------------------------------------------------------------------------
+
+def _run(
+    *,
+    extra_exclude: list[str] | None,
+    include_only: list[str] | None,
+    dry_run: bool,
+    output: str | None,
+    no_clipboard: bool,
+    no_gitignore: bool,
+    git_changes: bool,
+    verbose: bool,
+) -> None:
+    """
+    All actual work lives here.  The main command and every subcommand
+    delegate to this function after collecting their arguments/flags,
+    keeping the CLI surface thin and the logic testable in isolation.
+    """
     project_dir = Path(os.getcwd()).resolve()
 
     # ── Header ───────────────────────────────────────────────────────────────
@@ -153,20 +332,12 @@ def main(
             and gitignore_path.is_file()
         )
 
+        normalized_exclude = (
+            [_normalize_pattern(p) for p in extra_exclude]
+            if extra_exclude else []
+        )
+
         with console.status("[cyan]Building exclusion rules…[/]", spinner="dots"):
-            # Flatten: each -e invocation may itself contain space-separated tokens
-            raw_exclude = exclude
-            flat_exclude: list[str] = []
-            for token in raw_exclude:
-                flat_exclude.extend(token.split())
-
-            # Normalize Windows-style paths  (.\foo\bar  →  foo/bar)
-            def _normalize_pattern(p: str) -> str:
-                p = p.lstrip(".\\/")          # strip leading .\ or ./
-                p = p.replace("\\", "/")      # backslash → forward slash
-                return p
-
-            normalized_exclude = [_normalize_pattern(p) for p in flat_exclude]
             spec = build_spec(
                 rule_modules=detection.rule_modules,
                 extra_exclude=normalized_exclude if normalized_exclude else None,
@@ -182,7 +353,7 @@ def main(
             resolved = resolve_files(
                 project_dir=project_dir,
                 spec=spec,
-                include_only=list(include) if include else None,
+                include_only=include_only if include_only else None,
             )
 
     # ── File scan summary ────────────────────────────────────────────────────
@@ -202,7 +373,8 @@ def main(
         if len(resolved.large_files) > 5:
             console.print(f"    [dim]… and {len(resolved.large_files) - 5} more[/]")
         console.print(
-            f"  [dim]  Use --exclude to drop them if unneeded.[/]"
+            "  [dim]  Use [cyan]-e PATTERN[/] or [cyan]contextzip exclude PATTERN[/] "
+            "to drop them if unneeded.[/]"
         )
 
     # ── Warnings: binary files ───────────────────────────────────────────────
@@ -245,7 +417,7 @@ def main(
     if not resolved.included:
         console.print(
             "\n[red]Nothing to package.[/] All files were excluded — "
-            "try [cyan]--include[/] to override."
+            "try [cyan]contextzip include PATH[/] or [cyan]-i PATH[/] to override."
         )
         return
 
@@ -283,6 +455,33 @@ def main(
         with console.status("[cyan]Preparing clipboard…[/]", spinner="dots"):
             cb = clipboard_handle(result.zip_path)
         _print_clipboard_result(cb)
+
+
+# ---------------------------------------------------------------------------
+# Normalisation
+# ---------------------------------------------------------------------------
+
+def _normalize_pattern(p: str) -> str:
+    """
+    Canonicalise a user-supplied exclusion pattern.
+
+    Rules applied in order:
+      1. Strip a leading ``./`` or ``.\\`` so that ``./CHANGELOG.md``
+         and ``CHANGELOG.md`` are treated identically.
+      2. Replace every backslash with a forward slash for cross-platform
+         consistency (Windows paths entered on the CLI).
+      3. Collapse ``folder/*`` → ``folder/`` so that gitignore-style
+         directory globs work as expected.
+    """
+    # 1. Strip leading ./ or .\
+    if p.startswith("./") or p.startswith(".\\"):
+        p = p[2:]
+    # 2. Normalise path separators
+    p = p.replace("\\", "/")
+    # 3. folder/* → folder/
+    if p.endswith("/*"):
+        p = p[:-1]
+    return p
 
 
 # ---------------------------------------------------------------------------

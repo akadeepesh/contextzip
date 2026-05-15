@@ -2,3 +2,4 @@
 contextzip.egg-info/
 contextzip/__pycache__/
 contextzip/rules/
+dist/

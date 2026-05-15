@@ -1,10 +1,15 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "contextzip"
 version = "0.1.0"
 description = "Intelligently package your codebase for AI tools"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Deepesh", email = "akadeepesh@gmail.com" }
 ]
@@ -32,3 +37,10 @@ dependencies = [
 Homepage = "https://github.com/akadeepesh/contextzip"
 Repository = "https://github.com/akadeepesh/contextzip"
 Issues = "https://github.com/akadeepesh/contextzip/issues"
+
+[project.scripts]
+contextzip = "contextzip.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["contextzip", "contextzip.rules"]

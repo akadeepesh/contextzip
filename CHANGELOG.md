@@ -76,3 +76,25 @@ This project uses [Semantic Versioning](https://semver.org/).
 ### Improved
 - `-e` now accepts multiple space-separated patterns in a single flag invocation: `-e file1 file2 folder/` in addition to the existing repeatable form `-e file1 -e file2`
 - Folder exclusion via `-e folder/*` is now supported and normalized to `folder/` automatically
+
+## [0.2.1] - 2026-05-16
+
+### Added
+- `contextzip exclude PATTERN…` subcommand — exclude multiple files and folders
+  in a single invocation without repeating `-e` (e.g. `contextzip exclude CHANGELOG.md LICENSE .github/`)
+- `contextzip include PATH…` subcommand — symmetric counterpart to `exclude`;
+  packages only the specified paths (e.g. `contextzip include src/ app/`)
+- All modifier flags (`--dry-run`, `--verbose`, `--output`, `--no-clipboard`,
+  `--git-changes`, `--no-gitignore`) work on both subcommands
+
+### Changed
+- `-e` / `--exclude` flag on the main command restored and kept for full
+  backwards compatibility alongside the new subcommand
+- Warning messages for large files now mention both `-e PATTERN` and
+  `contextzip exclude PATTERN` as remediation options
+- `_normalize_pattern` promoted to a named module-level function (testable,
+  documented); behaviour is unchanged
+
+### Fixed
+- Removed the previous positional-argument approach to exclusions on the main
+  command, which was ambiguous and undiscoverable

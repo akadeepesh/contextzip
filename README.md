@@ -83,7 +83,7 @@ contextzip [OPTIONS]
 | Option | Description |
 |---|---|
 | `-i`, `--include PATH` | Only include files under this path. Repeatable. |
-| `-e`, `--exclude PATTERN` | Extra exclusion patterns (gitignore syntax). Space-separated or repeatable: `-e '*.log' file1 file2` or `-e '*.log' -e file1` |
+| `-e`, `--exclude PATTERN` | Extra exclusion patterns (gitignore syntax). Repeatable. |
 | `exclude` | Subcommand: exclude specific files/patterns. `contextzip exclude CHANGELOG.md LICENSE .github/` |
 | `include` | Subcommand: include only specific paths. `contextzip include src/ app/` |
 | `--git-changes` | Only include files reported by git as modified, staged, or untracked. |
@@ -111,7 +111,7 @@ contextzip --include src --include app
 
 **Exclude additional patterns beyond the auto-rules:**
 ```bash
-contextzip -e "*.log" "*.sqlite" "tests/"
+contextzip --exclude "*.log" --exclude "*.sqlite" --exclude "tests/"
 ```
 
 **Exclude files using the subcommand (space-separated, no repetition):**

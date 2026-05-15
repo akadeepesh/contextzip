@@ -25,6 +25,7 @@ contextzip eliminates that entirely. Run it from your project root, it detects y
 
 - **Smart framework detection** : automatically identifies Node.js, Next.js, Python, Django, FastAPI, Rust, Go, Ruby and applies the right exclusion rules for each
 - **Respects your `.gitignore`** : patterns from your existing gitignore are honoured automatically
+- **Git-aware packaging** : package only modified, staged, unstaged, and untracked files with `--git-changes` — perfect for AI review sessions, incremental debugging, and PR workflows
 - **Warns before it's a problem** : flags large files (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
 - **Handles the messy stuff** : dangling symlinks, unreadable files, and files outside the project tree are all caught and reported, never silently dropped
 - **Full CLI control** : `--include`, `--exclude`, `--dry-run`, `--verbose`, `--output`, all composable
@@ -83,6 +84,7 @@ contextzip [OPTIONS]
 |---|---|
 | `-i`, `--include PATH` | Only include files under this path. Repeatable. |
 | `-e`, `--exclude PATTERN` | Extra exclusion patterns (gitignore syntax). Repeatable. |
+| `--git-changes` | Only include files reported by git as modified, staged, or untracked. |
 | `-n`, `--dry-run` | Preview what would be included, no ZIP created. |
 | `-o`, `--output FILE` | Custom output path for the ZIP file. |
 | `--no-clipboard` | Skip the clipboard / folder-open step. |
@@ -108,6 +110,11 @@ contextzip --include src --include app
 **Exclude additional patterns beyond the auto-rules:**
 ```bash
 contextzip --exclude "*.log" --exclude "*.sqlite" --exclude "tests/"
+```
+
+**Only package files changed in git:**
+```bash
+contextzip --git-changes
 ```
 
 **Save ZIP to a specific path:**
@@ -202,6 +209,7 @@ contextzip/
 │   ├── cli.py             # Click entry point, all flags, rich output
 │   ├── detector.py        # framework/language detection engine
 │   ├── filters.py         # pathspec-based file filtering + ResolveResult
+│   ├── git.py             # git status parsing + changed-file detection
 │   ├── packager.py        # ZIP creation, compression stats, PackageResult
 │   ├── clipboard.py       # tiered clipboard strategy (all platforms)
 │   └── rules/

@@ -15,7 +15,14 @@ from rich import box
 
 from contextzip import __version__
 from contextzip.detector import detect
-from contextzip.filters import build_spec, resolve_files, summarise_exclusions, LARGE_FILE_WARN_BYTES
+from contextzip.filters import (
+    build_spec,
+    resolve_files,
+    resolve_files_from_git,
+    summarise_exclusions,
+    LARGE_FILE_WARN_BYTES,
+)
+from contextzip.git import get_changed_files, GitError, GitChanges
 from contextzip.packager import create_zip
 from contextzip.clipboard import handle as clipboard_handle, Tier
 
@@ -60,6 +67,12 @@ console = Console()
     help="Ignore the project's .gitignore file (use only built-in rules).",
 )
 @click.option(
+    "--git-changes",
+    is_flag=True, default=False,
+    help="Only include files that git reports as modified, added, or untracked. "
+         "Requires the project to be inside a git repository.",
+)
+@click.option(
     "--verbose", "-v",
     is_flag=True, default=False,
     help="Show every included and excluded file.",
@@ -72,6 +85,7 @@ def main(
     output: str | None,
     no_clipboard: bool,
     no_gitignore: bool,
+    git_changes: bool,
     verbose: bool,
 ) -> None:
     """
@@ -101,35 +115,65 @@ def main(
 
     _print_detection(detection)
 
-    # ── Build exclusion spec ─────────────────────────────────────────────────
-    gitignore_path = None if no_gitignore else (project_dir / ".gitignore")
-    used_gitignore = (
-        not no_gitignore
-        and gitignore_path is not None
-        and gitignore_path.is_file()
-    )
+    # ── Git-changes mode ─────────────────────────────────────────────────────
+    if git_changes:
+        with console.status("[cyan]Querying git for changed files…[/]", spinner="dots"):
+            git_result = get_changed_files(project_dir)
 
-    with console.status("[cyan]Building exclusion rules…[/]", spinner="dots"):
-        spec = build_spec(
-            rule_modules=detection.rule_modules,
-            extra_exclude=list(exclude) if exclude else None,
-            gitignore_path=gitignore_path,
+        if isinstance(git_result, GitError):
+            console.print(
+                Panel.fit(
+                    f"[red]Git error:[/] {git_result.message}",
+                    border_style="red", padding=(0, 2),
+                )
+            )
+            raise SystemExit(1)
+
+        _print_git_summary(git_result, project_dir, verbose)
+
+        if git_result.is_empty:
+            console.print(
+                "\n[yellow]Nothing to package.[/] "
+                "No modified, added, or untracked files found — working tree is clean."
+            )
+            return
+
+        with console.status("[cyan]Checking git-changed files…[/]", spinner="dots"):
+            resolved = resolve_files_from_git(
+                git_files=git_result.files,
+                project_dir=project_dir,
+            )
+
+    else:
+        # ── Build exclusion spec ─────────────────────────────────────────────
+        gitignore_path = None if no_gitignore else (project_dir / ".gitignore")
+        used_gitignore = (
+            not no_gitignore
+            and gitignore_path is not None
+            and gitignore_path.is_file()
         )
 
-    if used_gitignore:
-        console.print(f"  [dim]↳ .gitignore patterns applied[/]")
-        console.print()
+        with console.status("[cyan]Building exclusion rules…[/]", spinner="dots"):
+            spec = build_spec(
+                rule_modules=detection.rule_modules,
+                extra_exclude=list(exclude) if exclude else None,
+                gitignore_path=gitignore_path,
+            )
 
-    # ── Resolve files ─────────────────────────────────────────────────────────
-    with console.status("[cyan]Scanning project files…[/]", spinner="dots"):
-        resolved = resolve_files(
-            project_dir=project_dir,
-            spec=spec,
-            include_only=list(include) if include else None,
-        )
+        if used_gitignore:
+            console.print(f"  [dim]↳ .gitignore patterns applied[/]")
+            console.print()
+
+        # ── Resolve files ─────────────────────────────────────────────────────
+        with console.status("[cyan]Scanning project files…[/]", spinner="dots"):
+            resolved = resolve_files(
+                project_dir=project_dir,
+                spec=spec,
+                include_only=list(include) if include else None,
+            )
 
     # ── File scan summary ────────────────────────────────────────────────────
-    _print_scan_summary(resolved, project_dir, verbose)
+    _print_scan_summary(resolved, project_dir, verbose, git_mode=git_changes)
 
     # ── Warnings: large files ────────────────────────────────────────────────
     if resolved.large_files:
@@ -263,19 +307,63 @@ def _print_detection(detection) -> None:
     console.print()
 
 
-def _print_scan_summary(resolved, project_dir: Path, verbose: bool) -> None:
+def _print_git_summary(changes: GitChanges, project_dir: Path, verbose: bool) -> None:
+    """Print a panel summarising the git-changed files."""
+    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row("Staged",    f"[green]{len(changes.staged)}[/]")
+    table.add_row("Unstaged",  f"[yellow]{len(changes.unstaged)}[/]")
+    table.add_row("Untracked", f"[cyan]{len(changes.untracked)}[/]")
+    if changes.deleted:
+        table.add_row("Deleted (skipped)", f"[dim]{len(changes.deleted)}[/]")
+    if changes.submodules:
+        table.add_row("Submodules (skipped)", f"[dim]{len(changes.submodules)}[/]")
+    table.add_row("To be included", f"[bold green]{len(changes.files)}[/]")
+
+    console.print(
+        Panel(
+            table,
+            title="[bold]Git Changes[/]",
+            border_style="magenta", padding=(0, 1),
+        )
+    )
+    console.print()
+
+    if verbose and changes.files:
+        console.print("[bold]Git-changed files:[/]")
+        for category, paths, colour in (
+            ("Staged",    changes.staged,    "green"),
+            ("Unstaged",  changes.unstaged,  "yellow"),
+            ("Untracked", changes.untracked, "cyan"),
+        ):
+            for rel in paths:
+                console.print(f"  [{colour}]✓[/] [dim]{rel}[/]  [dim]({category})[/]")
+        console.print()
+
+
+def _print_scan_summary(
+    resolved,
+    project_dir: Path,
+    verbose: bool,
+    *,
+    git_mode: bool = False,
+) -> None:
     total         = len(resolved.included) + len(resolved.excluded)
     included_size = sum(p.stat().st_size for p in resolved.included if p.exists())
 
     table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
     table.add_column(style="dim")
     table.add_column()
-    table.add_row("Files scanned",   str(total + len(resolved.skipped)))
+
+    if not git_mode:
+        table.add_row("Files scanned",   str(total + len(resolved.skipped)))
     table.add_row(
         "To be included",
         f"[green]{len(resolved.included)}[/]  [dim]({_human_size(included_size)})[/]",
     )
-    table.add_row("Excluded",        f"[red]{len(resolved.excluded)}[/]")
+    if not git_mode:
+        table.add_row("Excluded",        f"[red]{len(resolved.excluded)}[/]")
     if resolved.skipped:
         table.add_row("Skipped",     f"[yellow]{len(resolved.skipped)}[/]")
     console.print(table)
@@ -288,7 +376,7 @@ def _print_scan_summary(resolved, project_dir: Path, verbose: bool) -> None:
             rel      = p.relative_to(project_dir).as_posix()
             console.print(f"  [green]✓[/] {rel}  [dim]{size_str}[/]")
 
-    if resolved.excluded:
+    if not git_mode and resolved.excluded:
         console.print()
         buckets = summarise_exclusions(resolved.excluded, project_dir)
         console.print("[bold]Top excluded directories / files:[/]")

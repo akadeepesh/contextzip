@@ -8,6 +8,11 @@ Phase 5 hardening:
   - --include prefix matching is exact (src/ won't match src2/)
   - Binary-looking files (null bytes) are flagged but still included
   - Unreadable files are skipped with a warning rather than silently dropped
+
+Git mode:
+  - resolve_files_from_git() accepts a GitChanges result and builds a
+    ResolveResult from only the modified/added/untracked files reported
+    by git, while still running all size and binary checks.
 """
 
 from __future__ import annotations
@@ -165,6 +170,72 @@ def resolve_files(
         if _is_binary(abs_path):
             result.binary_files.append(abs_path)
             # Still include — caller can decide; we just flag it
+
+        result.included.append(abs_path)
+
+    return result
+
+
+def resolve_files_from_git(
+    git_files: list[Path],
+    project_dir: Path,
+) -> ResolveResult:
+    """
+    Build a :class:`ResolveResult` from a pre-selected list of files reported
+    by git (modified, added, untracked).
+
+    Unlike :func:`resolve_files`, this function does **not** apply exclusion
+    specs — the caller has already determined which files to include via
+    ``git status``.  Size and binary checks are still performed so that the
+    usual warnings appear in the CLI output.
+
+    Parameters
+    ----------
+    git_files:
+        Absolute paths of files to include, as returned by
+        :attr:`GitChanges.files`.
+    project_dir:
+        Absolute path to the project root (used for relative-path guards).
+    """
+    result = ResolveResult()
+
+    for abs_path in sorted(git_files):
+
+        # ── Resolve symlinks safely ──────────────────────────────────────────
+        if abs_path.is_symlink():
+            try:
+                real = abs_path.resolve(strict=True)
+                if not real.is_file():
+                    continue
+                abs_path = real
+            except (OSError, RuntimeError):
+                result.skipped.append((abs_path, "dangling symlink"))
+                continue
+
+        if not abs_path.is_file():
+            continue
+
+        # ── Guard: must be under project_dir ────────────────────────────────
+        try:
+            abs_path.relative_to(project_dir)
+        except ValueError:
+            result.skipped.append((abs_path, "outside project tree"))
+            continue
+
+        # ── Readability / stat check ─────────────────────────────────────────
+        try:
+            file_size = abs_path.stat().st_size
+        except OSError as e:
+            result.skipped.append((abs_path, f"stat failed: {e}"))
+            continue
+
+        # ── Large file warning ───────────────────────────────────────────────
+        if file_size >= LARGE_FILE_WARN_BYTES:
+            result.large_files.append((abs_path, file_size))
+
+        # ── Binary file detection ────────────────────────────────────────────
+        if _is_binary(abs_path):
+            result.binary_files.append(abs_path)
 
         result.included.append(abs_path)
 

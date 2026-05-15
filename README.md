@@ -1,6 +1,6 @@
 # contextzip
 
-> Stop copy-pasting files manually. Package exactly the right parts of your codebase and paste it straight into Claude, ChatGPT, or any AI tool — in one command.
+> Stop copy-pasting files manually. Package exactly the right parts of your codebase and paste it straight into Claude, ChatGPT, or any AI tool in one command.
 
 ```
 contextzip
@@ -17,18 +17,18 @@ Every time you want help from an AI tool, you go through the same ritual:
 3. Select the right ones, zip them, find the zip, upload it
 4. Repeat every single session
 
-contextzip eliminates that entirely. Run it from your project root — it detects your stack, applies smart exclusions, produces a lean ZIP, and opens your file manager with the archive already selected. One `Ctrl+C` and you're done.
+contextzip eliminates that entirely. Run it from your project root, it detects your stack, applies smart exclusions, produces a lean ZIP, and opens your file manager with the archive already selected. One `Ctrl+C` and you're done.
 
 ---
 
 ## Features
 
-- **Smart framework detection** — automatically identifies Node.js, Next.js, Python, Django, FastAPI, Rust, Go, Ruby and applies the right exclusion rules for each
-- **Respects your `.gitignore`** — patterns from your existing gitignore are honoured automatically
-- **Warns before it's a problem** — flags large files (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
-- **Handles the messy stuff** — dangling symlinks, unreadable files, and files outside the project tree are all caught and reported, never silently dropped
-- **Full CLI control** — `--include`, `--exclude`, `--dry-run`, `--verbose`, `--output`, all composable
-- **Cross-platform clipboard integration** — copies the file to clipboard on macOS/Linux; opens Explorer with the ZIP selected on Windows
+- **Smart framework detection** : automatically identifies Node.js, Next.js, Python, Django, FastAPI, Rust, Go, Ruby and applies the right exclusion rules for each
+- **Respects your `.gitignore`** : patterns from your existing gitignore are honoured automatically
+- **Warns before it's a problem** : flags large files (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
+- **Handles the messy stuff** : dangling symlinks, unreadable files, and files outside the project tree are all caught and reported, never silently dropped
+- **Full CLI control** : `--include`, `--exclude`, `--dry-run`, `--verbose`, `--output`, all composable
+- **Cross-platform clipboard integration** : copies the file to clipboard on macOS/Linux; opens Explorer with the ZIP selected on Windows
 
 ---
 
@@ -40,7 +40,7 @@ contextzip eliminates that entirely. Run it from your project root — it detect
 pip install contextzip
 ```
 
-Or with [pipx](https://pipx.pypa.io/) (recommended for CLI tools — keeps it isolated):
+Or with [pipx](https://pipx.pypa.io/) (recommended for CLI tools, keeps it isolated):
 
 ```bash
 pipx install contextzip
@@ -83,7 +83,7 @@ contextzip [OPTIONS]
 |---|---|
 | `-i`, `--include PATH` | Only include files under this path. Repeatable. |
 | `-e`, `--exclude PATTERN` | Extra exclusion patterns (gitignore syntax). Repeatable. |
-| `-n`, `--dry-run` | Preview what would be included — no ZIP created. |
+| `-n`, `--dry-run` | Preview what would be included, no ZIP created. |
 | `-o`, `--output FILE` | Custom output path for the ZIP file. |
 | `--no-clipboard` | Skip the clipboard / folder-open step. |
 | `--no-gitignore` | Ignore the project's `.gitignore` file. |
@@ -115,7 +115,7 @@ contextzip --exclude "*.log" --exclude "*.sqlite" --exclude "tests/"
 contextzip --output ~/Desktop/my-project-context.zip
 ```
 
-**Full verbose audit — see every file decision:**
+**Full verbose audit, see every file decision:**
 ```bash
 contextzip --dry-run --verbose
 ```
@@ -144,7 +144,7 @@ contextzip detects your stack from config files in the project root and stacks t
 | `go.mod` | Go |
 | `Gemfile` | Ruby |
 
-Detection is **additive** — a monorepo with both `package.json` and `pyproject.toml` will have both rule sets applied.
+Detection is **additive**. A monorepo with both `package.json` and `pyproject.toml` will have both rule sets applied.
 
 ### What gets excluded
 
@@ -173,11 +173,11 @@ contextzip uses a tiered strategy so it never just fails silently:
 
 | Platform | Tier 1 (auto) | Tier 2 (fallback) | Tier 3 (last resort) |
 |---|---|---|---|
-| **macOS** | File copied to clipboard via Finder — paste directly into browser | `open -R` reveals ZIP in Finder | Path printed to terminal |
+| **macOS** | File copied to clipboard via Finder, paste directly into browser | `open -R` reveals ZIP in Finder | Path printed to terminal |
 | **Linux** | `xclip` copies file bytes with `application/zip` MIME type | `xdg-open` opens containing folder | Path printed to terminal |
-| **Windows** | — | `explorer /select,"..."` opens Explorer with ZIP highlighted → `Ctrl+C` | Path printed to terminal |
+| **Windows** | - | `explorer /select,"..."` opens Explorer with ZIP highlighted → `Ctrl+C` | Path printed to terminal |
 
-On **macOS** and **Linux with xclip**, you can paste the ZIP directly into an upload zone (Claude, ChatGPT, etc.) — no file picker needed. On **Windows**, Explorer opens with the file already selected so one `Ctrl+C` is all it takes.
+On **macOS** and **Linux with xclip**, you can paste the ZIP directly into an upload zone (Claude, ChatGPT, etc.), no file picker needed. On **Windows**, Explorer opens with the file already selected so one `Ctrl+C` is all it takes.
 
 ---
 
@@ -185,11 +185,11 @@ On **macOS** and **Linux with xclip**, you can paste the ZIP directly into an up
 
 contextzip surfaces issues before they waste your time:
 
-**Large files (≥ 1 MB)** — listed with sizes and a suggestion to exclude if unneeded. AI context windows have limits; a 5 MB log file helps no one.
+**Large files (≥ 1 MB)** : listed with sizes and a suggestion to exclude if unneeded. AI context windows have limits; a 5 MB log file helps no one.
 
-**Binary files** — files detected as binary (null bytes in the first 512 bytes) are flagged. Most AI tools can't read binary content; you may want to exclude them.
+**Binary files** : files detected as binary (null bytes in the first 512 bytes) are flagged. Most AI tools can't read binary content; you may want to exclude them.
 
-**Skipped files** — dangling symlinks, permission-denied files, and paths outside the project tree are listed with their specific reason rather than silently dropped.
+**Skipped files** : dangling symlinks, permission-denied files, and paths outside the project tree are listed with their specific reason rather than silently dropped.
 
 ---
 
@@ -247,7 +247,7 @@ _Rule(
 ),
 ```
 
-That's it — detection, filtering, and CLI output all pick it up automatically.
+That's it. Detection, filtering, and CLI output all pick it up automatically.
 
 ---
 
@@ -265,10 +265,10 @@ No other runtime dependencies. Clipboard and folder-open use only stdlib (`subpr
 
 ## Contributing
 
-Contributions are welcome — especially new framework rule sets, edge case fixes, and platform-specific clipboard improvements.
+Contributions are welcome, especially new framework rule sets, edge case fixes, and platform-specific clipboard improvements.
 
 ```bash
-git clone https://github.com/yourusername/contextzip
+git clone https://github.com/akadeepesh/contextzip
 cd contextzip
 pip install -e .
 ```
@@ -279,4 +279,4 @@ Please open an issue before submitting a large PR so we can discuss the approach
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT - see [LICENSE](https://github.com/akadeepesh/contextzip/blob/main/LICENSE) for details.

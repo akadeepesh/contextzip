@@ -1,3 +1,3 @@
 """contextzip — intelligent codebase packager for AI tools."""
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"

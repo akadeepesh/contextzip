@@ -279,4 +279,4 @@ Please open an issue before submitting a large PR so we can discuss the approach
 
 ## License
 
-MIT - see [LICENSE](https://github.com/akadeepesh/contextzip/blob/main/LICENSE) for details.
+MIT - see [LICENSE](https://github.com/akadeepesh/smart-context-packager/blob/main/LICENSE) for details.

@@ -1,0 +1,91 @@
+name: Bug report
+description: Something isn't working correctly
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill out the sections below so we can reproduce and fix it quickly.
+
+  - type: input
+    id: version
+    attributes:
+      label: contextzip version
+      description: Run `contextzip --version` and paste the output
+      placeholder: "contextzip, version 0.1.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: Run `python --version` and paste the output
+      placeholder: "Python 3.12.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: framework
+    attributes:
+      label: Project type (what was contextzip run against?)
+      options:
+        - Node.js
+        - Next.js
+        - Python
+        - Django
+        - FastAPI
+        - Rust
+        - Go
+        - Ruby
+        - Unknown / not detected
+        - Other
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `contextzip --dry-run` in a Next.js project
+        2. Notice that `src/` is excluded even though it shouldn't be
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Terminal output
+      description: Paste the full terminal output here (use `contextzip --verbose` for more detail)
+      render: shell
+    validations:
+      required: false

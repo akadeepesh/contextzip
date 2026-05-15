@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest a new framework, flag, or behaviour
+title: "add: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea? The most useful contributions are new framework rule sets — if your stack isn't well-supported, tell us what files it produces and what should be excluded.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: What kind of feature is this?
+      options:
+        - New framework / language support
+        - New CLI flag or option
+        - Clipboard / platform improvement
+        - Output / display improvement
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the workflow pain point this would fix
+      placeholder: "When I run contextzip on an Elixir project, it includes the _build/ directory which is huge and useless for AI context..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like to see?
+    validations:
+      required: true
+
+  - type: textarea
+    id: framework_details
+    attributes:
+      label: If this is a new framework — what should be excluded?
+      description: List the directories and files that are auto-generated and should never be in an AI context package
+      placeholder: |
+        _build/
+        deps/
+        .elixir_ls/
+        mix.lock
+    validations:
+      required: false

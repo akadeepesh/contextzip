@@ -1,5 +1,37 @@
-.venv/
-contextzip.egg-info/
-contextzip/__pycache__/
-contextzip/rules/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.eggs/
 dist/
+build/
+.venv/
+venv/
+env/
+.Python
+pip-wheel-metadata/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# contextzip output files (don't commit test zips)
+*_context_*.zip

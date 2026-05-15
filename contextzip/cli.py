@@ -42,9 +42,9 @@ console = Console()
 )
 @click.option(
     "--exclude", "-e",
-    multiple=True, metavar="PATTERN",
+    multiple=True, metavar="PATTERN...",
     help="Extra exclusion patterns on top of auto-rules (gitignore syntax). "
-         "Repeatable: --exclude '*.log' --exclude temp.js",
+         "Space-separated or repeatable: -e '*.log' file1 file2  OR  -e '*.log' -e file1",
 )
 @click.option(
     "--dry-run", "-n",
@@ -154,9 +154,22 @@ def main(
         )
 
         with console.status("[cyan]Building exclusion rules…[/]", spinner="dots"):
+            # Flatten: each -e invocation may itself contain space-separated tokens
+            raw_exclude = exclude
+            flat_exclude: list[str] = []
+            for token in raw_exclude:
+                flat_exclude.extend(token.split())
+
+            # Normalize Windows-style paths  (.\foo\bar  →  foo/bar)
+            def _normalize_pattern(p: str) -> str:
+                p = p.lstrip(".\\/")          # strip leading .\ or ./
+                p = p.replace("\\", "/")      # backslash → forward slash
+                return p
+
+            normalized_exclude = [_normalize_pattern(p) for p in flat_exclude]
             spec = build_spec(
                 rule_modules=detection.rule_modules,
-                extra_exclude=list(exclude) if exclude else None,
+                extra_exclude=normalized_exclude if normalized_exclude else None,
                 gitignore_path=gitignore_path,
             )
 

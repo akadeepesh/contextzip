@@ -77,7 +77,7 @@ This project uses [Semantic Versioning](https://semver.org/).
 - `-e` now accepts multiple space-separated patterns in a single flag invocation: `-e file1 file2 folder/` in addition to the existing repeatable form `-e file1 -e file2`
 - Folder exclusion via `-e folder/*` is now supported and normalized to `folder/` automatically
 
-## [0.2.1] - 2026-05-16
+## [0.2.2] - 2026-05-16
 
 ### Added
 - `contextzip exclude PATTERN…` subcommand — exclude multiple files and folders
@@ -98,3 +98,36 @@ This project uses [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Removed the previous positional-argument approach to exclusions on the main
   command, which was ambiguous and undiscoverable
+
+---
+
+## [0.2.3] — 2026-05-19
+
+### Added
+- Dedicated Ruby ecosystem exclusion rules via new `contextzip.rules.ruby` module
+- Automatic exclusion of common Ruby / Rails artifacts:
+  - Bundler directories and lockfiles
+  - Rails logs, temp files, assets, storage, and Spring cache
+  - Built gems and compiled Ruby extensions
+  - Coverage and generated documentation directories
+- Additional package discovery keywords for AI tooling and code packaging:
+  - `claude`
+  - `chatgpt`
+  - `code-packaging`
+
+### Changed
+- Ruby project detection now uses the dedicated Ruby rule module instead of the generic base rules
+- Git-based packaging now enforces base exclusion safety rules even for tracked files
+- Repository governance and metadata files are now excluded by default:
+  - `CHANGELOG*`
+  - `LICENSE*`
+  - `CONTRIBUTING*`
+  - `SECURITY.md`
+  - `.github` issue / PR templates
+- `.gitignore` is no longer excluded automatically from packaged context archives
+
+### Fixed
+- Prevented git-tracked sensitive files (e.g. `.env`, secrets, binaries) from being included in `--git-changes` mode
+- Improved ZIP packaging resilience when file stat operations fail during archive creation
+- Fixed progress tracking during ZIP generation to avoid repeated filesystem stat calls
+- Fixed Ruby framework detection routing so Ruby projects receive ecosystem-specific exclusion behaviour

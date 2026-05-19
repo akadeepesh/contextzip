@@ -5,7 +5,6 @@ Universal exclusion rules applied to every project regardless of language.
 PATTERNS = [
     # Version control
     ".git/",
-    ".gitignore",
     ".svn/",
     ".hg/",
 
@@ -64,4 +63,18 @@ PATTERNS = [
 
     # The output zip itself (avoid recursion)
     "*_context_*.zip",
+
+    # GitHub / repo governance (not useful as AI context)
+    "CHANGELOG.md",
+    "CHANGELOG",
+    "CONTRIBUTING.md",
+    "CONTRIBUTING",
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "SECURITY.md",
+    "CODE_OF_CONDUCT.md",
+    ".github/ISSUE_TEMPLATE/",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/PULL_REQUEST_TEMPLATE/",
 ]

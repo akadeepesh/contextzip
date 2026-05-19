@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Deepesh", email = "akadeepesh@gmail.com" }
 ]
-keywords = ["ai", "cli", "developer-tools", "context", "zip", "llm"]
+keywords = ["ai", "cli", "developer-tools", "context", "zip", "llm", "claude", "chatgpt", "code-packaging"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

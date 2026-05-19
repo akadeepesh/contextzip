@@ -120,7 +120,7 @@ _RULES: list[_Rule] = [
     # ── Ruby ─────────────────────────────────────────────────────────────
     _Rule(
         name="Ruby",
-        module="base",  # no dedicated rule module yet; base covers it
+        module="ruby",
         check=lambda p: _file_exists(p, "Gemfile"),
         weight=2,
     ),

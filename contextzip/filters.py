@@ -35,6 +35,7 @@ _RULE_REGISTRY: dict[str, str] = {
     "python": "contextzip.rules.python",
     "rust":   "contextzip.rules.rust",
     "go":     "contextzip.rules.go",
+    "ruby":   "contextzip.rules.ruby",
 }
 
 # Files larger than this trigger a warning (but are still included)
@@ -184,10 +185,10 @@ def resolve_files_from_git(
     Build a :class:`ResolveResult` from a pre-selected list of files reported
     by git (modified, added, untracked).
 
-    Unlike :func:`resolve_files`, this function does **not** apply exclusion
-    specs — the caller has already determined which files to include via
-    ``git status``.  Size and binary checks are still performed so that the
-    usual warnings appear in the CLI output.
+    Applies the base exclusion spec as a safety floor even though git selected
+    the files — a git-tracked ``.env`` or secret key file must still be blocked.
+    Size and binary checks are also performed so that the usual warnings appear
+    in the CLI output.
 
     Parameters
     ----------
@@ -197,6 +198,10 @@ def resolve_files_from_git(
     project_dir:
         Absolute path to the project root (used for relative-path guards).
     """
+    # Build the base spec once — this is our safety floor regardless of what
+    # git reports as changed. It blocks .env, secrets, binaries, etc.
+    base_spec = build_spec(rule_modules=["base"])
+
     result = ResolveResult()
 
     for abs_path in sorted(git_files):
@@ -217,9 +222,15 @@ def resolve_files_from_git(
 
         # ── Guard: must be under project_dir ────────────────────────────────
         try:
-            abs_path.relative_to(project_dir)
+            rel = abs_path.relative_to(project_dir)
         except ValueError:
             result.skipped.append((abs_path, "outside project tree"))
+            continue
+
+        # ── Base safety floor — block secrets / binaries even if git-tracked ─
+        rel_str = rel.as_posix()
+        if _any_parent_excluded(rel, base_spec) or base_spec.match_file(rel_str):
+            result.excluded.append(abs_path)
             continue
 
         # ── Readability / stat check ─────────────────────────────────────────

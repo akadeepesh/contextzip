@@ -115,6 +115,11 @@ def create_zip(
 
                 try:
                     file_size = abs_path.stat().st_size
+                except OSError as e:
+                    skipped_in_zip.append((abs_path, f"stat failed: {e}"))
+                    continue
+
+                try:
                     zf.write(abs_path, arcname=rel.as_posix())
                     uncompressed += file_size
                     file_count   += 1
@@ -123,7 +128,7 @@ def create_zip(
                 except OSError as e:
                     skipped_in_zip.append((abs_path, str(e)))
                 finally:
-                    progress.advance(task, abs_path.stat().st_size if abs_path.exists() else 0)
+                    progress.advance(task, file_size)
 
     compressed = zip_path.stat().st_size
 

@@ -6,6 +6,12 @@ Phase 5 changes:
   - Reports skipped (unreadable / symlink) files to the caller
   - Caps individual file read to avoid runaway memory on huge files
   - Carries skipped_paths forward into PackageResult for CLI display
+
+Phase 6 changes:
+  - Introduces .contextzip/ workspace directory at the git root (or CWD fallback)
+  - Auto-creates .contextzip/ and registers it in .gitignore when inside a git repo
+  - Deterministic output names: codebase.zip (default) or changes.zip (--git-changes)
+  - --output flag bypasses workspace logic entirely (user owns the path)
 """
 
 from __future__ import annotations
@@ -13,7 +19,6 @@ from __future__ import annotations
 import tempfile
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -29,6 +34,9 @@ from rich.progress import (
 )
 
 from contextzip.filters import ResolveResult
+
+# The entry written into .gitignore
+_GITIGNORE_ENTRY = ".contextzip/"
 
 
 # ---------------------------------------------------------------------------
@@ -67,19 +75,33 @@ def create_zip(
     project_dir: Path,
     output_path: Path | None,
     console: Console,
+    git_changes: bool = False,
 ) -> PackageResult:
     """
     Write the included files from *resolve_result* into a ZIP archive.
+
+    If *output_path* is given (via --output) it is used as-is and the
+    .contextzip/ workspace logic is skipped entirely.
+
+    Otherwise the archive is written to the .contextzip/ workspace
+    directory (created automatically) at the git root, or the CWD if
+    no git repository is detected.
+
     Returns a :class:`PackageResult` with compression stats and any
     files that had to be skipped during writing (e.g. permission denied).
     """
-    zip_path = output_path or _auto_output_path(project_dir)
+    if output_path is not None:
+        # User specified --output: honour it exactly, no workspace logic.
+        zip_path = output_path
+    else:
+        zip_path = _workspace_output_path(project_dir, git_changes, console)
+
     zip_path.parent.mkdir(parents=True, exist_ok=True)
 
-    included      = resolve_result.included
+    included: list[Path] = resolve_result.included
     skipped_in_zip: list[tuple[Path, str]] = []
-    uncompressed  = 0
-    file_count    = 0
+    uncompressed = 0
+    file_count = 0
 
     with Progress(
         SpinnerColumn(),
@@ -122,7 +144,7 @@ def create_zip(
                 try:
                     zf.write(abs_path, arcname=rel.as_posix())
                     uncompressed += file_size
-                    file_count   += 1
+                    file_count += 1
                 except PermissionError:
                     skipped_in_zip.append((abs_path, "permission denied"))
                 except OSError as e:
@@ -142,15 +164,111 @@ def create_zip(
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Workspace helpers
 # ---------------------------------------------------------------------------
 
-def _auto_output_path(project_dir: Path) -> Path:
-    project_name = _safe_name(project_dir.name)
-    timestamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename     = f"{project_name}_context_{timestamp}.zip"
-    return Path(tempfile.gettempdir()) / filename
+def _find_git_root(start: Path) -> Path | None:
+    """
+    Walk up the directory tree from *start* looking for a .git directory.
+    Returns the directory that contains .git, or None if not found.
+    """
+    current = start.resolve()
+    while True:
+        if (current / ".git").is_dir():
+            return current
+        parent = current.parent
+        if parent == current:
+            # Reached filesystem root without finding .git
+            return None
+        current = parent
 
+
+def _ensure_gitignore(git_root: Path) -> None:
+    """
+    Ensure .contextzip/ is listed in <git_root>/.gitignore.
+
+    - If .gitignore exists and already contains the entry: do nothing.
+    - If .gitignore exists but lacks the entry: append it.
+    - If .gitignore does not exist: create it with just the entry.
+    """
+    gitignore_path = git_root / ".gitignore"
+
+    if gitignore_path.is_file():
+        content = gitignore_path.read_text(encoding="utf-8", errors="replace")
+        # Check for the entry on its own line (with or without trailing slash variants)
+        lines = [line.strip() for line in content.splitlines()]
+        if _GITIGNORE_ENTRY in lines or _GITIGNORE_ENTRY.rstrip("/") in lines:
+            return  # Already present — nothing to do
+        # Append, ensuring there's a trailing newline before our entry
+        separator = "\n" if content and not content.endswith("\n") else ""
+        with gitignore_path.open("a", encoding="utf-8") as f:
+            f.write(f"{separator}\n# contextzip workspace\n{_GITIGNORE_ENTRY}\n")
+    else:
+        # .gitignore doesn't exist — create a minimal one
+        gitignore_path.write_text(
+            f"# contextzip workspace\n{_GITIGNORE_ENTRY}\n",
+            encoding="utf-8",
+        )
+
+
+def _workspace_dir(project_dir: Path) -> tuple[Path, bool]:
+    """
+    Resolve the .contextzip/ workspace directory.
+
+    Returns ``(workspace_path, is_git_repo)`` where:
+    - workspace_path is <git_root>/.contextzip/ when inside a git repo
+    - workspace_path is <project_dir>/.contextzip/ as a fallback
+    - is_git_repo indicates whether a git root was found
+    """
+    git_root = _find_git_root(project_dir)
+    if git_root is not None:
+        return git_root / ".contextzip", True
+    return project_dir / ".contextzip", False
+
+
+def _workspace_output_path(
+    project_dir: Path,
+    git_changes: bool,
+    console: Console,
+) -> Path:
+    """
+    Determine the output ZIP path inside the .contextzip/ workspace.
+
+    Side effects:
+    - Creates the workspace directory if it doesn't exist.
+    - Manages .gitignore registration when inside a git repo.
+    - Falls back to the system temp directory if the workspace cannot
+      be created (e.g. read-only filesystem), printing a warning.
+    """
+    workspace, is_git_repo = _workspace_dir(project_dir)
+    filename = "changes.zip" if git_changes else "codebase.zip"
+
+    # Attempt to create the workspace directory
+    try:
+        workspace.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        # Graceful fallback: warn and use temp dir
+        console.print(
+            f"\n  [yellow]⚠[/]  Could not create [cyan].contextzip/[/] workspace "
+            f"([dim]{exc}[/]) — falling back to temp directory.\n"
+        )
+        return Path(tempfile.gettempdir()) / filename
+
+    # Handle .gitignore only when we're inside a git repo
+    if is_git_repo:
+        git_root = workspace.parent  # workspace is <git_root>/.contextzip
+        try:
+            _ensure_gitignore(git_root)
+        except OSError:
+            # Non-fatal: gitignore update failed, carry on silently
+            pass
+
+    return workspace / filename
+
+
+# ---------------------------------------------------------------------------
+# Legacy helper (kept for any internal callers that may reference it)
+# ---------------------------------------------------------------------------
 
 def _safe_name(name: str) -> str:
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in name)

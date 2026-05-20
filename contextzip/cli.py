@@ -74,7 +74,7 @@ def _modifier_options(f):
         click.option(
             "--output", "-o",
             default=None, metavar="FILE",
-            help="Output ZIP path. Defaults to <project>_context_<timestamp>.zip in temp dir.",
+            help="Output ZIP path. Bypasses .contextzip/ workspace — writes directly to FILE.",
         ),
         click.option(
             "--no-clipboard",
@@ -431,6 +431,7 @@ def _run(
             project_dir=project_dir,
             output_path=output_path,
             console=console,
+            git_changes=git_changes,
         )
     except Exception as exc:
         console.print(f"\n[red]Failed to create ZIP:[/] {exc}")

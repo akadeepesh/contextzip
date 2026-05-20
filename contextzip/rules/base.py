@@ -61,8 +61,8 @@ PATTERNS = [
     "*.gz",
     "*.rar",
 
-    # The output zip itself (avoid recursion)
-    "*_context_*.zip",
+    # contextzip workspace directory — always excluded regardless of .gitignore state
+    ".contextzip/",
 
     # GitHub / repo governance (not useful as AI context)
     "CHANGELOG.md",

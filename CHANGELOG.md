@@ -131,3 +131,46 @@ This project uses [Semantic Versioning](https://semver.org/).
 - Improved ZIP packaging resilience when file stat operations fail during archive creation
 - Fixed progress tracking during ZIP generation to avoid repeated filesystem stat calls
 - Fixed Ruby framework detection routing so Ruby projects receive ecosystem-specific exclusion behaviour
+
+---
+
+## [0.2.4] — 2026-05-20
+
+### Added
+
+* Persistent `.contextzip/` workspace directory for generated context packages
+* Automatic output naming based on packaging mode:
+
+  * `codebase.zip` for standard packaging
+  * `changes.zip` for `--git-changes`
+* Automatic `.contextzip/` exclusion from packaged archives and file scanning
+* Automatic `.gitignore` integration:
+
+  * `.contextzip/` is appended when a git repository is detected
+  * missing entries are added only once
+* Repository-root-aware workspace placement:
+
+  * `.contextzip/` is created at the git repository root when `.git/` is detected
+  * falls back to the current working directory outside git repositories
+
+### Changed
+
+* ZIP outputs are now written to the persistent `.contextzip/` workspace by default instead of temporary system directories
+* Generated archives now overwrite previous outputs with the same logical name instead of creating temporary randomized filenames
+* `--output` now bypasses all `.contextzip/` workspace logic and writes directly to the user-specified destination
+
+### Improved
+
+* Generated context packages are now easier to rediscover, reuse, and inspect across AI-assisted development workflows
+* Workspace output structure now provides a foundation for future features such as:
+
+  * timestamped package history
+  * metadata indexing
+  * incremental packaging
+  * AI debug sessions
+  * package caching
+
+### Fixed
+
+* Prevented `.contextzip/` contents from recursively packaging previous generated archives
+* Improved fallback behaviour when workspace creation fails due to filesystem permissions or read-only directories

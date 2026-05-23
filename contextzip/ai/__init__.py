@@ -1,0 +1,1 @@
+"""contextzip.ai — AI-powered file selection for --prompt mode."""

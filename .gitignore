@@ -35,3 +35,6 @@ desktop.ini
 
 # contextzip output files (don't commit test zips)
 *_context_*.zip
+
+# contextzip workspace
+.contextzip/

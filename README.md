@@ -26,6 +26,7 @@ contextzip eliminates that entirely. Run it from your project root, it detects y
 - **Smart framework detection** : automatically identifies Node.js, Next.js, Python, Django, FastAPI, Rust, Go, Ruby and applies the right exclusion rules for each
 - **Respects your `.gitignore`** : patterns from your existing gitignore are honoured automatically
 - **Git-aware packaging** : package only modified, staged, unstaged, and untracked files with `--git-changes` — perfect for AI review sessions, incremental debugging, and PR workflows
+- **AI-powered file selection** : describe your task in plain English with `--prompt` and Gemini selects the minimum relevant files automatically — no manual hunting required
 - **Persistent workspace** : all generated ZIPs land in a `.contextzip/` directory at your project root, not a random temp folder — discoverable, reusable, and git-ignored automatically
 - **Warns before it's a problem** : flags large files (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
 - **Handles the messy stuff** : dangling symlinks, unreadable files, and files outside the project tree are all caught and reported, never silently dropped
@@ -83,10 +84,12 @@ contextzip [OPTIONS]
 
 | Option | Description |
 |---|---|
+| `-p`, `--prompt TEXT` | Describe your task in plain English. Gemini AI selects only the relevant files. Requires a free API key (guided setup on first use). |
 | `-i`, `--include PATH` | Only include files under this path. Repeatable. |
 | `-e`, `--exclude PATTERN` | Extra exclusion patterns (gitignore syntax). Repeatable. |
 | `exclude` | Subcommand: exclude specific files/patterns. `contextzip exclude CHANGELOG.md LICENSE .github/` |
 | `include` | Subcommand: include only specific paths. `contextzip include src/ app/` |
+| `config` | Subcommand: manage configuration (API key). `contextzip config --reset-key` |
 | `--git-changes` | Only include files reported by git as modified, staged, or untracked. |
 | `-n`, `--dry-run` | Preview what would be included, no ZIP created. |
 | `-o`, `--output FILE` | Write ZIP to a custom path. Bypasses the `.contextzip/` workspace entirely. |
@@ -150,6 +153,78 @@ contextzip --dry-run --verbose
 contextzip --include src --exclude "**/*.test.ts"
 ```
 
+**Let AI select only the files relevant to your task:**
+```bash
+contextzip --prompt "Change toast color on failed login"
+```
+
+**Preview AI file selection without creating a ZIP:**
+```bash
+contextzip --prompt "Refactor auth middleware" --dry-run
+```
+
+---
+
+## AI-powered file selection
+
+The `--prompt` flag lets you describe a task in plain English. contextzip scans your project, builds a lightweight file map, and asks Gemini to select the minimum set of files needed for that task. The result is a tightly scoped ZIP — only what you'd actually open to make the change.
+
+```bash
+contextzip --prompt "Change toast color on failed login"
+```
+
+Example selected files:
+```
+components/ui/toast.tsx
+app/login/page.tsx
+lib/auth.ts
+```
+
+The ZIP also includes a `prompt.txt` that describes the task and lists the selected files. When you drop the ZIP into Claude, ChatGPT, or any other AI tool, it immediately knows what you're trying to do.
+
+### First-time setup
+
+`--prompt` requires a free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey) — no credit card needed. On first use, contextzip will guide you through getting and saving one:
+
+```
+╭─ Gemini API Key Required ──────────────────────────────────╮
+│                                                             │
+│  --prompt requires a free Gemini API key.                   │
+│  contextzip uses Google AI Studio — no credit card needed.  │
+│                                                             │
+│  Get your free key at:                                      │
+│  https://aistudio.google.com/apikey                         │
+│                                                             │
+╰─────────────────────────────────────────────────────────────╯
+
+  Open Google AI Studio in your browser now? [Y/n]:
+```
+
+Your key is saved to `~/.config/contextzip/config.json` (Linux/macOS) or `%APPDATA%\contextzip\config.json` (Windows) and reused automatically on every subsequent run.
+
+You can also set the key as an environment variable to skip the config file entirely:
+
+```bash
+export GEMINI_API_KEY=AIza...
+```
+
+### Managing your API key
+
+```bash
+contextzip config                  # show current key status
+contextzip config --reset-key      # clear stored key and re-run setup
+contextzip config --show-key-path  # print the config file location
+```
+
+### How file selection works
+
+1. contextzip scans the project and applies all standard exclusions (no `node_modules`, no build artifacts, no `.env` files)
+2. A lightweight file map (relative paths + file sizes) is sent to Gemini along with your task description and detected framework
+3. Gemini returns a ranked list of the most relevant files — typically 2–5, never more than 10
+4. Only those files are packaged, plus a `prompt.txt` describing the task
+
+The goal is minimum viable context. Sending fewer, more relevant files gets better AI responses and wastes fewer tokens.
+
 ---
 
 ## Workspace directory
@@ -168,11 +243,12 @@ The output filename is determined by how you invoke contextzip:
 |---|---|
 | `contextzip` | `.contextzip/codebase.zip` |
 | `contextzip --git-changes` | `.contextzip/changes.zip` |
+| `contextzip --prompt "..."` | `.contextzip/codebase.zip` (AI-scoped) |
 | `contextzip --output PATH` | `PATH` (workspace bypassed entirely) |
 
 All other flags (`--include`, `--exclude`, subcommands) do not affect the filename — they refine what goes into `codebase.zip`.
 
-Each run overwrites the previous file of the same name, so `.contextzip/codebase.zip` is always your latest full snapshot and `.contextzip/changes.zip` is always your latest git-diff context.
+Each run overwrites the previous file of the same name, so `.contextzip/codebase.zip` is always your latest snapshot.
 
 ### `.gitignore` management
 
@@ -269,12 +345,17 @@ contextzip surfaces issues before they waste your time:
 contextzip/
 ├── contextzip/
 │   ├── __init__.py        # version string
-│   ├── cli.py             # Click entry point, all flags, subcommands (exclude, include), rich output
+│   ├── cli.py             # Click entry point, all flags, subcommands (exclude, include, config), rich output
+│   ├── config.py          # API key storage (~/.config/contextzip/config.json)
 │   ├── detector.py        # framework/language detection engine
 │   ├── filters.py         # pathspec-based file filtering + ResolveResult
 │   ├── git.py             # git status parsing + changed-file detection
 │   ├── packager.py        # ZIP creation, workspace management, PackageResult
 │   ├── clipboard.py       # tiered clipboard strategy (all platforms)
+│   ├── ai/
+│   │   ├── __init__.py
+│   │   ├── gemini.py      # Gemini API client (file relevance selection)
+│   │   └── selector.py    # project map builder + AI orchestration + prompt.txt
 │   └── rules/
 │       ├── base.py        # universal exclusions (includes .contextzip/)
 │       ├── node.py        # Node.js / Next.js / Vite
@@ -329,8 +410,9 @@ That's it. Detection, filtering, and CLI output all pick it up automatically.
 | [`click`](https://click.palletsprojects.com/) | CLI framework |
 | [`rich`](https://rich.readthedocs.io/) | Terminal output, panels, progress bars |
 | [`pathspec`](https://github.com/cpburnz/python-pathspec) | Gitignore-style pattern matching |
+| [`httpx`](https://www.python-httpx.org/) | HTTP client for Gemini API calls (required for `--prompt`) |
 
-No other runtime dependencies. Clipboard and folder-open use only stdlib (`subprocess`, `shutil`, `platform`).
+`httpx` is only used when `--prompt` is invoked. All other contextzip features work without it, but it must be installed for AI-powered file selection.
 
 ---
 

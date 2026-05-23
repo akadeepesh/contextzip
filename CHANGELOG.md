@@ -174,3 +174,60 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 * Prevented `.contextzip/` contents from recursively packaging previous generated archives
 * Improved fallback behaviour when workspace creation fails due to filesystem permissions or read-only directories
+
+## [0.3.0] — 2026-05-24
+
+### Added
+
+* `--prompt` / `-p` flag for AI-powered file selection — describe your task in
+  plain English and contextzip automatically selects the minimum relevant files
+  (e.g. `contextzip --prompt "Change toast color on failed login"`)
+* Gemini 2.5 Flash Lite integration via a thin `httpx` client — no Google SDK
+  required; a single lightweight POST call to the Gemini API
+* First-run onboarding flow for users without an API key:
+  * Displays a guided panel with a link to [Google AI Studio](https://aistudio.google.com/apikey) (free, no credit card)
+  * Optionally opens the browser automatically
+  * Saves the key persistently on confirmation
+* Persistent API key storage in the platform-appropriate config directory:
+  * `~/.config/contextzip/config.json` on Linux / macOS
+  * `%APPDATA%\contextzip\config.json` on Windows
+  * `GEMINI_API_KEY` environment variable always takes precedence
+* `contextzip config` subcommand for key management:
+  * `contextzip config` — show current key status and source
+  * `contextzip config --reset-key` — clear stored key and re-run onboarding
+  * `contextzip config --show-key-path` — print config file location
+* `prompt.txt` is written as the first entry in every AI-generated ZIP,
+  containing the task description, detected framework, and selected file list —
+  so any AI tool receiving the archive immediately knows the context
+* Keyword-based heuristic file scorer as a rate-limit fallback:
+  * Activates only on confirmed HTTP 429 from Gemini
+  * Scores files by token overlap with the prompt, directory semantics, and
+    extension type
+  * User is warned clearly that heuristic was used and Gemini results are
+    preferred
+* `--prompt --dry-run` combination — preview AI-selected files without
+  creating a ZIP
+* API key validation on load — keys not starting with `AIza` are treated as
+  unconfigured and trigger onboarding rather than a cryptic API error
+* `diagnose_api_key()` surfaces a human-readable explanation when a key exists
+  but fails validation, before any API call is attempted
+
+### Changed
+
+* `create_zip()` in `packager.py` now accepts an optional `prompt_txt`
+  parameter; when provided, `prompt.txt` is written as the first ZIP entry
+* xdg-open on Linux now runs with stdout and stderr suppressed to prevent
+  KDE / DBus / MIME warnings from appearing over the API key prompt
+
+### Developer Notes
+
+* Introduced `contextzip.config` module for cross-platform config path
+  resolution and key read / write / delete operations
+* Introduced `contextzip.ai` package with three modules:
+  * `gemini.py` — Gemini API client with typed exception hierarchy
+    (`GeminiError`, `GeminiRateLimitError`, `GeminiUnavailable`)
+  * `heuristic.py` — keyword + directory scoring fallback scorer
+  * `selector.py` — project map builder, AI orchestration, `prompt.txt`
+    generation; returns `(paths, prompt_txt, method)` so callers know
+    which selection path was taken
+* Added `httpx` as a required runtime dependency

@@ -14,10 +14,10 @@ Design principles:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 try:
     import httpx
+
     _HTTPX_AVAILABLE = True
 except ImportError:
     _HTTPX_AVAILABLE = False
@@ -45,6 +45,7 @@ _TIMEOUT_SECONDS = 30
 # Exceptions
 # ---------------------------------------------------------------------------
 
+
 class GeminiError(Exception):
     """Raised when the Gemini API call fails for any reason."""
 
@@ -61,11 +62,12 @@ class GeminiRateLimitError(GeminiError):
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def select_files(
     *,
     api_key: str,
     prompt: str,
-    file_tree: list[tuple[str, int]],   # [(rel_path, size_bytes), ...]
+    file_tree: list[tuple[str, int]],  # [(rel_path, size_bytes), ...]
     ecosystem: str,
     model: str = DEFAULT_MODEL,
 ) -> list[str]:
@@ -109,7 +111,7 @@ def select_files(
         )
 
     system_prompt = _build_system_prompt()
-    user_message  = _build_user_message(prompt, file_tree, ecosystem)
+    user_message = _build_user_message(prompt, file_tree, ecosystem)
 
     url = _API_URL.format(model=model, key=api_key)
 
@@ -121,8 +123,8 @@ def select_files(
             }
         ],
         "generationConfig": {
-            "temperature":     0.0,   # deterministic — this is a ranking task
-            "maxOutputTokens": 512,   # a list of paths needs very few tokens
+            "temperature": 0.0,  # deterministic — this is a ranking task
+            "maxOutputTokens": 512,  # a list of paths needs very few tokens
             "responseMimeType": "application/json",
         },
     }
@@ -148,8 +150,7 @@ def select_files(
         )
     if response.status_code != 200:
         raise GeminiError(
-            f"Gemini API returned HTTP {response.status_code}: "
-            f"{response.text[:200]}"
+            f"Gemini API returned HTTP {response.status_code}: {response.text[:200]}"
         )
 
     return _parse_response(response.json(), file_tree)
@@ -158,6 +159,7 @@ def select_files(
 # ---------------------------------------------------------------------------
 # Prompt construction
 # ---------------------------------------------------------------------------
+
 
 def _build_system_prompt() -> str:
     return """\
@@ -186,10 +188,7 @@ def _build_user_message(
     file_tree: list[tuple[str, int]],
     ecosystem: str,
 ) -> str:
-    tree_lines = "\n".join(
-        f"{path} ({_human_size(size)})"
-        for path, size in file_tree
-    )
+    tree_lines = "\n".join(f"{path} ({_human_size(size)})" for path, size in file_tree)
     return f"""\
 Framework: {ecosystem}
 
@@ -206,6 +205,7 @@ Return only a JSON array of the most relevant file paths for this task.\
 # Response parsing and validation
 # ---------------------------------------------------------------------------
 
+
 def _parse_response(
     data: dict,
     file_tree: list[tuple[str, int]],
@@ -220,9 +220,7 @@ def _parse_response(
     """
     # Navigate the Gemini response structure
     try:
-        text = (
-            data["candidates"][0]["content"]["parts"][0]["text"]
-        )
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError) as exc:
         raise GeminiError(f"Unexpected API response structure: {exc}\n{data}")
 
@@ -274,6 +272,7 @@ def _parse_response(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _human_size(n: int) -> str:
     for unit in ("B", "KB", "MB"):

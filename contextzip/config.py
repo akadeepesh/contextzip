@@ -22,6 +22,7 @@ from pathlib import Path
 # Config directory resolution (no platformdirs dependency)
 # ---------------------------------------------------------------------------
 
+
 def _config_dir() -> Path:
     """
     Return the platform-appropriate config directory for contextzip.
@@ -46,6 +47,7 @@ _CONFIG_FILE = _config_dir() / "config.json"
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def get_api_key() -> str | None:
     """
@@ -147,6 +149,7 @@ def config_path() -> Path:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _read_config() -> dict:
     """Read and parse the config file. Returns {} if missing or malformed."""

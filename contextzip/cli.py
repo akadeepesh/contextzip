@@ -37,7 +37,13 @@ from rich.table import Table
 from rich import box
 
 from contextzip import __version__
-from contextzip.config import get_api_key, save_api_key, delete_api_key, config_path, diagnose_api_key
+from contextzip.config import (
+    get_api_key,
+    save_api_key,
+    delete_api_key,
+    config_path,
+    diagnose_api_key,
+)
 from contextzip.detector import detect
 from contextzip.filters import (
     build_spec,
@@ -59,6 +65,7 @@ console = Console()
 # Defined once so the main command and every subcommand declare exactly the
 # same flags without duplicating help strings.
 
+
 def _modifier_options(f):
     """
     Attach all run-modifier flags to a command.
@@ -69,8 +76,10 @@ def _modifier_options(f):
     """
     decorators = [
         click.option(
-            "--prompt", "-p",
-            default=None, metavar="TEXT",
+            "--prompt",
+            "-p",
+            default=None,
+            metavar="TEXT",
             help=(
                 "Describe your task in natural language. contextzip uses Gemini AI "
                 "to select only the files relevant to that task. "
@@ -78,36 +87,45 @@ def _modifier_options(f):
             ),
         ),
         click.option(
-            "--dry-run", "-n",
-            is_flag=True, default=False,
+            "--dry-run",
+            "-n",
+            is_flag=True,
+            default=False,
             help="Show what would be included without creating the ZIP.",
         ),
         click.option(
-            "--output", "-o",
-            default=None, metavar="FILE",
+            "--output",
+            "-o",
+            default=None,
+            metavar="FILE",
             help="Output ZIP path. Bypasses .contextzip/ workspace — writes directly to FILE.",
         ),
         click.option(
             "--no-clipboard",
-            is_flag=True, default=False,
+            is_flag=True,
+            default=False,
             help="Skip clipboard / folder-open step after creating the ZIP.",
         ),
         click.option(
             "--no-gitignore",
-            is_flag=True, default=False,
+            is_flag=True,
+            default=False,
             help="Ignore the project's .gitignore file (use only built-in rules).",
         ),
         click.option(
             "--git-changes",
-            is_flag=True, default=False,
+            is_flag=True,
+            default=False,
             help=(
                 "Only include files that git reports as modified, added, or untracked. "
                 "Requires the project to be inside a git repository."
             ),
         ),
         click.option(
-            "--verbose", "-v",
-            is_flag=True, default=False,
+            "--verbose",
+            "-v",
+            is_flag=True,
+            default=False,
             help="Show every included and excluded file.",
         ),
     ]
@@ -120,21 +138,26 @@ def _modifier_options(f):
 # CLI group
 # ---------------------------------------------------------------------------
 
+
 @click.group(
     invoke_without_command=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 @click.option(
-    "--include", "-i",
-    multiple=True, metavar="PATH",
+    "--include",
+    "-i",
+    multiple=True,
+    metavar="PATH",
     help=(
         "Only include files under these paths (relative to project root). "
         "Repeatable: --include src --include app  |  or use: contextzip include src app"
     ),
 )
 @click.option(
-    "--exclude", "-e",
-    multiple=True, metavar="PATTERN",
+    "--exclude",
+    "-e",
+    multiple=True,
+    metavar="PATTERN",
     help=(
         "Extra exclusion patterns on top of auto-rules (gitignore syntax). "
         "Repeatable: -e '*.log' -e CHANGELOG.md  |  or use: contextzip exclude CHANGELOG.md *.log"
@@ -191,6 +214,7 @@ def main(
 # Subcommand: exclude
 # ---------------------------------------------------------------------------
 
+
 @main.command("exclude")
 @click.argument("patterns", nargs=-1, required=True, metavar="PATTERN…")
 @_modifier_options
@@ -234,6 +258,7 @@ def cmd_exclude(
 # Subcommand: include
 # ---------------------------------------------------------------------------
 
+
 @main.command("include")
 @click.argument("paths", nargs=-1, required=True, metavar="PATH…")
 @_modifier_options
@@ -276,6 +301,7 @@ def cmd_include(
 # Core execution logic (shared by main command + all subcommands)
 # ---------------------------------------------------------------------------
 
+
 def _run(
     *,
     extra_exclude: list[str] | None,
@@ -301,7 +327,8 @@ def _run(
         Panel.fit(
             f"[bold cyan]contextzip[/] [dim]v{__version__}[/]\n"
             f"[dim]Project:[/] [white]{project_dir}[/]",
-            border_style="cyan", padding=(0, 2),
+            border_style="cyan",
+            padding=(0, 2),
         )
     )
     console.print()
@@ -321,7 +348,8 @@ def _run(
             console.print(
                 Panel.fit(
                     f"[red]Git error:[/] {git_result.message}",
-                    border_style="red", padding=(0, 2),
+                    border_style="red",
+                    padding=(0, 2),
                 )
             )
             raise SystemExit(1)
@@ -345,14 +373,11 @@ def _run(
         # ── Build exclusion spec ─────────────────────────────────────────────
         gitignore_path = None if no_gitignore else (project_dir / ".gitignore")
         used_gitignore = (
-            not no_gitignore
-            and gitignore_path is not None
-            and gitignore_path.is_file()
+            not no_gitignore and gitignore_path is not None and gitignore_path.is_file()
         )
 
         normalized_exclude = (
-            [_normalize_pattern(p) for p in extra_exclude]
-            if extra_exclude else []
+            [_normalize_pattern(p) for p in extra_exclude] if extra_exclude else []
         )
 
         with console.status("[cyan]Building exclusion rules…[/]", spinner="dots"):
@@ -363,7 +388,7 @@ def _run(
             )
 
         if used_gitignore:
-            console.print(f"  [dim]↳ .gitignore patterns applied[/]")
+            console.print("[dim]↳ .gitignore patterns applied[/]")
             console.print()
 
         # ── Resolve files ─────────────────────────────────────────────────────
@@ -387,7 +412,9 @@ def _run(
         )
         for p, size in resolved.large_files[:5]:
             rel = p.relative_to(project_dir).as_posix()
-            console.print(f"    [yellow]·[/] [dim]{rel}[/]  [yellow]{_human_size(size)}[/]")
+            console.print(
+                f"    [yellow]·[/] [dim]{rel}[/]  [yellow]{_human_size(size)}[/]"
+            )
         if len(resolved.large_files) > 5:
             console.print(f"    [dim]… and {len(resolved.large_files) - 5} more[/]")
         console.print(
@@ -446,7 +473,8 @@ def _run(
                 Panel.fit(
                     "[yellow]Dry run — no ZIP created.[/]\n"
                     "[dim]Remove --dry-run to produce the archive.[/]",
-                    border_style="yellow", padding=(0, 2),
+                    border_style="yellow",
+                    padding=(0, 2),
                 )
             )
         return
@@ -528,7 +556,6 @@ def _run(
         _print_clipboard_result(cb)
 
 
-
 # ---------------------------------------------------------------------------
 # API key onboarding
 # ---------------------------------------------------------------------------
@@ -546,6 +573,7 @@ def _open_browser_silent(url: str) -> None:
     to /dev/null to keep the terminal clean.
     """
     import subprocess
+
     try:
         subprocess.Popen(
             ["xdg-open", url],
@@ -590,9 +618,7 @@ def _onboard_api_key() -> str | None:
     )
     if open_browser:
         _open_browser_silent(_GEMINI_KEY_URL)
-        console.print(
-            "  [dim]Browser opened. Generate a key, then come back here.[/]"
-        )
+        console.print("  [dim]Browser opened. Generate a key, then come back here.[/]")
 
     console.print()
     console.print("  [dim]─────────────────────────────────────────────[/]")
@@ -642,6 +668,7 @@ def _onboard_api_key() -> str | None:
 # AI selection helpers
 # ---------------------------------------------------------------------------
 
+
 def _run_ai_selection(
     *,
     resolved,
@@ -674,7 +701,8 @@ def _run_ai_selection(
             console.print(
                 Panel.fit(
                     f"[red]Gemini error:[/] {exc}",
-                    border_style="red", padding=(0, 2),
+                    border_style="red",
+                    padding=(0, 2),
                 )
             )
             raise SystemExit(1)
@@ -720,7 +748,8 @@ def _run_ai_selection_preview(
             console.print(
                 Panel.fit(
                     f"[red]Gemini error:[/] {exc}",
-                    border_style="red", padding=(0, 2),
+                    border_style="red",
+                    padding=(0, 2),
                 )
             )
             raise SystemExit(1)
@@ -737,7 +766,8 @@ def _run_ai_selection_preview(
         Panel.fit(
             "[yellow]Dry run — no ZIP created.[/]\n"
             "[dim]Remove --dry-run to package these files.[/]",
-            border_style="yellow", padding=(0, 2),
+            border_style="yellow",
+            padding=(0, 2),
         )
     )
 
@@ -746,15 +776,18 @@ def _run_ai_selection_preview(
 # Subcommand: config
 # ---------------------------------------------------------------------------
 
+
 @main.command("config")
 @click.option(
     "--reset-key",
-    is_flag=True, default=False,
+    is_flag=True,
+    default=False,
     help="Clear the stored Gemini API key and re-run the setup prompt.",
 )
 @click.option(
     "--show-key-path",
-    is_flag=True, default=False,
+    is_flag=True,
+    default=False,
     help="Print the path to the config file and exit.",
 )
 def cmd_config(reset_key: bool, show_key_path: bool) -> None:
@@ -774,8 +807,7 @@ def cmd_config(reset_key: bool, show_key_path: bool) -> None:
         removed = delete_api_key()
         if removed:
             console.print(
-                "\n  [green]✓[/]  API key removed from "
-                f"[dim]{config_path()}[/]"
+                f"\n  [green]✓[/]  API key removed from [dim]{config_path()}[/]"
             )
         else:
             console.print("\n  [dim]No API key was stored.[/]")
@@ -795,23 +827,29 @@ def cmd_config(reset_key: bool, show_key_path: bool) -> None:
 
     if key:
         masked = key[:8] + "…" + key[-4:] if len(key) > 12 else "****"
-        source = "[dim](from environment variable)[/]" if from_env else f"[dim]({config_path()})[/]"
+        source = (
+            "[dim](from environment variable)[/]"
+            if from_env
+            else f"[dim]({config_path()})[/]"
+        )
         console.print(
             Panel(
                 f"  [dim]Gemini API key:[/]  [green]{masked}[/]  {source}\n\n"
                 "  [dim]Run [cyan]contextzip config --reset-key[/] to change it.[/]",
                 title="[bold]contextzip config[/]",
-                border_style="cyan", padding=(0, 2),
+                border_style="cyan",
+                padding=(0, 2),
             )
         )
     else:
         console.print(
             Panel(
                 "  No Gemini API key configured.\n\n"
-                "  Run [cyan]contextzip --prompt \"your task\"[/] to set one up,\n"
+                '  Run [cyan]contextzip --prompt "your task"[/] to set one up,\n'
                 "  or [cyan]contextzip config --reset-key[/] to go through setup now.",
                 title="[bold]contextzip config[/]",
-                border_style="yellow", padding=(0, 2),
+                border_style="yellow",
+                padding=(0, 2),
             )
         )
     console.print()
@@ -820,6 +858,7 @@ def cmd_config(reset_key: bool, show_key_path: bool) -> None:
 # ---------------------------------------------------------------------------
 # Normalisation
 # ---------------------------------------------------------------------------
+
 
 def _normalize_pattern(p: str) -> str:
     """
@@ -848,20 +887,22 @@ def _normalize_pattern(p: str) -> str:
 # Display helpers
 # ---------------------------------------------------------------------------
 
+
 def _print_detection(detection) -> None:
     if detection.is_unknown:
         ecosystem_line = "[yellow]Unknown[/] — applying base rules only"
     else:
         colours = {
-            "Next.js": "bright_blue", "Node.js": "green",
-            "Python":  "yellow",      "Django":  "green",
-            "FastAPI": "cyan",         "Rust":    "red",
-            "Go":      "cyan",         "Ruby":    "red",
+            "Next.js": "bright_blue",
+            "Node.js": "green",
+            "Python": "yellow",
+            "Django": "green",
+            "FastAPI": "cyan",
+            "Rust": "red",
+            "Go": "cyan",
+            "Ruby": "red",
         }
-        parts = [
-            f"[{colours.get(n, 'white')}]{n}[/]"
-            for n in detection.ecosystems
-        ]
+        parts = [f"[{colours.get(n, 'white')}]{n}[/]" for n in detection.ecosystems]
         ecosystem_line = " [dim]+[/] ".join(parts)
 
     conf_colour = {"high": "green", "medium": "yellow", "low": "dim"}.get(
@@ -873,7 +914,8 @@ def _print_detection(detection) -> None:
             f"  [dim]Confidence:[/]   [{conf_colour}]{detection.confidence}[/]\n"
             f"  [dim]Rules     :[/]   [dim]{', '.join(detection.rule_modules)}[/]",
             title="[bold]Detection[/]",
-            border_style="blue", padding=(0, 1),
+            border_style="blue",
+            padding=(0, 1),
         )
     )
     console.print()
@@ -884,8 +926,8 @@ def _print_git_summary(changes: GitChanges, project_dir: Path, verbose: bool) ->
     table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
     table.add_column(style="dim")
     table.add_column()
-    table.add_row("Staged",    f"[green]{len(changes.staged)}[/]")
-    table.add_row("Unstaged",  f"[yellow]{len(changes.unstaged)}[/]")
+    table.add_row("Staged", f"[green]{len(changes.staged)}[/]")
+    table.add_row("Unstaged", f"[yellow]{len(changes.unstaged)}[/]")
     table.add_row("Untracked", f"[cyan]{len(changes.untracked)}[/]")
     if changes.deleted:
         table.add_row("Deleted (skipped)", f"[dim]{len(changes.deleted)}[/]")
@@ -897,7 +939,8 @@ def _print_git_summary(changes: GitChanges, project_dir: Path, verbose: bool) ->
         Panel(
             table,
             title="[bold]Git Changes[/]",
-            border_style="magenta", padding=(0, 1),
+            border_style="magenta",
+            padding=(0, 1),
         )
     )
     console.print()
@@ -905,8 +948,8 @@ def _print_git_summary(changes: GitChanges, project_dir: Path, verbose: bool) ->
     if verbose and changes.files:
         console.print("[bold]Git-changed files:[/]")
         for category, paths, colour in (
-            ("Staged",    changes.staged,    "green"),
-            ("Unstaged",  changes.unstaged,  "yellow"),
+            ("Staged", changes.staged, "green"),
+            ("Unstaged", changes.unstaged, "yellow"),
             ("Untracked", changes.untracked, "cyan"),
         ):
             for rel in paths:
@@ -921,7 +964,7 @@ def _print_scan_summary(
     *,
     git_mode: bool = False,
 ) -> None:
-    total         = len(resolved.included) + len(resolved.excluded)
+    total = len(resolved.included) + len(resolved.excluded)
     included_size = sum(p.stat().st_size for p in resolved.included if p.exists())
 
     table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
@@ -929,15 +972,15 @@ def _print_scan_summary(
     table.add_column()
 
     if not git_mode:
-        table.add_row("Files scanned",   str(total + len(resolved.skipped)))
+        table.add_row("Files scanned", str(total + len(resolved.skipped)))
     table.add_row(
         "To be included",
         f"[green]{len(resolved.included)}[/]  [dim]({_human_size(included_size)})[/]",
     )
     if not git_mode:
-        table.add_row("Excluded",        f"[red]{len(resolved.excluded)}[/]")
+        table.add_row("Excluded", f"[red]{len(resolved.excluded)}[/]")
     if resolved.skipped:
-        table.add_row("Skipped",     f"[yellow]{len(resolved.skipped)}[/]")
+        table.add_row("Skipped", f"[yellow]{len(resolved.skipped)}[/]")
     console.print(table)
 
     if verbose and resolved.included:
@@ -945,7 +988,7 @@ def _print_scan_summary(
         console.print("[bold]Included files:[/]")
         for p in resolved.included:
             size_str = _human_size(p.stat().st_size) if p.exists() else "?"
-            rel      = p.relative_to(project_dir).as_posix()
+            rel = p.relative_to(project_dir).as_posix()
             console.print(f"  [green]✓[/] {rel}  [dim]{size_str}[/]")
 
     if not git_mode and resolved.excluded:
@@ -961,7 +1004,7 @@ def _print_scan_summary(
 
 def _print_package_result(result) -> None:
     ratio_colour = "green" if result.compression_ratio >= 0.3 else "yellow"
-    size_detail  = (
+    size_detail = (
         "[dim](ZIP overhead on tiny project)[/]"
         if result.grew
         else f"[{ratio_colour}](↓ {result.compression_pct} smaller)[/]"
@@ -970,19 +1013,20 @@ def _print_package_result(result) -> None:
     table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
     table.add_column(style="dim", min_width=18)
     table.add_column()
-    table.add_row("Files packed",    f"[green]{result.file_count}[/]")
-    table.add_row("Original size",   _human_size(result.uncompressed_bytes))
+    table.add_row("Files packed", f"[green]{result.file_count}[/]")
+    table.add_row("Original size", _human_size(result.uncompressed_bytes))
     table.add_row(
         "Compressed size",
         f"[bold]{_human_size(result.compressed_bytes)}[/]  {size_detail}",
     )
-    table.add_row("Saved to",        f"[cyan]{result.zip_path}[/]")
+    table.add_row("Saved to", f"[cyan]{result.zip_path}[/]")
 
     console.print(
         Panel(
             table,
             title="[bold green]✓ ZIP created[/]",
-            border_style="green", padding=(0, 1),
+            border_style="green",
+            padding=(0, 1),
         )
     )
 
@@ -1009,8 +1053,9 @@ def _print_ai_selection(
     console.print(
         Panel(
             table,
-            title=f"[bold cyan]AI Selected — [dim]\"{prompt}\"[/][/]",
-            border_style="cyan", padding=(0, 1),
+            title=f'[bold cyan]AI Selected — [dim]"{prompt}"[/][/]',
+            border_style="cyan",
+            padding=(0, 1),
         )
     )
     console.print(
@@ -1022,16 +1067,17 @@ def _print_ai_selection(
 
 def _print_clipboard_result(cb) -> None:
     tier_style = {
-        Tier.FILE_ON_CLIPBOARD: ("green",  "✓ Ready to paste"),
-        Tier.FOLDER_OPENED:     ("yellow", "✓ Folder opened"),
-        Tier.PATH_ONLY:         ("dim",    "↳ Manual copy needed"),
+        Tier.FILE_ON_CLIPBOARD: ("green", "✓ Ready to paste"),
+        Tier.FOLDER_OPENED: ("yellow", "✓ Folder opened"),
+        Tier.PATH_ONLY: ("dim", "↳ Manual copy needed"),
     }
     border, title = tier_style.get(cb.tier, ("dim", "Clipboard"))
     console.print(
         Panel.fit(
             cb.message,
             title=f"[bold {border}]{title}[/]",
-            border_style=border, padding=(0, 2),
+            border_style=border,
+            padding=(0, 2),
         )
     )
 

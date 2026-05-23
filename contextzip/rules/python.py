@@ -26,11 +26,11 @@ PATTERNS = [
     ".coverage",
     "*.sqlite3",
     "*.db",
-    "site/",            # mkdocs build output
+    "site/",  # mkdocs build output
     ".tox/",
     "poetry.lock",
     "uv.lock",
-    "migrations/",      # Django migrations (auto-generated)
-    "staticfiles/",     # Django collected static
-    "media/",           # Django uploaded media
+    "migrations/",  # Django migrations (auto-generated)
+    "staticfiles/",  # Django collected static
+    "media/",  # Django uploaded media
 ]

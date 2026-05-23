@@ -17,13 +17,14 @@ from typing import Callable
 # Data model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class DetectionResult:
     """Everything the detector knows about a project directory."""
 
-    ecosystems: list[str] = field(default_factory=list)   # e.g. ["Node.js", "Next.js"]
+    ecosystems: list[str] = field(default_factory=list)  # e.g. ["Node.js", "Next.js"]
     rule_modules: list[str] = field(default_factory=list)  # e.g. ["base", "node"]
-    confidence: str = "low"                                # "low" | "medium" | "high"
+    confidence: str = "low"  # "low" | "medium" | "high"
 
     @property
     def display_name(self) -> str:
@@ -40,13 +41,15 @@ class DetectionResult:
 # Detection rules — ordered from most specific to least specific
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _Rule:
     """A single detection rule."""
-    name: str              # Human-readable ecosystem name  e.g. "Next.js"
-    module: str            # Rule module key               e.g. "node"
+
+    name: str  # Human-readable ecosystem name  e.g. "Next.js"
+    module: str  # Rule module key               e.g. "node"
     check: Callable[[Path], bool]
-    weight: int = 1        # Higher = stronger signal
+    weight: int = 1  # Higher = stronger signal
 
 
 _RULES: list[_Rule] = [
@@ -62,7 +65,6 @@ _RULES: list[_Rule] = [
         ),
         weight=3,
     ),
-
     # ── Node.js / generic JS+TS ───────────────────────────────────────────
     _Rule(
         name="Node.js",
@@ -70,7 +72,6 @@ _RULES: list[_Rule] = [
         check=lambda p: _file_exists(p, "package.json"),
         weight=2,
     ),
-
     # ── Django (must come before generic Python) ──────────────────────────
     _Rule(
         name="Django",
@@ -78,7 +79,6 @@ _RULES: list[_Rule] = [
         check=lambda p: _file_exists(p, "manage.py") or _dep_present_py(p, "django"),
         weight=3,
     ),
-
     # ── FastAPI ───────────────────────────────────────────────────────────
     _Rule(
         name="FastAPI",
@@ -86,7 +86,6 @@ _RULES: list[_Rule] = [
         check=lambda p: _dep_present_py(p, "fastapi"),
         weight=3,
     ),
-
     # ── Generic Python ────────────────────────────────────────────────────
     _Rule(
         name="Python",
@@ -100,7 +99,6 @@ _RULES: list[_Rule] = [
         ),
         weight=2,
     ),
-
     # ── Rust ──────────────────────────────────────────────────────────────
     _Rule(
         name="Rust",
@@ -108,7 +106,6 @@ _RULES: list[_Rule] = [
         check=lambda p: _file_exists(p, "Cargo.toml"),
         weight=3,
     ),
-
     # ── Go ────────────────────────────────────────────────────────────────
     _Rule(
         name="Go",
@@ -116,7 +113,6 @@ _RULES: list[_Rule] = [
         check=lambda p: _file_exists(p, "go.mod"),
         weight=3,
     ),
-
     # ── Ruby ─────────────────────────────────────────────────────────────
     _Rule(
         name="Ruby",
@@ -130,6 +126,7 @@ _RULES: list[_Rule] = [
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def detect(project_dir: Path) -> DetectionResult:
     """
@@ -173,6 +170,7 @@ def detect(project_dir: Path) -> DetectionResult:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _file_exists(project_dir: Path, filename: str) -> bool:
     return (project_dir / filename).exists()
 
@@ -184,6 +182,7 @@ def _dep_present(project_dir: Path, dep: str) -> bool:
         return False
     try:
         import json
+
         data = json.loads(pkg.read_text(encoding="utf-8", errors="ignore"))
         all_deps = {
             **data.get("dependencies", {}),

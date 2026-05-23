@@ -24,6 +24,6 @@ PATTERNS = [
     ".yarn/",
     "storybook-static/",
     ".storybook/",
-    "*.d.ts",         # generated type declarations
+    "*.d.ts",  # generated type declarations
     "tsconfig.tsbuildinfo",
 ]

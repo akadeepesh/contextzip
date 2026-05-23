@@ -7,12 +7,10 @@ PATTERNS = [
     ".git/",
     ".svn/",
     ".hg/",
-
     # OS artifacts
     ".DS_Store",
     "Thumbs.db",
     "desktop.ini",
-
     # Editor & IDE
     ".vscode/",
     ".idea/",
@@ -20,12 +18,10 @@ PATTERNS = [
     "*.swo",
     "*.swn",
     ".vim/",
-
     # Logs
     "*.log",
     "logs/",
     "log/",
-
     # Temp & cache
     ".cache/",
     "tmp/",
@@ -33,7 +29,6 @@ PATTERNS = [
     "*.tmp",
     "*.bak",
     "*.orig",
-
     # Secrets & env
     ".env",
     ".env.*",
@@ -41,7 +36,6 @@ PATTERNS = [
     "*.key",
     "*.p12",
     "*.pfx",
-
     # Binaries & media (rarely useful for AI context)
     "*.exe",
     "*.dll",
@@ -60,10 +54,8 @@ PATTERNS = [
     "*.tar",
     "*.gz",
     "*.rar",
-
     # contextzip workspace directory — always excluded regardless of .gitignore state
     ".contextzip/",
-
     # GitHub / repo governance (not useful as AI context)
     "CHANGELOG.md",
     "CHANGELOG",

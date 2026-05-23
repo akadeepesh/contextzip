@@ -12,17 +12,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from contextzip.ai.gemini import select_files, GeminiError, GeminiRateLimitError
+from contextzip.ai.gemini import select_files, GeminiRateLimitError
 from contextzip.filters import ResolveResult
 
 # Sentinels — tell the CLI which selection path was taken
-USED_GEMINI    = "gemini"
+USED_GEMINI = "gemini"
 USED_HEURISTIC = "heuristic"
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def ai_select(
     *,
@@ -66,14 +67,9 @@ def ai_select(
 
     # Map relative path strings back to absolute Path objects
     rel_to_abs: dict[str, Path] = {
-        p.relative_to(project_dir).as_posix(): p
-        for p in resolved.included
+        p.relative_to(project_dir).as_posix(): p for p in resolved.included
     }
-    selected_paths = [
-        rel_to_abs[rel]
-        for rel in selected_rel
-        if rel in rel_to_abs
-    ]
+    selected_paths = [rel_to_abs[rel] for rel in selected_rel if rel in rel_to_abs]
 
     prompt_txt = _build_prompt_txt(prompt, selected_rel, ecosystem, method)
 
@@ -88,6 +84,7 @@ def build_prompt_only_txt(prompt: str, ecosystem: str) -> str:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _build_file_tree(
     included: list[Path],
@@ -128,7 +125,6 @@ def _build_prompt_txt(
     Any AI tool that receives the ZIP immediately sees the task description,
     the framework, and exactly which files were selected and why.
     """
-    from contextzip import __version__
 
     selector_label = (
         "contextzip AI (Gemini)"

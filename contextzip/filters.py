@@ -30,16 +30,16 @@ import pathspec
 # ---------------------------------------------------------------------------
 
 _RULE_REGISTRY: dict[str, str] = {
-    "base":   "contextzip.rules.base",
-    "node":   "contextzip.rules.node",
+    "base": "contextzip.rules.base",
+    "node": "contextzip.rules.node",
     "python": "contextzip.rules.python",
-    "rust":   "contextzip.rules.rust",
-    "go":     "contextzip.rules.go",
-    "ruby":   "contextzip.rules.ruby",
+    "rust": "contextzip.rules.rust",
+    "go": "contextzip.rules.go",
+    "ruby": "contextzip.rules.ruby",
 }
 
 # Files larger than this trigger a warning (but are still included)
-LARGE_FILE_WARN_BYTES = 1 * 1024 * 1024   # 1 MB
+LARGE_FILE_WARN_BYTES = 1 * 1024 * 1024  # 1 MB
 
 # Peek this many bytes to detect binary files
 _BINARY_PEEK = 512
@@ -49,18 +49,20 @@ _BINARY_PEEK = 512
 # Result model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ResolveResult:
-    included:     list[Path] = field(default_factory=list)
-    excluded:     list[Path] = field(default_factory=list)
-    skipped:      list[tuple[Path, str]] = field(default_factory=list)  # (path, reason)
-    large_files:  list[tuple[Path, int]] = field(default_factory=list)  # (path, bytes)
+    included: list[Path] = field(default_factory=list)
+    excluded: list[Path] = field(default_factory=list)
+    skipped: list[tuple[Path, str]] = field(default_factory=list)  # (path, reason)
+    large_files: list[tuple[Path, int]] = field(default_factory=list)  # (path, bytes)
     binary_files: list[Path] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def build_spec(
     rule_modules: list[str],
@@ -86,7 +88,9 @@ def build_spec(
     # Respect the project's own .gitignore if present
     if gitignore_path and gitignore_path.is_file():
         try:
-            lines = gitignore_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+            lines = gitignore_path.read_text(
+                encoding="utf-8", errors="ignore"
+            ).splitlines()
             # Strip comments and blank lines; pathspec handles the rest
             patterns.extend(l for l in lines if l.strip() and not l.startswith("#"))
         except OSError:
@@ -111,13 +115,12 @@ def resolve_files(
     result = ResolveResult()
 
     for abs_path in sorted(project_dir.rglob("*")):
-
         # ── Resolve symlinks safely ──────────────────────────────────────────
         if abs_path.is_symlink():
             try:
                 real = abs_path.resolve(strict=True)
                 if not real.is_file():
-                    continue   # symlink to a dir or missing — skip silently
+                    continue  # symlink to a dir or missing — skip silently
                 abs_path = real
             except (OSError, RuntimeError):
                 # Dangling symlink or resolution loop
@@ -205,7 +208,6 @@ def resolve_files_from_git(
     result = ResolveResult()
 
     for abs_path in sorted(git_files):
-
         # ── Resolve symlinks safely ──────────────────────────────────────────
         if abs_path.is_symlink():
             try:
@@ -269,6 +271,7 @@ def summarise_exclusions(excluded: list[Path], project_dir: Path) -> dict[str, i
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _any_parent_excluded(rel: Path, spec: pathspec.PathSpec) -> bool:
     """True if any directory component of *rel* is matched by *spec*."""

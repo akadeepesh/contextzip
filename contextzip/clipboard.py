@@ -33,22 +33,24 @@ from pathlib import Path
 # Result model
 # ---------------------------------------------------------------------------
 
+
 class Tier(Enum):
-    FILE_ON_CLIPBOARD = 1   # actual file object on clipboard — paste into browser
-    FOLDER_OPENED     = 2   # folder opened / file highlighted in file manager
-    PATH_ONLY         = 3   # nothing automatic; path printed for manual copy
+    FILE_ON_CLIPBOARD = 1  # actual file object on clipboard — paste into browser
+    FOLDER_OPENED = 2  # folder opened / file highlighted in file manager
+    PATH_ONLY = 3  # nothing automatic; path printed for manual copy
 
 
 @dataclass
 class ClipboardResult:
     tier: Tier
-    message: str          # human-readable outcome line
+    message: str  # human-readable outcome line
     success: bool = True  # False only on unexpected errors worth surfacing
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def handle(zip_path: Path) -> ClipboardResult:
     """
@@ -89,6 +91,7 @@ def handle(zip_path: Path) -> ClipboardResult:
 # Tier 1 — file object on clipboard
 # ---------------------------------------------------------------------------
 
+
 def _tier1_macos(zip_path: Path) -> ClipboardResult | None:
     """
     Use osascript to ask Finder to copy the file to the clipboard.
@@ -103,7 +106,9 @@ def _tier1_macos(zip_path: Path) -> ClipboardResult | None:
     try:
         proc = subprocess.run(
             ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=8,
+            capture_output=True,
+            text=True,
+            timeout=8,
         )
         if proc.returncode == 0:
             return ClipboardResult(
@@ -145,12 +150,14 @@ def _tier1_linux(zip_path: Path) -> ClipboardResult | None:
 # Tier 2 — open folder / highlight file
 # ---------------------------------------------------------------------------
 
+
 def _tier2_macos(zip_path: Path) -> ClipboardResult | None:
     """open -R reveals and selects the file in Finder."""
     try:
         proc = subprocess.run(
             ["open", "-R", str(zip_path)],
-            capture_output=True, timeout=6,
+            capture_output=True,
+            timeout=6,
         )
         if proc.returncode == 0:
             return ClipboardResult(
@@ -218,11 +225,9 @@ def _tier2_windows(zip_path: Path) -> ClipboardResult | None:
 # Tier 3 — path only (always succeeds)
 # ---------------------------------------------------------------------------
 
+
 def _tier3(zip_path: Path) -> ClipboardResult:
     return ClipboardResult(
         tier=Tier.PATH_ONLY,
-        message=(
-            f"📄 Copy this path and open it manually:\n"
-            f"   [cyan]{zip_path}[/]"
-        ),
+        message=(f"📄 Copy this path and open it manually:\n   [cyan]{zip_path}[/]"),
     )

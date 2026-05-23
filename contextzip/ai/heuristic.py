@@ -36,49 +36,166 @@ from pathlib import Path
 MAX_FILES = 8
 
 # Words that carry no signal — filtered out before scoring
-_STOPWORDS = frozenset({
-    "i", "a", "an", "the", "to", "in", "on", "at", "of", "for",
-    "and", "or", "but", "is", "it", "be", "do", "my", "this",
-    "that", "with", "from", "want", "need", "make", "update",
-    "change", "fix", "add", "get", "use", "set", "new", "old",
-    "file", "code", "function", "method", "class", "variable",
-})
+_STOPWORDS = frozenset(
+    {
+        "i",
+        "a",
+        "an",
+        "the",
+        "to",
+        "in",
+        "on",
+        "at",
+        "of",
+        "for",
+        "and",
+        "or",
+        "but",
+        "is",
+        "it",
+        "be",
+        "do",
+        "my",
+        "this",
+        "that",
+        "with",
+        "from",
+        "want",
+        "need",
+        "make",
+        "update",
+        "change",
+        "fix",
+        "add",
+        "get",
+        "use",
+        "set",
+        "new",
+        "old",
+        "file",
+        "code",
+        "function",
+        "method",
+        "class",
+        "variable",
+    }
+)
 
 # Directory names that suggest source code worth including
-_SOURCE_DIRS = frozenset({
-    "src", "app", "lib", "libs", "components", "component",
-    "utils", "util", "helpers", "helper", "routes", "route",
-    "pages", "page", "server", "api", "services", "service",
-    "hooks", "hook", "store", "stores", "context", "contexts",
-    "middleware", "handlers", "handler", "controllers", "controller",
-    "views", "view", "models", "model", "core", "common", "shared",
-})
+_SOURCE_DIRS = frozenset(
+    {
+        "src",
+        "app",
+        "lib",
+        "libs",
+        "components",
+        "component",
+        "utils",
+        "util",
+        "helpers",
+        "helper",
+        "routes",
+        "route",
+        "pages",
+        "page",
+        "server",
+        "api",
+        "services",
+        "service",
+        "hooks",
+        "hook",
+        "store",
+        "stores",
+        "context",
+        "contexts",
+        "middleware",
+        "handlers",
+        "handler",
+        "controllers",
+        "controller",
+        "views",
+        "view",
+        "models",
+        "model",
+        "core",
+        "common",
+        "shared",
+    }
+)
 
 # Directory names that suggest low relevance for most coding tasks
-_NOISE_DIRS = frozenset({
-    "test", "tests", "__tests__", "spec", "specs",
-    "docs", "doc", "documentation", "examples", "example",
-    "fixtures", "mocks", "mock", "stubs", "stub",
-    "scripts", "bin", "dist", "build", "out", "coverage",
-})
+_NOISE_DIRS = frozenset(
+    {
+        "test",
+        "tests",
+        "__tests__",
+        "spec",
+        "specs",
+        "docs",
+        "doc",
+        "documentation",
+        "examples",
+        "example",
+        "fixtures",
+        "mocks",
+        "mock",
+        "stubs",
+        "stub",
+        "scripts",
+        "bin",
+        "dist",
+        "build",
+        "out",
+        "coverage",
+    }
+)
 
 # Extensions that suggest runnable/editable source code
-_CODE_EXTENSIONS = frozenset({
-    ".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".rb",
-    ".java", ".kt", ".swift", ".cs", ".cpp", ".c", ".h",
-    ".vue", ".svelte", ".astro",
-})
+_CODE_EXTENSIONS = frozenset(
+    {
+        ".py",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".go",
+        ".rs",
+        ".rb",
+        ".java",
+        ".kt",
+        ".swift",
+        ".cs",
+        ".cpp",
+        ".c",
+        ".h",
+        ".vue",
+        ".svelte",
+        ".astro",
+    }
+)
 
 # Extensions that are config-like (lower relevance unless prompt mentions them)
-_CONFIG_EXTENSIONS = frozenset({
-    ".json", ".toml", ".yaml", ".yml", ".ini", ".cfg", ".env",
-    ".md", ".txt", ".lock", ".sum",
-})
+_CONFIG_EXTENSIONS = frozenset(
+    {
+        ".json",
+        ".toml",
+        ".yaml",
+        ".yml",
+        ".ini",
+        ".cfg",
+        ".env",
+        ".md",
+        ".txt",
+        ".lock",
+        ".sum",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def select_files(
     *,
@@ -123,6 +240,7 @@ def select_files(
 # ---------------------------------------------------------------------------
 # Scoring
 # ---------------------------------------------------------------------------
+
 
 def _score(rel_path: str, tokens: set[str], size_bytes: int) -> float:
     """Compute a relevance score for a single file path."""
@@ -182,6 +300,7 @@ def _score(rel_path: str, tokens: set[str], size_bytes: int) -> float:
 # ---------------------------------------------------------------------------
 # Text helpers
 # ---------------------------------------------------------------------------
+
 
 def _tokenize(text: str) -> set[str]:
     """

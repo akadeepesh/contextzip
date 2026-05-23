@@ -47,27 +47,29 @@ _INCLUDE_CODES = {"M", "A", "R", "C", "U", "?"}
 # Result / error models
 # ---------------------------------------------------------------------------
 
+
 class GitErrorKind(Enum):
-    NOT_A_REPO    = "not_a_repo"
+    NOT_A_REPO = "not_a_repo"
     GIT_NOT_FOUND = "git_not_found"
     COMMAND_ERROR = "command_error"
 
 
 @dataclass
 class GitError:
-    kind:    GitErrorKind
-    message: str           # human-readable, ready to print
+    kind: GitErrorKind
+    message: str  # human-readable, ready to print
 
 
 @dataclass
 class GitChanges:
     """Successful result from :func:`get_changed_files`."""
-    files:          list[Path] = field(default_factory=list)  # absolute paths
-    staged:         list[str]  = field(default_factory=list)  # rel paths (display)
-    unstaged:       list[str]  = field(default_factory=list)  # rel paths (display)
-    untracked:      list[str]  = field(default_factory=list)  # rel paths (display)
-    deleted:        list[str]  = field(default_factory=list)  # rel paths (skipped)
-    submodules:     list[str]  = field(default_factory=list)  # rel paths (skipped)
+
+    files: list[Path] = field(default_factory=list)  # absolute paths
+    staged: list[str] = field(default_factory=list)  # rel paths (display)
+    unstaged: list[str] = field(default_factory=list)  # rel paths (display)
+    untracked: list[str] = field(default_factory=list)  # rel paths (display)
+    deleted: list[str] = field(default_factory=list)  # rel paths (skipped)
+    submodules: list[str] = field(default_factory=list)  # rel paths (skipped)
 
     @property
     def is_empty(self) -> bool:
@@ -77,6 +79,7 @@ class GitChanges:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def get_changed_files(project_dir: Path) -> GitChanges | GitError:
     """
@@ -127,7 +130,9 @@ def get_changed_files(project_dir: Path) -> GitChanges | GitError:
         text=True,
         timeout=8,
     )
-    repo_root = Path(root_proc.stdout.strip()) if root_proc.returncode == 0 else project_dir
+    repo_root = (
+        Path(root_proc.stdout.strip()) if root_proc.returncode == 0 else project_dir
+    )
 
     # ── Run git status --porcelain ───────────────────────────────────────────
     try:
@@ -159,6 +164,7 @@ def get_changed_files(project_dir: Path) -> GitChanges | GitError:
 # Parser
 # ---------------------------------------------------------------------------
 
+
 def _parse_porcelain(
     output: str,
     repo_root: Path,
@@ -177,15 +183,15 @@ def _parse_porcelain(
         if not raw_line or len(raw_line) < 4:
             continue
 
-        xy       = raw_line[:2]          # e.g. "M ", " M", "??", "A "
+        xy = raw_line[:2]  # e.g. "M ", " M", "??", "A "
         rel_path = raw_line[3:].strip()  # path relative to repo root
 
         # Strip surrounding quotes git adds for paths with spaces/special chars
         if rel_path.startswith('"') and rel_path.endswith('"'):
             rel_path = rel_path[1:-1]
 
-        x = xy[0]   # staged status
-        y = xy[1]   # unstaged status
+        x = xy[0]  # staged status
+        y = xy[1]  # unstaged status
 
         # Skip ignored files
         if x == "!" and y == "!":
@@ -231,6 +237,7 @@ def _parse_porcelain(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _is_submodule(path: Path) -> bool:
     """

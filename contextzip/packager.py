@@ -43,13 +43,14 @@ _GITIGNORE_ENTRY = ".contextzip/"
 # Result model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PackageResult:
-    zip_path:            Path
-    file_count:          int
-    uncompressed_bytes:  int
-    compressed_bytes:    int
-    skipped_in_zip:      list[tuple[Path, str]] = field(default_factory=list)
+    zip_path: Path
+    file_count: int
+    uncompressed_bytes: int
+    compressed_bytes: int
+    skipped_in_zip: list[tuple[Path, str]] = field(default_factory=list)
 
     @property
     def compression_ratio(self) -> float:
@@ -69,6 +70,7 @@ class PackageResult:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def create_zip(
     resolve_result: ResolveResult,
@@ -119,14 +121,12 @@ def create_zip(
         console=console,
         transient=True,
     ) as progress:
-
-        total_bytes = sum(
-            p.stat().st_size for p in included if p.is_file()
-        )
+        total_bytes = sum(p.stat().st_size for p in included if p.is_file())
         task = progress.add_task("Compressing…", total=max(total_bytes, 1))
 
         with zipfile.ZipFile(
-            zip_path, "w",
+            zip_path,
+            "w",
             compression=zipfile.ZIP_DEFLATED,
             compresslevel=6,
         ) as zf:
@@ -175,6 +175,7 @@ def create_zip(
 # ---------------------------------------------------------------------------
 # Workspace helpers
 # ---------------------------------------------------------------------------
+
 
 def _find_git_root(start: Path) -> Path | None:
     """
@@ -278,6 +279,7 @@ def _workspace_output_path(
 # ---------------------------------------------------------------------------
 # Legacy helper (kept for any internal callers that may reference it)
 # ---------------------------------------------------------------------------
+
 
 def _safe_name(name: str) -> str:
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in name)

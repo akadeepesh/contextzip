@@ -27,6 +27,7 @@ the flags naturally follow the verb, matching the git / docker / cargo UX:
 from __future__ import annotations
 
 import os
+import webbrowser
 from pathlib import Path
 
 import click
@@ -36,6 +37,7 @@ from rich.table import Table
 from rich import box
 
 from contextzip import __version__
+from contextzip.config import get_api_key, save_api_key, delete_api_key, config_path, diagnose_api_key
 from contextzip.detector import detect
 from contextzip.filters import (
     build_spec,
@@ -66,6 +68,15 @@ def _modifier_options(f):
       contextzip exclude CHANGELOG.md --dry-run --verbose
     """
     decorators = [
+        click.option(
+            "--prompt", "-p",
+            default=None, metavar="TEXT",
+            help=(
+                "Describe your task in natural language. contextzip uses Gemini AI "
+                "to select only the files relevant to that task. "
+                "Requires a free Gemini API key (you will be guided on first use)."
+            ),
+        ),
         click.option(
             "--dry-run", "-n",
             is_flag=True, default=False,
@@ -136,6 +147,7 @@ def main(
     ctx: click.Context,
     include: tuple[str, ...],
     exclude: tuple[str, ...],
+    prompt: str | None,
     dry_run: bool,
     output: str | None,
     no_clipboard: bool,
@@ -165,6 +177,7 @@ def main(
     _run(
         extra_exclude=list(exclude),
         include_only=list(include),
+        prompt=prompt,
         dry_run=dry_run,
         output=output,
         no_clipboard=no_clipboard,
@@ -183,6 +196,7 @@ def main(
 @_modifier_options
 def cmd_exclude(
     patterns: tuple[str, ...],
+    prompt: str | None,
     dry_run: bool,
     output: str | None,
     no_clipboard: bool,
@@ -206,6 +220,7 @@ def cmd_exclude(
     _run(
         extra_exclude=list(patterns),
         include_only=None,
+        prompt=prompt,
         dry_run=dry_run,
         output=output,
         no_clipboard=no_clipboard,
@@ -224,6 +239,7 @@ def cmd_exclude(
 @_modifier_options
 def cmd_include(
     paths: tuple[str, ...],
+    prompt: str | None,
     dry_run: bool,
     output: str | None,
     no_clipboard: bool,
@@ -246,6 +262,7 @@ def cmd_include(
     _run(
         extra_exclude=None,
         include_only=list(paths),
+        prompt=prompt,
         dry_run=dry_run,
         output=output,
         no_clipboard=no_clipboard,
@@ -263,6 +280,7 @@ def _run(
     *,
     extra_exclude: list[str] | None,
     include_only: list[str] | None,
+    prompt: str | None,
     dry_run: bool,
     output: str | None,
     no_clipboard: bool,
@@ -404,14 +422,33 @@ def _run(
 
     # ── Dry run ──────────────────────────────────────────────────────────────
     if dry_run:
-        console.print()
-        console.print(
-            Panel.fit(
-                "[yellow]Dry run — no ZIP created.[/]\n"
-                "[dim]Remove --dry-run to produce the archive.[/]",
-                border_style="yellow", padding=(0, 2),
+        # If --prompt is set, still run AI selection so the user can preview
+        # which files would be chosen — but don't create the ZIP.
+        if prompt:
+            diagnosis = diagnose_api_key()
+            if diagnosis:
+                console.print(f"\n  [yellow]⚠[/]  {diagnosis}\n")
+            api_key = get_api_key()
+            if not api_key:
+                api_key = _onboard_api_key()
+                if not api_key:
+                    raise SystemExit(0)
+            _run_ai_selection_preview(
+                resolved=resolved,
+                project_dir=project_dir,
+                prompt=prompt,
+                ecosystem=detection.display_name,
+                api_key=api_key,
             )
-        )
+        else:
+            console.print()
+            console.print(
+                Panel.fit(
+                    "[yellow]Dry run — no ZIP created.[/]\n"
+                    "[dim]Remove --dry-run to produce the archive.[/]",
+                    border_style="yellow", padding=(0, 2),
+                )
+            )
         return
 
     if not resolved.included:
@@ -420,6 +457,38 @@ def _run(
             "try [cyan]contextzip include PATH[/] or [cyan]-i PATH[/] to override."
         )
         return
+
+    # ── AI-powered file selection (--prompt mode) ────────────────────────────
+    prompt_txt: str | None = None
+
+    if prompt:
+        diagnosis = diagnose_api_key()
+        if diagnosis:
+            console.print(f"\n  [yellow]⚠[/]  {diagnosis}\n")
+        api_key = get_api_key()
+        if not api_key:
+            api_key = _onboard_api_key()
+            if not api_key:
+                raise SystemExit(0)
+
+        selected_paths, prompt_txt = _run_ai_selection(
+            resolved=resolved,
+            project_dir=project_dir,
+            prompt=prompt,
+            ecosystem=detection.display_name,
+            api_key=api_key,
+        )
+
+        if not selected_paths:
+            console.print(
+                "\n[red]AI selection returned no files.[/] "
+                "Try a more specific prompt, or run without [cyan]--prompt[/] "
+                "to package the full project."
+            )
+            raise SystemExit(1)
+
+        # Replace the resolved file list with only the AI-selected files
+        resolved.included = selected_paths
 
     # ── Create ZIP ───────────────────────────────────────────────────────────
     console.print()
@@ -432,6 +501,7 @@ def _run(
             output_path=output_path,
             console=console,
             git_changes=git_changes,
+            prompt_txt=prompt_txt,
         )
     except Exception as exc:
         console.print(f"\n[red]Failed to create ZIP:[/] {exc}")
@@ -456,6 +526,295 @@ def _run(
         with console.status("[cyan]Preparing clipboard…[/]", spinner="dots"):
             cb = clipboard_handle(result.zip_path)
         _print_clipboard_result(cb)
+
+
+
+# ---------------------------------------------------------------------------
+# API key onboarding
+# ---------------------------------------------------------------------------
+
+_GEMINI_KEY_URL = "https://aistudio.google.com/apikey"
+
+
+def _open_browser_silent(url: str) -> None:
+    """
+    Open *url* in the default browser, suppressing all stderr output.
+
+    On Linux, xdg-open frequently emits KDE/DBus/MIME warnings to stderr
+    that are completely unrelated to contextzip and appear right on top of
+    the API key prompt, confusing users. We redirect both stdout and stderr
+    to /dev/null to keep the terminal clean.
+    """
+    import subprocess
+    try:
+        subprocess.Popen(
+            ["xdg-open", url],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    except (FileNotFoundError, OSError):
+        pass
+    # macOS / Windows fallback
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+
+
+def _onboard_api_key() -> str | None:
+    """
+    Guide the user through getting and saving a Gemini API key.
+
+    Returns the key string if successfully configured, or None if the
+    user declined or provided nothing.
+    """
+    console.print()
+    console.print(
+        Panel(
+            "  [bold]--prompt[/] requires a free Gemini API key.\n\n"
+            "  contextzip uses [bold cyan]Google AI Studio[/] — "
+            "no credit card needed.\n\n"
+            f"  [dim]Get your free key at:[/]\n"
+            f"  [bold cyan link={_GEMINI_KEY_URL}]{_GEMINI_KEY_URL}[/]",
+            title="[bold yellow]Gemini API Key Required[/]",
+            border_style="yellow",
+            padding=(0, 2),
+        )
+    )
+    console.print()
+
+    open_browser = click.confirm(
+        "  Open Google AI Studio in your browser now?",
+        default=True,
+    )
+    if open_browser:
+        _open_browser_silent(_GEMINI_KEY_URL)
+        console.print(
+            "  [dim]Browser opened. Generate a key, then come back here.[/]"
+        )
+
+    console.print()
+    console.print("  [dim]─────────────────────────────────────────────[/]")
+    console.print("  Once you have your key, paste it below and press [bold]Enter[/].")
+    console.print("  [dim]─────────────────────────────────────────────[/]")
+    console.print()
+    key = click.prompt(
+        "  Paste your API key",
+        hide_input=True,
+        prompt_suffix=" › ",
+    ).strip()
+
+    if not key:
+        console.print("\n  [red]No key provided. Exiting.[/]")
+        return None
+
+    # Basic sanity check — Gemini keys start with "AIza"
+    if not key.startswith("AIza"):
+        console.print(
+            "\n  [yellow]⚠[/]  That doesn't look like a Gemini key "
+            "(expected it to start with [cyan]AIza[/]).\n"
+            "  [dim]Double-check you copied the full key from AI Studio.[/]"
+        )
+        if not click.confirm("\n  Save it anyway?", default=False):
+            return None
+
+    try:
+        save_api_key(key)
+        console.print(
+            f"\n  [green]✓[/]  Key saved to "
+            f"[dim]{config_path()}[/]\n"
+            f"  [dim]You won't be asked again. "
+            f"Run [cyan]contextzip config --reset-key[/] to change it.[/]"
+        )
+    except OSError as exc:
+        console.print(
+            f"\n  [yellow]⚠[/]  Could not save key to disk ([dim]{exc}[/]).\n"
+            f"  [dim]Set [cyan]GEMINI_API_KEY[/] as an environment variable "
+            f"to avoid this prompt next time.[/]"
+        )
+
+    console.print()
+    return key
+
+
+# ---------------------------------------------------------------------------
+# AI selection helpers
+# ---------------------------------------------------------------------------
+
+def _run_ai_selection(
+    *,
+    resolved,
+    project_dir: Path,
+    prompt: str,
+    ecosystem: str,
+    api_key: str,
+) -> tuple[list[Path], str]:
+    """
+    Call the AI selector and return (selected_paths, prompt_txt).
+    Handles display of progress, heuristic fallback warning, and errors.
+    Raises SystemExit on hard failure.
+    """
+    from contextzip.ai.selector import ai_select, USED_HEURISTIC
+    from contextzip.ai.gemini import GeminiError
+
+    console.print()
+    with console.status(
+        "[cyan]Asking Gemini to select relevant files…[/]", spinner="dots"
+    ):
+        try:
+            selected_paths, prompt_txt, method = ai_select(
+                resolved=resolved,
+                project_dir=project_dir,
+                prompt=prompt,
+                ecosystem=ecosystem,
+                api_key=api_key,
+            )
+        except GeminiError as exc:
+            console.print(
+                Panel.fit(
+                    f"[red]Gemini error:[/] {exc}",
+                    border_style="red", padding=(0, 2),
+                )
+            )
+            raise SystemExit(1)
+
+    if method == USED_HEURISTIC:
+        console.print(
+            "  [yellow]⚠[/]  [dim]Gemini rate limited — used keyword heuristic instead. "
+            "Results may be less precise. Try again in a moment for AI selection.[/]"
+        )
+
+    _print_ai_selection(selected_paths, project_dir, prompt)
+    return selected_paths, prompt_txt
+
+
+def _run_ai_selection_preview(
+    *,
+    resolved,
+    project_dir: Path,
+    prompt: str,
+    ecosystem: str,
+    api_key: str,
+) -> None:
+    """
+    Run AI selection and show the result without creating a ZIP.
+    Used when --dry-run and --prompt are combined.
+    """
+    from contextzip.ai.selector import ai_select, USED_HEURISTIC
+    from contextzip.ai.gemini import GeminiError
+
+    console.print()
+    with console.status(
+        "[cyan]Asking Gemini to select relevant files…[/]", spinner="dots"
+    ):
+        try:
+            selected_paths, _, method = ai_select(
+                resolved=resolved,
+                project_dir=project_dir,
+                prompt=prompt,
+                ecosystem=ecosystem,
+                api_key=api_key,
+            )
+        except GeminiError as exc:
+            console.print(
+                Panel.fit(
+                    f"[red]Gemini error:[/] {exc}",
+                    border_style="red", padding=(0, 2),
+                )
+            )
+            raise SystemExit(1)
+
+    if method == USED_HEURISTIC:
+        console.print(
+            "  [yellow]⚠[/]  [dim]Gemini rate limited — used keyword heuristic instead. "
+            "Results may be less precise. Try again in a moment for AI selection.[/]"
+        )
+
+    _print_ai_selection(selected_paths, project_dir, prompt)
+    console.print()
+    console.print(
+        Panel.fit(
+            "[yellow]Dry run — no ZIP created.[/]\n"
+            "[dim]Remove --dry-run to package these files.[/]",
+            border_style="yellow", padding=(0, 2),
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: config
+# ---------------------------------------------------------------------------
+
+@main.command("config")
+@click.option(
+    "--reset-key",
+    is_flag=True, default=False,
+    help="Clear the stored Gemini API key and re-run the setup prompt.",
+)
+@click.option(
+    "--show-key-path",
+    is_flag=True, default=False,
+    help="Print the path to the config file and exit.",
+)
+def cmd_config(reset_key: bool, show_key_path: bool) -> None:
+    """
+    Manage contextzip configuration.
+
+    \b
+    EXAMPLES
+      contextzip config --reset-key       # clear stored API key, re-onboard
+      contextzip config --show-key-path   # print config file location
+    """
+    if show_key_path:
+        console.print(f"\n  [dim]Config file:[/] [cyan]{config_path()}[/]\n")
+        return
+
+    if reset_key:
+        removed = delete_api_key()
+        if removed:
+            console.print(
+                "\n  [green]✓[/]  API key removed from "
+                f"[dim]{config_path()}[/]"
+            )
+        else:
+            console.print("\n  [dim]No API key was stored.[/]")
+
+        console.print()
+        new_key = _onboard_api_key()
+        if not new_key:
+            console.print(
+                "  [dim]You can set [cyan]GEMINI_API_KEY[/] as an environment "
+                "variable instead.[/]\n"
+            )
+        return
+
+    # Default: show current config status
+    key = get_api_key()
+    from_env = bool(os.environ.get("GEMINI_API_KEY", "").strip())
+
+    if key:
+        masked = key[:8] + "…" + key[-4:] if len(key) > 12 else "****"
+        source = "[dim](from environment variable)[/]" if from_env else f"[dim]({config_path()})[/]"
+        console.print(
+            Panel(
+                f"  [dim]Gemini API key:[/]  [green]{masked}[/]  {source}\n\n"
+                "  [dim]Run [cyan]contextzip config --reset-key[/] to change it.[/]",
+                title="[bold]contextzip config[/]",
+                border_style="cyan", padding=(0, 2),
+            )
+        )
+    else:
+        console.print(
+            Panel(
+                "  No Gemini API key configured.\n\n"
+                "  Run [cyan]contextzip --prompt \"your task\"[/] to set one up,\n"
+                "  or [cyan]contextzip config --reset-key[/] to go through setup now.",
+                title="[bold]contextzip config[/]",
+                border_style="yellow", padding=(0, 2),
+            )
+        )
+    console.print()
 
 
 # ---------------------------------------------------------------------------
@@ -625,6 +984,39 @@ def _print_package_result(result) -> None:
             title="[bold green]✓ ZIP created[/]",
             border_style="green", padding=(0, 1),
         )
+    )
+
+
+def _print_ai_selection(
+    selected_paths: list[Path],
+    project_dir: Path,
+    prompt: str,
+) -> None:
+    """Display a panel showing the files Gemini selected."""
+    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
+    table.add_column(style="cyan")
+    table.add_column(style="dim")
+
+    for p in selected_paths:
+        try:
+            rel = p.relative_to(project_dir).as_posix()
+            size = _human_size(p.stat().st_size)
+        except (ValueError, OSError):
+            rel = str(p)
+            size = "?"
+        table.add_row(rel, size)
+
+    console.print(
+        Panel(
+            table,
+            title=f"[bold cyan]AI Selected — [dim]\"{prompt}\"[/][/]",
+            border_style="cyan", padding=(0, 1),
+        )
+    )
+    console.print(
+        f"  [dim]↳ {len(selected_paths)} file"
+        f"{'s' if len(selected_paths) != 1 else ''} selected by Gemini "
+        f"· prompt.txt will be included in the ZIP[/]"
     )
 
 

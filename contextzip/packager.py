@@ -76,6 +76,7 @@ def create_zip(
     output_path: Path | None,
     console: Console,
     git_changes: bool = False,
+    prompt_txt: str | None = None,
 ) -> PackageResult:
     """
     Write the included files from *resolve_result* into a ZIP archive.
@@ -86,6 +87,10 @@ def create_zip(
     Otherwise the archive is written to the .contextzip/ workspace
     directory (created automatically) at the git root, or the CWD if
     no git repository is detected.
+
+    If *prompt_txt* is provided (set when --prompt is used), a ``prompt.txt``
+    file is written as the first entry in the ZIP. Any AI tool that receives
+    the ZIP will immediately see the task description and selected file list.
 
     Returns a :class:`PackageResult` with compression stats and any
     files that had to be skipped during writing (e.g. permission denied).
@@ -125,6 +130,10 @@ def create_zip(
             compression=zipfile.ZIP_DEFLATED,
             compresslevel=6,
         ) as zf:
+            # Write prompt.txt first so it's the first thing AI tools see
+            if prompt_txt is not None:
+                zf.writestr("prompt.txt", prompt_txt.encode("utf-8"))
+
             for abs_path in included:
                 if not abs_path.is_file():
                     continue

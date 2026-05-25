@@ -119,6 +119,40 @@ contextzip --output ~/Desktop/project-context.zip
 
 ---
 
+## Python API
+
+contextzip is also usable as a library. All CLI capabilities are available as plain Python functions — no Click, no Rich output, no `SystemExit`.
+
+```python
+from contextzip import get_git_changes, get_files, create_zip
+
+# Get changed files and use them directly
+collection = get_git_changes()
+for f in collection.files:          # plain pathlib.Path objects
+    upload(f)                       # no zip required
+
+# Or zip them and upload the archive
+pkg = create_zip(collection, output="/tmp/changes.zip")
+with open(pkg.zip_path, "rb") as f:
+    upload_to_s3(f)
+
+# Full project scan with filters
+collection = get_files(include=["src/"], exclude=["tests/"])
+pkg = create_zip(collection, output="/tmp/upload.zip")
+print(f"{pkg.file_count} files, {pkg.compressed_bytes} bytes")
+```
+
+| Function | Description |
+|---|---|
+| `get_git_changes(path?)` | Modified, added, and untracked files from git |
+| `get_files(path?, include?, exclude?)` | All project files after exclusion rules |
+| `create_zip(collection, output?)` | Write a `FileCollection` to a ZIP archive |
+| `detect_ecosystem(path?)` | Detect framework and confidence level |
+
+All functions default `path` to `Path.cwd()`. Errors raise typed exceptions (`NotARepositoryError`, `GitNotFoundError`, `NoFilesError`, etc.) rather than exiting.
+
+---
+
 ## AI-powered file selection
 
 The `--prompt` flag lets you describe a task in plain English. contextzip scans your project, builds a lightweight file map, and asks Gemini to return the minimum set of files needed for that task — typically 2–5, never more than 10. The result is a tightly scoped ZIP with only what you'd actually open to make the change.

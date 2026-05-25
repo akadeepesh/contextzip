@@ -88,7 +88,7 @@ def select_files(
         Human-readable detected framework string, e.g. "Next.js + TypeScript".
         Gives the model important context for relevance scoring.
     model:
-        Gemini model identifier. Defaults to gemini-2.0-flash-lite.
+        Gemini model identifier. Defaults to gemini-2.5-flash-lite.
 
     Returns
     -------

@@ -274,13 +274,3 @@ def _workspace_output_path(
             pass
 
     return workspace / filename
-
-
-# ---------------------------------------------------------------------------
-# Legacy helper (kept for any internal callers that may reference it)
-# ---------------------------------------------------------------------------
-
-
-def _safe_name(name: str) -> str:
-    safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in name)
-    return safe[:48] or "project"

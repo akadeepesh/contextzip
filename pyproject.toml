@@ -43,4 +43,4 @@ contextzip = "contextzip.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["contextzip", "contextzip.rules"]
+include = ["contextzip", "contextzip.rules", "contextzip.rules.errors"]

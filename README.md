@@ -22,6 +22,7 @@ contextzip eliminates that entirely. Run it from your project root — it detect
 - **Respects `.gitignore`** — your existing ignore patterns are honoured automatically
 - **Git-aware packaging** — use `--git-changes` to package only modified, staged, and untracked files; perfect for incremental debugging and PR review sessions
 - **AI-powered file selection** — describe your task in plain English with `--prompt` and Gemini selects the minimum relevant files automatically, no manual hunting required
+- **Terminal error watcher** — wrap any dev server with `contextzip watch` to auto-detect errors and package a ready-to-upload debug context in one keypress
 - **Persistent workspace** — all generated ZIPs land in `.contextzip/` at your project root, discoverable, reusable, and git-ignored automatically
 - **Warns before it's a problem** — flags large (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
 - **Handles edge cases** — dangling symlinks, unreadable files, and paths outside the project tree are caught and reported, never silently dropped
@@ -87,7 +88,7 @@ contextzip [OPTIONS]
 | `--no-clipboard` | Skip the clipboard / folder-open step |
 | `--no-gitignore` | Ignore the project's `.gitignore` |
 
-**Subcommands:** `exclude`, `include`, `config` — run `contextzip --help` for full details.
+**Subcommands:** `exclude`, `include`, `watch`, `config` — run `contextzip --help` for full details.
 
 ---
 
@@ -141,6 +142,41 @@ Manage your key at any time:
 contextzip config               # show current key status
 contextzip config --reset-key   # clear and re-run setup
 ```
+
+---
+
+## Terminal error watcher
+
+The `watch` command wraps your dev server, buffers its output, and packages a debug-ready ZIP the moment you spot an error — no manual file hunting, no copy-pasting stack traces.
+
+```bash
+contextzip watch -- npm run dev
+contextzip watch -- python manage.py runserver
+```
+
+contextzip starts your process normally. You see output exactly as you would without it. In the background, it watches the stream for errors. When one is detected, a prompt appears directly beneath the error output:
+
+```
+╭─ contextzip · error detected ─────────────────────╮
+│  Press [D] to package debug context  [S] to skip  │
+╰───────────────────────────────────────────────────╯
+```
+
+Press **D** and contextzip immediately writes `.contextzip/debug-context.zip`. Your server keeps running — no restart, no interruption.
+
+**What's in the ZIP:**
+
+| File | Contents |
+|---|---|
+| `prompt.txt` | Auto-generated: detected framework, error type, and task description — ready to paste into any AI tool |
+| `terminal-error.txt` | The cleaned, noise-stripped error block and stack trace |
+| `source-files.zip` | Source files referenced in the stack trace, paths preserved |
+
+**On Ctrl+C:** If no errors were packaged during the session, contextzip offers one final prompt to capture the full session output — useful when something looked wrong but didn't match a known error pattern.
+
+**Supported frameworks:** Python, Django, FastAPI, Node.js, Next.js, React. Each has its own error detection patterns and noise filters so the output stays clean across stacks.
+
+> **Note:** `watch` works best with dev servers that don't read stdin interactively (`npm run dev`, `manage.py runserver`, etc.). PTY emulation is not used — on Windows, color passthrough may be limited.
 
 ---
 

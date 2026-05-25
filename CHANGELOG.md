@@ -319,3 +319,55 @@ This project uses [Semantic Versioning](https://semver.org/).
   independently testable without monkey-patching
 * No new runtime dependencies introduced — `watch` uses only stdlib
   (`subprocess`, `threading`, `queue`, `termios`/`msvcrt`, `zipfile`)
+
+## [0.3.2] — 2026-05-25
+
+### Added
+
+* **Python API** — contextzip is now usable as a library, not just a CLI tool:
+  * `get_git_changes(path?)` — returns a `FileCollection` of git-modified,
+    added, and untracked files; applies base safety rules (no secrets, no
+    binaries) automatically
+  * `get_files(path?, include?, exclude?, use_gitignore?)` — returns a
+    `FileCollection` of all project files after applying ecosystem rules,
+    `.gitignore`, and any extra exclusion patterns
+  * `create_zip(collection, output?)` — writes a `FileCollection` to a ZIP
+    archive and returns a `PackageResult`; output path is caller-controlled
+  * `detect_ecosystem(path?)` — returns a `DetectionResult` with ecosystem
+    names, display string, and confidence level
+  * `FileCollection` — unified return type for `get_git_changes` and
+    `get_files`; supports iteration, `len()`, and `bool()` directly; `.files`
+    is always a plain `list[pathlib.Path]` usable without zipping
+  * `PackageResult` re-exported from the top-level package
+  * Exception hierarchy: `ContextzipError` (base), `NotARepositoryError`,
+    `GitNotFoundError`, `GitCommandError`, `NoFilesError`
+  * All API functions default `path` to `Path.cwd()`, matching CLI behaviour
+
+* `contextzip/api.py` — new module implementing the public API; no Click, no
+  Rich output, no `SystemExit`; raises typed exceptions on failure
+* `contextzip/packager.py` — added `create_zip_silent()` and
+  `_workspace_output_path_silent()`: same ZIP logic as the CLI path but
+  without a `Console` dependency, used internally by the API
+
+### Changed
+
+* `contextzip/__init__.py` — now exports the full public API
+  (`get_git_changes`, `get_files`, `create_zip`, `detect_ecosystem`,
+  `FileCollection`, `PackageResult`, and all exception types) so
+  `from contextzip import ...` works without knowing internal module paths
+
+### Fixed
+
+* `filters.py` — symlink guard inner `try` block repeated the identical
+  `relative_to` call that already failed in the outer block; the fallback now
+  correctly uses the pre-resolve (`original_path`) to compute the relative
+  path for symlinks that point outside the project tree
+* `watcher.py` — `_drain_output_queue` silently consumed sentinel values
+  (`raw=None`) with `continue`, making them invisible to `_check_reader_done`;
+  sentinels are now put back into the queue so done flags are set correctly
+* `watcher.py` — `_read_key_windows` had no timeout and would spin forever in
+  non-interactive terminals; now uses a 60-second `monotonic` deadline
+  matching the existing Unix `select` timeout
+* `packager.py` — removed unused `_safe_name` helper
+* `ai/gemini.py` — corrected stale docstring (`gemini-2.0-flash-lite` →
+  `gemini-2.5-flash-lite`) to match the actual `DEFAULT_MODEL` constant

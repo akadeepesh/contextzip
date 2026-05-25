@@ -231,3 +231,91 @@ This project uses [Semantic Versioning](https://semver.org/).
     generation; returns `(paths, prompt_txt, method)` so callers know
     which selection path was taken
 * Added `httpx` as a required runtime dependency
+
+## [0.3.1] — 2026-05-25
+
+### Added
+
+* `contextzip watch -- <command>` subcommand — wraps any dev server or build
+  process, buffers its output, detects errors automatically, and packages a
+  debug-ready ZIP in a single keypress
+  * Supports `npm run dev`, `python manage.py runserver`, and any process
+    that writes errors to stdout/stderr
+  * On error detection, renders an inline prompt beneath the error output:
+    `[D] package debug context   [S] skip`
+  * Pressing `D` writes `.contextzip/debug-context.zip` immediately; the
+    wrapped process continues running uninterrupted
+  * On `Ctrl+C`, if no errors were packaged during the session, a final
+    prompt offers to capture the full session output as a fallback
+* `debug-context.zip` — flat ZIP structure produced by `watch`:
+  * `prompt.txt` — auto-generated from detected framework, error type, and
+    referenced files; no `--prompt` flag required from the user
+  * `terminal-error.txt` — cleaned, noise-stripped error block and stack trace
+  * `source-files.zip` — inner ZIP containing source files extracted from
+    stack frames, with relative paths preserved
+* `contextzip/error_parser.py` — full terminal output processing pipeline:
+  * `strip_ansi()` — removes all CSI, OSC, and Fe escape sequences and bare
+    carriage returns from raw process output
+  * `detect_error_block()` — backward scan through the rolling buffer to find
+    the most recent error; walks back from terminal exception lines to capture
+    the full block including the `Traceback` header
+  * `extract_paths()` — runs per-framework path regexes on the error block,
+    resolves relative and bare filenames, and filters out stdlib, venv, and
+    `node_modules` paths
+  * `strip_noise()` — removes known noise lines (request logs, startup
+    banners, HMR chatter) and collapses blank line runs
+  * `build_prompt_txt()` — generates structured, AI-ready `prompt.txt` content
+  * `process_buffer()` — convenience function running the full pipeline in a
+    single call
+* `contextzip/watcher.py` — process management and packaging:
+  * Spawns child via `subprocess.Popen` with piped stdout/stderr; two daemon
+    threads drain pipes concurrently into a `deque(maxlen=2000)` rolling buffer
+  * Detection thread polls the buffer every 300ms using `detect_error_block()`
+  * Error deduplication: MD5 of the first three non-blank lines of an error
+    block; same signature within a session suppresses repeat prompts
+  * Single-keypress D/S prompt via `termios`/`tty` raw mode on Unix and
+    `msvcrt` on Windows, with an `input()` fallback for unusual environments
+  * Child terminated cleanly on `Ctrl+C`: SIGTERM → 3-second grace period →
+    SIGKILL
+* `contextzip/rules/errors/python.py` — error detection pattern sets for
+  Python, Django, and FastAPI:
+  * 18 error start patterns covering tracebacks, syntax errors, Django/DRF
+    exceptions, uvicorn/gunicorn ERROR logs, and pytest failures
+  * 4 stack frame path patterns
+  * 21 noise patterns for Django startup, request logs, pytest collection
+    output, and pip install chatter
+* `contextzip/rules/errors/node.py` — error detection pattern sets for
+  Node.js, Next.js, and React:
+  * 33 error start patterns covering JS runtime errors, Next.js error symbols
+    (`✗`, `×`, `⨯`), webpack/bundler errors, npm errors, and unhandled
+    promise rejections
+  * 7 stack frame and import path patterns
+  * 32 noise patterns for Next.js/Vite/CRA startup, HMR chatter, and request
+    logs
+
+### Changed
+
+* `cli.py` refactored from a single 1,100-line file into four focused modules
+  with no behaviour changes:
+  * `cli.py` — Click group, four subcommands, and `_run()`; routing only
+  * `cli_display.py` — all Rich rendering helpers (`print_detection`,
+    `print_scan_summary`, `print_file_warnings`, `print_package_result`, etc.)
+  * `cli_ai.py` — AI selection orchestration and `normalize_pattern`
+  * `cli_onboard.py` — Gemini API key onboarding flow and browser launch
+* `pyproject.toml` updated to include `contextzip.rules.errors` in package
+  discovery
+
+### Developer Notes
+
+* `contextzip/rules/errors/` follows the same pattern as `contextzip/rules/`:
+  one file per ecosystem, each exporting `ERROR_START_PATTERNS`,
+  `PATH_PATTERNS`, and `NOISE_PATTERNS` as lists of compiled `re.Pattern`
+  objects — adding support for a new framework means adding one file
+* `_load_patterns()` in `error_parser.py` maps ecosystem names from
+  `DetectionResult.ecosystems` to rule modules; unrecognised ecosystems fall
+  back to loading both Python and Node patterns as a best-effort default
+* `cli_display.py` functions accept an optional `con: Console` parameter
+  (defaulting to the module-level console) making every display function
+  independently testable without monkey-patching
+* No new runtime dependencies introduced — `watch` uses only stdlib
+  (`subprocess`, `threading`, `queue`, `termios`/`msvcrt`, `zipfile`)

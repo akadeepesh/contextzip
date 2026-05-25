@@ -72,6 +72,78 @@ class PackageResult:
 # ---------------------------------------------------------------------------
 
 
+def create_zip_silent(
+    resolve_result: ResolveResult,
+    project_dir: Path,
+    output_path: Path | None,
+    git_changes: bool = False,
+    prompt_txt: str | None = None,
+) -> PackageResult:
+    """
+    Write the included files from *resolve_result* into a ZIP archive
+    without any console/progress output. Intended for programmatic use.
+
+    Identical to :func:`create_zip` except it produces no Rich output —
+    safe to call in scripts, background threads, or anywhere a TTY isn't
+    available.
+    """
+    if output_path is not None:
+        zip_path = output_path
+    else:
+        zip_path = _workspace_output_path_silent(project_dir, git_changes)
+
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+
+    included: list[Path] = resolve_result.included
+    skipped_in_zip: list[tuple[Path, str]] = []
+    uncompressed = 0
+    file_count = 0
+
+    with zipfile.ZipFile(
+        zip_path,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=6,
+    ) as zf:
+        if prompt_txt is not None:
+            zf.writestr("prompt.txt", prompt_txt.encode("utf-8"))
+
+        for abs_path in included:
+            if not abs_path.is_file():
+                continue
+
+            try:
+                rel = abs_path.relative_to(project_dir)
+            except ValueError:
+                skipped_in_zip.append((abs_path, "outside project tree"))
+                continue
+
+            try:
+                file_size = abs_path.stat().st_size
+            except OSError as e:
+                skipped_in_zip.append((abs_path, f"stat failed: {e}"))
+                continue
+
+            try:
+                zf.write(abs_path, arcname=rel.as_posix())
+                uncompressed += file_size
+                file_count += 1
+            except PermissionError:
+                skipped_in_zip.append((abs_path, "permission denied"))
+            except OSError as e:
+                skipped_in_zip.append((abs_path, str(e)))
+
+    compressed = zip_path.stat().st_size
+
+    return PackageResult(
+        zip_path=zip_path,
+        file_count=file_count,
+        uncompressed_bytes=uncompressed,
+        compressed_bytes=compressed,
+        skipped_in_zip=skipped_in_zip,
+    )
+
+
 def create_zip(
     resolve_result: ResolveResult,
     project_dir: Path,
@@ -234,6 +306,34 @@ def _workspace_dir(project_dir: Path) -> tuple[Path, bool]:
     if git_root is not None:
         return git_root / ".contextzip", True
     return project_dir / ".contextzip", False
+
+
+def _workspace_output_path_silent(
+    project_dir: Path,
+    git_changes: bool,
+) -> Path:
+    """
+    Determine the output ZIP path inside the .contextzip/ workspace,
+    without printing any warnings (for programmatic/API use).
+
+    Falls back to the system temp directory if the workspace cannot be created.
+    """
+    workspace, is_git_repo = _workspace_dir(project_dir)
+    filename = "changes.zip" if git_changes else "codebase.zip"
+
+    try:
+        workspace.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return Path(tempfile.gettempdir()) / filename
+
+    if is_git_repo:
+        git_root = workspace.parent
+        try:
+            _ensure_gitignore(git_root)
+        except OSError:
+            pass
+
+    return workspace / filename
 
 
 def _workspace_output_path(

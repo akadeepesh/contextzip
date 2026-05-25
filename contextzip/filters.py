@@ -18,7 +18,6 @@ Git mode:
 from __future__ import annotations
 
 import importlib
-import os
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -114,7 +113,8 @@ def resolve_files(
     """
     result = ResolveResult()
 
-    for abs_path in sorted(project_dir.rglob("*")):
+    for original_path in sorted(project_dir.rglob("*")):
+        abs_path = original_path
         # ── Resolve symlinks safely ──────────────────────────────────────────
         if abs_path.is_symlink():
             try:
@@ -134,11 +134,12 @@ def resolve_files(
         try:
             rel = abs_path.relative_to(project_dir)
         except ValueError:
-            # Symlink pointed outside the project tree — include with original rel
+            # Symlink pointed outside the project tree — use the original
+            # (pre-resolve) path to compute a meaningful relative path
             try:
-                rel = abs_path.relative_to(project_dir)
+                rel = original_path.relative_to(project_dir)
             except ValueError:
-                result.skipped.append((abs_path, "outside project tree"))
+                result.skipped.append((original_path, "outside project tree"))
                 continue
 
         rel_str = rel.as_posix()

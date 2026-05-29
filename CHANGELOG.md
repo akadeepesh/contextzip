@@ -371,3 +371,12 @@ This project uses [Semantic Versioning](https://semver.org/).
 * `packager.py` — removed unused `_safe_name` helper
 * `ai/gemini.py` — corrected stale docstring (`gemini-2.0-flash-lite` →
   `gemini-2.5-flash-lite`) to match the actual `DEFAULT_MODEL` constant
+
+## [0.3.3] — 2026-05-29
+
+### Fixed
+
+* `contextzip.ai` and all subpackages were missing from the published wheel
+  due to an incomplete `include` allowlist in `pyproject.toml` — replaced
+  with auto-discovery so all current and future subpackages are captured
+  automatically

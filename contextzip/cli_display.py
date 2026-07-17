@@ -329,3 +329,58 @@ def human_size(n: int) -> str:
             return f"{n:.0f} {unit}"
         n /= 1024
     return f"{n:.1f} TB"
+
+
+# ---------------------------------------------------------------------------
+# eod / handoff result
+# ---------------------------------------------------------------------------
+
+
+def print_brief_result(result, *, con: Console = console) -> None:
+    """Render the eod/handoff summary panel: export used, per-case file counts,
+    where the conversation went (inline vs attached), and any warnings."""
+    from contextzip.code_changes import ChangeCase
+
+    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
+    table.add_column(style="dim", min_width=18)
+    table.add_column()
+
+    table.add_row("Export used", f"[cyan]{result.export.path.name}[/]")
+    table.add_row(
+        "Conversation",
+        "[green]inlined in prompt[/]"
+        if result.conversation_inlined
+        else "[yellow]attached (too long to inline)[/]",
+    )
+
+    if result.code_changes and not result.code_changes.is_empty:
+        case_labels = {
+            ChangeCase.UNPUSHED: "not pushed",
+            ChangeCase.DIVERGED_FROM_CLAUDE: "diverged from Claude",
+            ChangeCase.SINCE_MARKER: "since last run",
+            ChangeCase.NEW_FILE: "new file",
+        }
+        counts: dict[str, int] = {}
+        for f in result.code_changes.files:
+            label = case_labels[f.case]
+            counts[label] = counts.get(label, 0) + 1
+        breakdown = "  ".join(f"{n} {label}" for label, n in counts.items())
+        table.add_row("Code changes", f"[green]{breakdown}[/]")
+    else:
+        table.add_row("Code changes", "[dim]none found[/]")
+
+    table.add_row("Prompt saved to", f"[cyan]{result.prompt_path}[/]")
+
+    con.print(
+        Panel(
+            table,
+            title=f"[bold green]✓ {result.kind} ready[/]",
+            border_style="green",
+            padding=(0, 1),
+        )
+    )
+
+    if result.fetch_warnings:
+        con.print()
+        for w in result.fetch_warnings:
+            con.print(f"  [yellow]⚠[/]  [dim]{w}[/]")

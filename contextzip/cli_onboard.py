@@ -122,3 +122,62 @@ def onboard_api_key(*, con: Console = console) -> str | None:
 
     con.print()
     return key
+
+
+# ---------------------------------------------------------------------------
+# Claude session key onboarding — used by eod/handoff's optional case-2
+# (diverged-from-Claude) artifact fetching.
+# ---------------------------------------------------------------------------
+
+
+def onboard_session_key(*, con: Console = console) -> str | None:
+    from contextzip.config import save_session_key
+
+    con.print()
+    con.print(
+        Panel(
+            "  [bold]eod[/] / [bold]handoff[/] can diff your codebase against the "
+            "files Claude\n  last gave you, if you give it your Claude.ai session cookie.\n\n"
+            "  1. Open [bold cyan]claude.ai[/] and make sure you're logged in.\n"
+            "  2. Open DevTools (F12) → Application/Storage → Cookies → "
+            "https://claude.ai\n"
+            "  3. Copy the value of the cookie named [cyan]sessionKey[/]\n\n"
+            "  [dim]This is equivalent to your account password while it's valid —\n"
+            "  it's stored locally on this machine and only ever sent to claude.ai.[/]",
+            title="[bold yellow]Claude Session Key (optional)[/]",
+            border_style="yellow",
+            padding=(0, 2),
+        )
+    )
+    con.print()
+
+    key = click.prompt(
+        "  Paste your sessionKey cookie value (or press Enter to skip)",
+        default="",
+        show_default=False,
+        hide_input=True,
+        prompt_suffix=" › ",
+    ).strip()
+
+    if not key:
+        con.print(
+            "\n  [dim]Skipped — eod/handoff will still work, just without the "
+            "diverged-from-Claude check.[/]"
+        )
+        return None
+
+    try:
+        save_session_key(key)
+        con.print(
+            f"\n  [green]✓[/]  Key saved to [dim]{config_path()}[/]\n"
+            f"  [dim]Run [cyan]contextzip config --reset-session-key[/] to change it.[/]"
+        )
+    except OSError as exc:
+        con.print(
+            f"\n  [yellow]⚠[/]  Could not save key to disk ([dim]{exc}[/]).\n"
+            f"  [dim]Set [cyan]CLAUDE_SESSION_KEY[/] as an environment variable "
+            f"to avoid this prompt next time.[/]"
+        )
+
+    con.print()
+    return key

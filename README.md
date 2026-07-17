@@ -23,6 +23,7 @@ contextzip eliminates that entirely. Run it from your project root — it detect
 - **Git-aware packaging** — use `--git-changes` to package only modified, staged, and untracked files; perfect for incremental debugging and PR review sessions
 - **AI-powered file selection** — describe your task in plain English with `--prompt` and Gemini selects the minimum relevant files automatically, no manual hunting required
 - **Terminal error watcher** — wrap any dev server with `contextzip watch` to auto-detect errors and package a ready-to-upload debug context in one keypress
+- **End-of-day / handoff prompts** — `contextzip eod` and `contextzip handoff` turn a Claude/ChatGPT conversation export plus today's code changes into a paste-ready prompt, copied straight to your clipboard
 - **Persistent workspace** — all generated ZIPs land in `.contextzip/` at your project root, discoverable, reusable, and git-ignored automatically
 - **Warns before it's a problem** — flags large (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
 - **Handles edge cases** — dangling symlinks, unreadable files, and paths outside the project tree are caught and reported, never silently dropped
@@ -88,7 +89,7 @@ contextzip [OPTIONS]
 | `--no-clipboard` | Skip the clipboard / folder-open step |
 | `--no-gitignore` | Ignore the project's `.gitignore` |
 
-**Subcommands:** `exclude`, `include`, `watch`, `config` — run `contextzip --help` for full details.
+**Subcommands:** `exclude`, `include`, `watch`, `config`, `eod`, `handoff` — run `contextzip --help` for full details.
 
 ---
 
@@ -214,11 +215,49 @@ Press **D** and contextzip immediately writes `.contextzip/debug-context.zip`. Y
 
 ---
 
+## End-of-day reports and chat handoffs
+
+If you work through a problem in a Claude or ChatGPT conversation and need to either (a) summarize what you did for an end-of-day report, or (b) continue the same work in a fresh chat after hitting a usage limit, `eod` and `handoff` build the prompt for you — contextzip does no summarizing itself; that's left to whichever AI tool you paste the result into.
+
+```bash
+contextzip eod
+contextzip handoff
+```
+
+**Setup:** export your conversation (any markdown export works) and drop the `.md` file into `exports/` at your project root. Both commands pick the most recently modified file there automatically.
+
+**What gets built:**
+
+- The conversation itself — pasted directly into the prompt if it's short, or referenced as an attachment if it's long enough that inlining it would burn through the next chat's context budget
+- Whatever code changed, resolved per file in priority order:
+  1. **Not pushed** — diffed against your upstream branch, plus the complete current file
+  2. **Diverged from Claude** — diffed against the version Claude last produced (if you've set up a session key — see below), plus the complete current codebase file
+  3. **Since last run** — diffed against a per-branch checkpoint that `eod`/`handoff` remember automatically, plus the complete current file
+- New, untracked files are included as full content (there's nothing to diff them against)
+- `eod` ends the prompt with a flat instruction to produce a work-log table; `handoff` frames it as continuing the project in a new chat
+
+The result is copied straight to your clipboard, and also saved to `.contextzip/` if you want to look it over first.
+
+**Optional — diffing against Claude's own version (case 2):** if you give contextzip your Claude.ai session key, `eod`/`handoff` will fetch the files Claude actually produced and compare them against your codebase, catching drift even after everything's pushed and in sync.
+
+```bash
+contextzip config --set-session-key
+```
+
+This is best-effort by design — it depends on an undocumented Claude.ai endpoint, so a missing key, an expired cookie, or the endpoint changing shape just skips this check with a warning rather than failing the whole command.
+
+```bash
+contextzip eod --dry-run        # preview without advancing the checkpoint
+contextzip handoff --no-fetch   # skip the Claude-artifact fetch for this run
+```
+
+---
+
 ## What gets excluded
 
 contextzip stacks exclusion rules based on your detected stack, on top of your `.gitignore`.
 
-**Always excluded:** `.git/`, `.env` files, logs, caches, editor config (`.vscode/`, `.idea/`), OS files (`.DS_Store`, `Thumbs.db`), and common binary formats.
+**Always excluded:** `.git/`, `.env` files, logs, caches, editor config (`.vscode/`, `.idea/`), OS files (`.DS_Store`, `Thumbs.db`), common binary formats, and contextzip's own `.contextzip/` and `exports/` working folders.
 
 **By framework:**
 

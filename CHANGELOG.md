@@ -380,3 +380,75 @@ This project uses [Semantic Versioning](https://semver.org/).
   due to an incomplete `include` allowlist in `pyproject.toml` — replaced
   with auto-discovery so all current and future subpackages are captured
   automatically
+
+## [0.3.4] — 2026-06-21
+
+### Added
+
+* `contextzip eod` — builds a paste-ready end-of-day prompt from today's
+  Claude/ChatGPT conversation plus whatever code changed, copied straight
+  to the clipboard. Does no summarizing itself — that's left to whichever
+  AI tool the prompt gets pasted into
+* `contextzip handoff` — same pipeline, aimed at continuing a project in a
+  fresh chat after hitting a usage limit, rather than at an end-of-day report
+* Per-branch commit checkpoints (`.contextzip/markers/eod.json`,
+  `.contextzip/markers/handoff.json`) so every run only reports what's new
+  since *that command* last ran on *that branch* — no manual bookkeeping,
+  no date-based guessing
+* Three-case code-change resolution per file, checked in priority order:
+  1. **Not pushed** — diff against the upstream branch (covers committed-
+     but-unpushed commits and uncommitted edits in one comparison) + the
+     complete current file
+  2. **Diverged from Claude** — diff against the version Claude last
+     produced, matched by filename against a local artifacts folder + the
+     complete current codebase file
+  3. **Since last run** — diff against the stored marker commit, or the
+     branch's merge-base with the default branch on a branch never tracked
+     before + the complete current file
+
+  Brand-new untracked files skip the diff (no baseline exists) and are
+  included as full content only
+* Best-effort fetching of Claude's artifact files for case 2, using the
+  user's own Claude.ai session key (`contextzip config --set-session-key`).
+  Explicitly degrades gracefully — a missing key, an expired cookie, or the
+  endpoint changing shape just skips case 2 with a warning, never fails the
+  whole `eod`/`handoff` run
+* `contextzip config --set-session-key` / `--reset-session-key` — manage
+  the Claude session key alongside the existing Gemini key; default
+  `contextzip config` now shows both keys' status
+* Text-clipboard support (`clipboard.handle_text()`) — `eod`/`handoff`
+  produce a prompt to paste, not a file to upload, so the existing
+  file-clipboard tiers gained a text-mode sibling (`pbcopy` / `xclip`+`xsel`
+  / `clip.exe`)
+* `exports/` added to the base exclusion ruleset (next to `.contextzip/`) —
+  conversation exports and fetched Claude artifacts are contextzip's own
+  working files, never code to package or report on
+
+### Changed
+
+* `packager._ensure_gitignore()` generalised to accept an arbitrary entry
+  instead of being hardcoded to `.contextzip/`, so `exports/` can register
+  itself in `.gitignore` the same way on first use
+
+### Developer Notes
+
+* New modules: `markers.py` (per-branch checkpoint storage), `code_changes.py`
+  (the three-case decision tree), `claude_export.py` (locating the latest
+  export, inline-vs-attach sizing), `claude_artifacts.py` (best-effort
+  artifact fetching, rewritten on `httpx` for consistency with `ai/gemini.py`
+  rather than introducing a second HTTP stack), `brief.py` (orchestrates
+  `eod`/`handoff` end to end)
+* `git.py` gained branch-aware primitives: `get_current_branch()`,
+  `get_default_branch()` (origin/HEAD detection with fallback chain),
+  `get_merge_base()`, `is_ancestor()`, `get_upstream_branch()`,
+  `diff_against()` (working-tree-aware — captures committed-since-baseline
+  and uncommitted changes in one diff), `changed_files_against()`
+* A stored marker that's no longer an ancestor of `HEAD` (e.g. after a
+  rebase) is detected via `is_ancestor()` and silently recomputed from the
+  branch's merge-base, with a warning surfaced to the user rather than
+  producing a nonsense diff
+* `claude_artifacts.py` matches Claude's flat artifact filenames against the
+  codebase by basename only, since artifacts carry no knowledge of the
+  repo's directory structure; ambiguous matches (same filename in multiple
+  directories) pick the most recently modified candidate and surface a
+  warning rather than guessing silently

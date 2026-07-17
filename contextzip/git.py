@@ -57,19 +57,19 @@ class GitErrorKind(Enum):
 @dataclass
 class GitError:
     kind: GitErrorKind
-    message: str  # human-readable, ready to print
+    message: str
 
 
 @dataclass
 class GitChanges:
     """Successful result from :func:`get_changed_files`."""
 
-    files: list[Path] = field(default_factory=list)  # absolute paths
-    staged: list[str] = field(default_factory=list)  # rel paths (display)
-    unstaged: list[str] = field(default_factory=list)  # rel paths (display)
-    untracked: list[str] = field(default_factory=list)  # rel paths (display)
-    deleted: list[str] = field(default_factory=list)  # rel paths (skipped)
-    submodules: list[str] = field(default_factory=list)  # rel paths (skipped)
+    files: list[Path] = field(default_factory=list)
+    staged: list[str] = field(default_factory=list)
+    unstaged: list[str] = field(default_factory=list)
+    untracked: list[str] = field(default_factory=list)
+    deleted: list[str] = field(default_factory=list)
+    submodules: list[str] = field(default_factory=list)
 
     @property
     def is_empty(self) -> bool:
@@ -183,15 +183,15 @@ def _parse_porcelain(
         if not raw_line or len(raw_line) < 4:
             continue
 
-        xy = raw_line[:2]  # e.g. "M ", " M", "??", "A "
-        rel_path = raw_line[3:].strip()  # path relative to repo root
+        xy = raw_line[:2]
+        rel_path = raw_line[3:].strip()
 
         # Strip surrounding quotes git adds for paths with spaces/special chars
         if rel_path.startswith('"') and rel_path.endswith('"'):
             rel_path = rel_path[1:-1]
 
-        x = xy[0]  # staged status
-        y = xy[1]  # unstaged status
+        x = xy[0]
+        y = xy[1]
 
         # Skip ignored files
         if x == "!" and y == "!":
@@ -249,3 +249,134 @@ def _is_submodule(path: Path) -> bool:
         return False
     git_marker = path / ".git"
     return git_marker.exists()
+
+
+# ---------------------------------------------------------------------------
+# Branch-aware primitives — used by markers.py and code_changes.py for the
+# eod/handoff three-case diff logic. Each function returns None on any
+# failure (git not found, command error, condition not met) rather than
+# raising, since callers always have a sensible fallback for "couldn't
+# determine this" — see code_changes.py's case-resolution cascade.
+# ---------------------------------------------------------------------------
+
+
+def _run_git(
+    args: list[str], project_dir: Path, timeout: int = 15
+) -> subprocess.CompletedProcess[str] | None:
+    """Run a git command, swallowing the kinds of failures callers treat as None."""
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def get_current_branch(project_dir: Path) -> str | None:
+    """Return the current branch name, or None if detached HEAD / on failure."""
+    proc = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], project_dir)
+    if proc is None or proc.returncode != 0:
+        return None
+    branch = proc.stdout.strip()
+    return None if branch == "HEAD" else branch
+
+
+def get_commit_hash(ref: str, project_dir: Path) -> str | None:
+    """Resolve *ref* (branch name, HEAD, short hash, etc.) to a full commit hash."""
+    proc = _run_git(["rev-parse", ref], project_dir)
+    if proc is None or proc.returncode != 0:
+        return None
+    return proc.stdout.strip()
+
+
+def get_upstream_branch(project_dir: Path) -> str | None:
+    """
+    Return the upstream tracking ref for the current branch (e.g. 'origin/main'),
+    or None if the branch has no upstream configured (never pushed).
+    """
+    proc = _run_git(
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], project_dir
+    )
+    if proc is None or proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def get_default_branch(project_dir: Path, configured: str | None = None) -> str:
+    """
+    Best-effort detection of the repo's default branch, for use as a
+    divergence point when a feature branch has never been tracked before.
+
+    Resolution order: explicit *configured* override → origin/HEAD symbolic
+    ref → first of origin/main, origin/master, local main, local master that
+    actually exists → current branch as a last resort (degenerate: diffing
+    a branch against itself is a no-op, which is the same safe fallback
+    used when there's no history at all to diverge from).
+    """
+    if configured:
+        return configured
+
+    proc = _run_git(["symbolic-ref", "refs/remotes/origin/HEAD"], project_dir)
+    if proc is not None and proc.returncode == 0:
+        ref = proc.stdout.strip()
+        if ref.startswith("refs/remotes/origin/"):
+            return ref[len("refs/remotes/origin/") :]
+
+    for candidate in ("origin/main", "origin/master", "main", "master"):
+        proc = _run_git(
+            [
+                "show-ref",
+                "--verify",
+                "--quiet",
+                f"refs/{'remotes/' if '/' in candidate else 'heads/'}{candidate}",
+            ],
+            project_dir,
+        )
+        if proc is not None and proc.returncode == 0:
+            return candidate
+
+    return get_current_branch(project_dir) or "HEAD"
+
+
+def get_merge_base(ref_a: str, ref_b: str, project_dir: Path) -> str | None:
+    """Return the merge-base commit of *ref_a* and *ref_b*, or None if unrelated/missing."""
+    proc = _run_git(["merge-base", ref_a, ref_b], project_dir)
+    if proc is None or proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def is_ancestor(commit: str, ref: str, project_dir: Path) -> bool:
+    """True if *commit* is an ancestor of (reachable from) *ref*."""
+    proc = _run_git(["merge-base", "--is-ancestor", commit, ref], project_dir)
+    return proc is not None and proc.returncode == 0
+
+
+def diff_against(
+    ref: str, project_dir: Path, paths: list[str] | None = None
+) -> str | None:
+    """
+    Unified diff between *ref* and the current working tree (staged +
+    unstaged), optionally scoped to *paths*. Using the working tree as the
+    right-hand side (rather than HEAD) means committed-since-ref and
+    currently-uncommitted changes both show up in one diff.
+    """
+    args = ["diff", ref]
+    if paths:
+        args.extend(["--", *paths])
+    proc = _run_git(args, project_dir, timeout=30)
+    if proc is None or proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def changed_files_against(ref: str, project_dir: Path) -> list[str] | None:
+    """Relative paths of tracked files differing between *ref* and the working tree."""
+    proc = _run_git(["diff", "--name-only", ref], project_dir, timeout=30)
+    if proc is None or proc.returncode != 0:
+        return None
+    return [line for line in proc.stdout.splitlines() if line.strip()]

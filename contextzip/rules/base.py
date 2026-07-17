@@ -56,7 +56,7 @@ PATTERNS = [
     "*.rar",
     # contextzip workspace directory — always excluded regardless of .gitignore state
     ".contextzip/",
-    # GitHub / repo governance (not useful as AI context)
+    "exports/",
     "CHANGELOG.md",
     "CHANGELOG",
     "CONTRIBUTING.md",

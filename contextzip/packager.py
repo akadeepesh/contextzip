@@ -265,13 +265,12 @@ def _find_git_root(start: Path) -> Path | None:
         current = parent
 
 
-def _ensure_gitignore(git_root: Path) -> None:
+def _ensure_gitignore(git_root: Path, entry: str = _GITIGNORE_ENTRY) -> None:
     """
-    Ensure .contextzip/ is listed in <git_root>/.gitignore.
+    Ensure *entry* is listed in <git_root>/.gitignore.
 
-    - If .gitignore exists and already contains the entry: do nothing.
-    - If .gitignore exists but lacks the entry: append it.
-    - If .gitignore does not exist: create it with just the entry.
+    Generalised beyond just .contextzip/ so other workspace-style folders
+    (e.g. exports/) can register themselves the same way.
     """
     gitignore_path = git_root / ".gitignore"
 
@@ -279,16 +278,15 @@ def _ensure_gitignore(git_root: Path) -> None:
         content = gitignore_path.read_text(encoding="utf-8", errors="replace")
         # Check for the entry on its own line (with or without trailing slash variants)
         lines = [line.strip() for line in content.splitlines()]
-        if _GITIGNORE_ENTRY in lines or _GITIGNORE_ENTRY.rstrip("/") in lines:
-            return  # Already present — nothing to do
-        # Append, ensuring there's a trailing newline before our entry
+        if entry in lines or entry.rstrip("/") in lines:
+            return
         separator = "\n" if content and not content.endswith("\n") else ""
         with gitignore_path.open("a", encoding="utf-8") as f:
-            f.write(f"{separator}\n# contextzip workspace\n{_GITIGNORE_ENTRY}\n")
+            f.write(f"{separator}\n# contextzip workspace\n{entry}\n")
     else:
         # .gitignore doesn't exist — create a minimal one
         gitignore_path.write_text(
-            f"# contextzip workspace\n{_GITIGNORE_ENTRY}\n",
+            f"# contextzip workspace\n{entry}\n",
             encoding="utf-8",
         )
 
@@ -366,7 +364,7 @@ def _workspace_output_path(
 
     # Handle .gitignore only when we're inside a git repo
     if is_git_repo:
-        git_root = workspace.parent  # workspace is <git_root>/.contextzip
+        git_root = workspace.parent
         try:
             _ensure_gitignore(git_root)
         except OSError:

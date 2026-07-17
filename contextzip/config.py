@@ -147,8 +147,53 @@ def config_path() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Claude session key — used by eod/handoff to fetch Claude's artifact files
+# for the diverged-from-Claude comparison (code_changes.py case 2).
+#
+# Unlike the Gemini key, there's no documented prefix to validate against —
+# Anthropic doesn't publish a format for this cookie, so we only check that
+# something non-empty was provided. Getting this wrong silently is the
+# right failure mode here: a bad key just means case 2 gets skipped with a
+# warning, not a broken eod/handoff run.
 # ---------------------------------------------------------------------------
+
+
+def get_session_key() -> str | None:
+    env_key = os.environ.get("CLAUDE_SESSION_KEY", "").strip()
+    if env_key:
+        return env_key
+
+    try:
+        data = _read_config()
+        key = data.get("claude_session_key", "").strip()
+        return key or None
+    except Exception:
+        return None
+
+
+def save_session_key(key: str) -> None:
+    _CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = _read_config()
+    data["claude_session_key"] = key.strip()
+    _CONFIG_FILE.write_text(
+        json.dumps(data, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def delete_session_key() -> bool:
+    try:
+        data = _read_config()
+        if "claude_session_key" not in data:
+            return False
+        del data["claude_session_key"]
+        _CONFIG_FILE.write_text(
+            json.dumps(data, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        return False
 
 
 def _read_config() -> dict:

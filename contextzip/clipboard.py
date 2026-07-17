@@ -35,21 +35,16 @@ from pathlib import Path
 
 
 class Tier(Enum):
-    FILE_ON_CLIPBOARD = 1  # actual file object on clipboard — paste into browser
-    FOLDER_OPENED = 2  # folder opened / file highlighted in file manager
-    PATH_ONLY = 3  # nothing automatic; path printed for manual copy
+    FILE_ON_CLIPBOARD = 1
+    FOLDER_OPENED = 2
+    PATH_ONLY = 3
 
 
 @dataclass
 class ClipboardResult:
     tier: Tier
-    message: str  # human-readable outcome line
-    success: bool = True  # False only on unexpected errors worth surfacing
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+    message: str
+    success: bool = True
 
 
 def handle(zip_path: Path) -> ClipboardResult:
@@ -202,7 +197,7 @@ def _tier2_windows(zip_path: Path) -> ClipboardResult | None:
     try:
         # Use the Windows path format with backslashes
         win_path = str(zip_path).replace("/", "\\")
-        proc = subprocess.run(
+        subprocess.run(
             ["explorer", f"/select,{win_path}"],
             # explorer always exits 1 even on success — don't check returncode
             capture_output=True,
@@ -221,13 +216,94 @@ def _tier2_windows(zip_path: Path) -> ClipboardResult | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Tier 3 — path only (always succeeds)
-# ---------------------------------------------------------------------------
-
-
 def _tier3(zip_path: Path) -> ClipboardResult:
     return ClipboardResult(
         tier=Tier.PATH_ONLY,
         message=(f"📄 Copy this path and open it manually:\n   [cyan]{zip_path}[/]"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Text clipboard — used by eod/handoff, which produce a prompt to paste
+# rather than a file to upload. Same tiered philosophy: try a real text
+# clipboard, fall back to "here's the file, open it yourself".
+# ---------------------------------------------------------------------------
+
+
+def handle_text(text: str, fallback_path: Path) -> ClipboardResult:
+    system = platform.system()
+
+    if system == "Darwin":
+        result = _text_macos(text)
+        if result:
+            return result
+    elif system == "Linux":
+        result = _text_linux(text)
+        if result:
+            return result
+    elif system == "Windows":
+        result = _text_windows(text)
+        if result:
+            return result
+
+    return ClipboardResult(
+        tier=Tier.PATH_ONLY,
+        message=(
+            f"📄 Couldn't reach the system clipboard — open and copy from:\n"
+            f"   [cyan]{fallback_path}[/]"
+        ),
+    )
+
+
+def _text_macos(text: str) -> ClipboardResult | None:
+    try:
+        proc = subprocess.run(
+            ["pbcopy"], input=text.encode("utf-8"), capture_output=True, timeout=8
+        )
+        if proc.returncode == 0:
+            return ClipboardResult(
+                tier=Tier.FILE_ON_CLIPBOARD,
+                message="📋 Prompt copied to clipboard — just paste it!",
+            )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+def _text_linux(text: str) -> ClipboardResult | None:
+    for tool, args in (
+        ("xclip", ["xclip", "-selection", "clipboard"]),
+        ("xsel", ["xsel", "--clipboard", "--input"]),
+    ):
+        if not shutil.which(tool):
+            continue
+        try:
+            proc = subprocess.run(
+                args, input=text.encode("utf-8"), capture_output=True, timeout=8
+            )
+            if proc.returncode == 0:
+                return ClipboardResult(
+                    tier=Tier.FILE_ON_CLIPBOARD,
+                    message="📋 Prompt copied to clipboard — just paste it!",
+                )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            continue
+    return None
+
+
+def _text_windows(text: str) -> ClipboardResult | None:
+    # clip.exe is built into every Windows install and reads stdin verbatim.
+    # Non-ASCII content may render oddly in legacy console codepages — a
+    # known, minor limitation, not worth a heavier dependency to fully solve.
+    try:
+        proc = subprocess.run(
+            ["clip"], input=text.encode("utf-8", errors="replace"), timeout=8
+        )
+        if proc.returncode == 0:
+            return ClipboardResult(
+                tier=Tier.FILE_ON_CLIPBOARD,
+                message="📋 Prompt copied to clipboard — just paste it!",
+            )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return None

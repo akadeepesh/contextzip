@@ -15,8 +15,6 @@ from contextzip import __version__
 from contextzip.config import (
     get_api_key,
     delete_api_key,
-    get_session_key,
-    delete_session_key,
     config_path,
     diagnose_api_key,
 )
@@ -24,10 +22,7 @@ from contextzip.detector import detect
 from contextzip.filters import build_spec, resolve_files, resolve_files_from_git
 from contextzip.git import get_changed_files, GitError
 from contextzip.packager import create_zip
-from contextzip.clipboard import (
-    handle as clipboard_handle,
-    handle_text as clipboard_handle_text,
-)
+from contextzip.clipboard import handle as clipboard_handle
 
 from contextzip.cli_display import (
     print_detection,
@@ -37,14 +32,13 @@ from contextzip.cli_display import (
     print_package_result,
     print_zip_write_warnings,
     print_clipboard_result,
-    print_brief_result,
 )
 from contextzip.cli_ai import (
     normalize_pattern,
     run_ai_selection,
     run_ai_selection_preview,
 )
-from contextzip.cli_onboard import onboard_api_key, onboard_session_key
+from contextzip.cli_onboard import onboard_api_key
 
 console = Console()
 
@@ -377,184 +371,12 @@ def cmd_watch(command: tuple[str, ...]) -> None:
     raise SystemExit(exit_code)
 
 
-@main.command("eod")
-@click.option(
-    "--exports-dir",
-    default=None,
-    metavar="DIR",
-    help="Folder containing conversation exports (default: ./exports).",
-)
-@click.option(
-    "--no-clipboard",
-    is_flag=True,
-    default=False,
-    help="Skip copying the prompt to the clipboard.",
-)
-@click.option(
-    "--no-fetch",
-    is_flag=True,
-    default=False,
-    help="Don't auto-fetch Claude's artifact files even if a session key is configured.",
-)
-@click.option(
-    "--dry-run",
-    "-n",
-    is_flag=True,
-    default=False,
-    help="Build the prompt without advancing the eod marker.",
-)
-def cmd_eod(
-    exports_dir: str | None, no_clipboard: bool, no_fetch: bool, dry_run: bool
-) -> None:
-    """
-    Build a paste-ready end-of-day prompt from today's conversation + code changes.
-
-    \b
-    EXAMPLES
-      contextzip eod
-      contextzip eod --dry-run
-      contextzip eod --exports-dir ~/claude-exports
-
-    Picks the most recently modified .md file in exports/, packages whatever
-    code changed since the last time eod ran (diffs for files that already
-    existed, full content for new ones), and copies a ready-to-paste prompt
-    to your clipboard. contextzip does no summarizing itself — that's the
-    job of whatever AI tool you paste the prompt into.
-    """
-    _run_brief("eod", exports_dir, no_clipboard, no_fetch, dry_run)
-
-
-@main.command("handoff")
-@click.option(
-    "--exports-dir",
-    default=None,
-    metavar="DIR",
-    help="Folder containing conversation exports (default: ./exports).",
-)
-@click.option(
-    "--no-clipboard",
-    is_flag=True,
-    default=False,
-    help="Skip copying the prompt to the clipboard.",
-)
-@click.option(
-    "--no-fetch",
-    is_flag=True,
-    default=False,
-    help="Don't auto-fetch Claude's artifact files even if a session key is configured.",
-)
-@click.option(
-    "--dry-run",
-    "-n",
-    is_flag=True,
-    default=False,
-    help="Build the prompt without advancing the handoff marker.",
-)
-def cmd_handoff(
-    exports_dir: str | None, no_clipboard: bool, no_fetch: bool, dry_run: bool
-) -> None:
-    """
-    Build a paste-ready prompt to continue this project in a fresh chat.
-
-    \b
-    EXAMPLES
-      contextzip handoff
-      contextzip handoff --dry-run
-
-    Use this when you've hit a usage limit and need to start a new chat
-    without losing context: picks the latest conversation export, packages
-    the code changed since the last handoff (or eod), and copies a prompt
-    ready to paste into the new chat.
-    """
-    _run_brief("handoff", exports_dir, no_clipboard, no_fetch, dry_run)
-
-
-def _run_brief(
-    kind: str,
-    exports_dir: str | None,
-    no_clipboard: bool,
-    no_fetch: bool,
-    dry_run: bool,
-) -> None:
-    """Shared implementation for cmd_eod and cmd_handoff — see brief.py for the actual logic."""
-    from contextzip.brief import run_brief, BriefError
-
-    project_dir = Path(os.getcwd()).resolve()
-
-    console.print()
-    console.print(
-        Panel.fit(
-            f"[bold cyan]contextzip[/] [dim]{kind}[/]\n"
-            f"[dim]Project:[/] [white]{project_dir}[/]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
-    console.print()
-
-    exports_path = Path(exports_dir).resolve() if exports_dir else None
-
-    try:
-        with console.status(f"[cyan]Building {kind} prompt…[/]", spinner="dots"):
-            result = run_brief(
-                kind=kind,
-                project_dir=project_dir,
-                exports_dir=exports_path,
-                auto_fetch_artifacts=not no_fetch,
-                dry_run=dry_run,
-            )
-    except BriefError as exc:
-        console.print(
-            Panel.fit(
-                f"[red]{exc}[/]",
-                border_style="red",
-                padding=(0, 2),
-            )
-        )
-        raise SystemExit(1)
-
-    print_brief_result(result)
-
-    if dry_run:
-        console.print()
-        console.print(
-            Panel.fit(
-                "[yellow]Dry run:[/] the prompt and any changes zip above were "
-                "still written so you can review them, but the checkpoint was "
-                "[bold]not[/] advanced.\n"
-                "[dim]Run again without --dry-run once you're happy with this — "
-                "it'll pick up the same files.[/]",
-                border_style="yellow",
-                padding=(0, 2),
-            )
-        )
-        return
-
-    if not no_clipboard:
-        console.print()
-        with console.status("[cyan]Preparing clipboard…[/]", spinner="dots"):
-            cb = clipboard_handle_text(result.prompt_text, result.prompt_path)
-        print_clipboard_result(cb)
-
-
 @main.command("config")
 @click.option(
     "--reset-key",
     is_flag=True,
     default=False,
     help="Clear the stored Gemini API key and re-run the setup prompt.",
-)
-@click.option(
-    "--set-session-key",
-    is_flag=True,
-    default=False,
-    help="Set up the Claude.ai session key used by eod/handoff's case-2 fetching.",
-)
-@click.option(
-    "--reset-session-key",
-    is_flag=True,
-    default=False,
-    help="Clear the stored Claude session key and re-run its setup prompt.",
 )
 @click.option(
     "--show-key-path",
@@ -564,8 +386,6 @@ def _run_brief(
 )
 def cmd_config(
     reset_key: bool,
-    set_session_key: bool,
-    reset_session_key: bool,
     show_key_path: bool,
 ) -> None:
     """
@@ -574,24 +394,10 @@ def cmd_config(
     \b
     EXAMPLES
       contextzip config --reset-key            # clear Gemini key, re-onboard
-      contextzip config --set-session-key      # set up the Claude session key
-      contextzip config --reset-session-key    # clear it and re-run setup
       contextzip config --show-key-path        # print config file location
     """
     if show_key_path:
         console.print(f"\n  [dim]Config file:[/] [cyan]{config_path()}[/]\n")
-        return
-
-    if set_session_key or reset_session_key:
-        if reset_session_key:
-            removed = delete_session_key()
-            if removed:
-                console.print(
-                    f"\n  [green]✓[/]  Session key removed from [dim]{config_path()}[/]"
-                )
-            else:
-                console.print("\n  [dim]No session key was stored.[/]")
-        onboard_session_key()
         return
 
     if reset_key:
@@ -644,43 +450,6 @@ def cmd_config(
             )
         )
 
-    console.print()
-    session_key = get_session_key()
-    session_from_env = bool(os.environ.get("CLAUDE_SESSION_KEY", "").strip())
-
-    if session_key:
-        masked = (
-            session_key[:6] + "…" + session_key[-4:]
-            if len(session_key) > 10
-            else "****"
-        )
-        source = (
-            "[dim](from environment variable)[/]"
-            if session_from_env
-            else f"[dim]({config_path()})[/]"
-        )
-        console.print(
-            Panel(
-                f"  [dim]Claude session key:[/]  [green]{masked}[/]  {source}\n\n"
-                "  [dim]Used by [cyan]eod[/]/[cyan]handoff[/] for case-2 fetching. "
-                "Run [cyan]contextzip config --reset-session-key[/] to change it.[/]",
-                title="[bold]contextzip config[/]",
-                border_style="cyan",
-                padding=(0, 2),
-            )
-        )
-    else:
-        console.print(
-            Panel(
-                "  No Claude session key configured.\n\n"
-                "  [dim]Optional — only needed for eod/handoff's diverged-from-Claude "
-                "check.[/]\n"
-                "  Run [cyan]contextzip config --set-session-key[/] to set one up.",
-                title="[bold]contextzip config[/]",
-                border_style="yellow",
-                padding=(0, 2),
-            )
-        )
     console.print()
 
 

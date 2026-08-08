@@ -38,3 +38,6 @@ desktop.ini
 
 # contextzip workspace
 .contextzip/
+
+# contextzip workspace
+exports/

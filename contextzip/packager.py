@@ -291,19 +291,80 @@ def _ensure_gitignore(git_root: Path, entry: str = _GITIGNORE_ENTRY) -> None:
         )
 
 
+def _is_relative_to(path: Path, other: Path) -> bool:
+    """
+    True if *path* is inside *other*, after resolving both. Path.is_relative_to
+    exists from 3.9 onward (our floor), but resolving first avoids false
+    negatives from relative components or symlinks.
+    """
+    try:
+        path.resolve().relative_to(other.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_workspace_location(project_dir: Path) -> tuple[str, str]:
+    """
+    Determine where the .contextzip/ workspace should live, and where that
+    decision came from (for diagnostics — see `contextzip config`).
+
+    Precedence, highest wins:
+      1. CONTEXTZIP_WORKSPACE_LOCATION env var
+      2. Project config (.contextzip.json at git root — team-shared, committed)
+      3. Personal config (~/.config/contextzip/config.json — per-machine)
+      4. Built-in default: "git-root"
+
+    Returns (location, source) where location is "git-root", "cwd", or an
+    explicit path string, and source is a human-readable label for where it
+    came from.
+    """
+    import os
+
+    env_val = os.environ.get("CONTEXTZIP_WORKSPACE_LOCATION", "").strip()
+    if env_val:
+        return env_val, "CONTEXTZIP_WORKSPACE_LOCATION env var"
+
+    from contextzip.project_config import load_project_config
+
+    project_cfg = load_project_config(project_dir)
+    if project_cfg.workspace_location:
+        return project_cfg.workspace_location, "project config (.contextzip.json)"
+
+    from contextzip.config import get_workspace_location
+
+    personal_val = get_workspace_location()
+    if personal_val:
+        return personal_val, "personal config"
+
+    return "git-root", "default"
+
+
 def _workspace_dir(project_dir: Path) -> tuple[Path, bool]:
     """
     Resolve the .contextzip/ workspace directory.
 
     Returns ``(workspace_path, is_git_repo)`` where:
-    - workspace_path is <git_root>/.contextzip/ when inside a git repo
-    - workspace_path is <project_dir>/.contextzip/ as a fallback
-    - is_git_repo indicates whether a git root was found
+    - workspace_path depends on the resolved workspace location (see
+      _resolve_workspace_location): under the git root by default, under
+      project_dir for "cwd", or an explicit path for anything else.
+    - is_git_repo indicates whether a git root was found (used to decide
+      whether .gitignore registration applies)
     """
     git_root = _find_git_root(project_dir)
-    if git_root is not None:
-        return git_root / ".contextzip", True
-    return project_dir / ".contextzip", False
+    location, _source = _resolve_workspace_location(project_dir)
+    anchor = git_root if git_root is not None else project_dir
+
+    if location == "git-root":
+        workspace = anchor / ".contextzip"
+    elif location == "cwd":
+        workspace = project_dir / ".contextzip"
+    else:
+        custom = Path(location).expanduser()
+        base = custom if custom.is_absolute() else (anchor / custom)
+        workspace = base / ".contextzip"
+
+    return workspace, git_root is not None
 
 
 def _workspace_output_path_silent(
@@ -325,11 +386,12 @@ def _workspace_output_path_silent(
         return Path(tempfile.gettempdir()) / filename
 
     if is_git_repo:
-        git_root = workspace.parent
-        try:
-            _ensure_gitignore(git_root)
-        except OSError:
-            pass
+        git_root = _find_git_root(project_dir)
+        if git_root is not None and _is_relative_to(workspace, git_root):
+            try:
+                _ensure_gitignore(git_root)
+            except OSError:
+                pass
 
     return workspace / filename
 
@@ -362,13 +424,16 @@ def _workspace_output_path(
         )
         return Path(tempfile.gettempdir()) / filename
 
-    # Handle .gitignore only when we're inside a git repo
+    # Handle .gitignore only when we're inside a git repo and the workspace
+    # actually lives inside it (a custom absolute path outside the repo has
+    # nothing for .gitignore to protect)
     if is_git_repo:
-        git_root = workspace.parent
-        try:
-            _ensure_gitignore(git_root)
-        except OSError:
-            # Non-fatal: gitignore update failed, carry on silently
-            pass
+        git_root = _find_git_root(project_dir)
+        if git_root is not None and _is_relative_to(workspace, git_root):
+            try:
+                _ensure_gitignore(git_root)
+            except OSError:
+                # Non-fatal: gitignore update failed, carry on silently
+                pass
 
     return workspace / filename

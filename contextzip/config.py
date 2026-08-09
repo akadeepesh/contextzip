@@ -146,6 +146,61 @@ def config_path() -> Path:
     return _CONFIG_FILE
 
 
+# ---------------------------------------------------------------------------
+# Personal workspace location preference
+#
+# Where the .contextzip/ workspace (output zips + eod/handoff-era markers,
+# now just output zips) gets created, when nothing more specific overrides
+# it. This is a *personal*, per-machine preference — for a setting the whole
+# team should share, use the project-level config instead (project_config.py,
+# a .contextzip.json file meant to be committed to the repo).
+#
+# Resolution order (highest wins), enforced by packager.py, not here:
+#   CLI flag > CONTEXTZIP_WORKSPACE_LOCATION env var > project config
+#   > this personal config > built-in default ("git-root")
+#
+# Accepted values: "git-root", "cwd", or an explicit path (absolute, or
+# relative to the git root / project dir).
+# ---------------------------------------------------------------------------
+
+
+def get_workspace_location() -> str | None:
+    """Return the personally configured workspace location, or None if unset."""
+    try:
+        data = _read_config()
+        value = data.get("workspace_location", "").strip()
+        return value or None
+    except Exception:
+        return None
+
+
+def save_workspace_location(value: str) -> None:
+    """Persist *value* ("git-root" | "cwd" | a path) as the personal default."""
+    _CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = _read_config()
+    data["workspace_location"] = value.strip()
+    _CONFIG_FILE.write_text(
+        json.dumps(data, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def delete_workspace_location() -> bool:
+    """Remove the personal workspace location override, reverting to default/project config."""
+    try:
+        data = _read_config()
+        if "workspace_location" not in data:
+            return False
+        del data["workspace_location"]
+        _CONFIG_FILE.write_text(
+            json.dumps(data, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        return False
+
+
 def _read_config() -> dict:
     """Read and parse the config file. Returns {} if missing or malformed."""
     if not _CONFIG_FILE.is_file():

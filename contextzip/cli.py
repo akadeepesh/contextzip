@@ -17,6 +17,8 @@ from contextzip.config import (
     delete_api_key,
     config_path,
     diagnose_api_key,
+    save_workspace_location,
+    delete_workspace_location,
 )
 from contextzip.detector import detect
 from contextzip.filters import build_spec, resolve_files, resolve_files_from_git
@@ -379,6 +381,19 @@ def cmd_watch(command: tuple[str, ...]) -> None:
     help="Clear the stored Gemini API key and re-run the setup prompt.",
 )
 @click.option(
+    "--set-workspace",
+    default=None,
+    metavar="LOCATION",
+    help='Set your personal default for where .contextzip/ lives: "git-root", '
+    '"cwd", or a path.',
+)
+@click.option(
+    "--reset-workspace",
+    is_flag=True,
+    default=False,
+    help="Clear your personal workspace location override.",
+)
+@click.option(
     "--show-key-path",
     is_flag=True,
     default=False,
@@ -386,6 +401,8 @@ def cmd_watch(command: tuple[str, ...]) -> None:
 )
 def cmd_config(
     reset_key: bool,
+    set_workspace: str | None,
+    reset_workspace: bool,
     show_key_path: bool,
 ) -> None:
     """
@@ -393,11 +410,45 @@ def cmd_config(
 
     \b
     EXAMPLES
-      contextzip config --reset-key            # clear Gemini key, re-onboard
-      contextzip config --show-key-path        # print config file location
+      contextzip config --reset-key                # clear Gemini key, re-onboard
+      contextzip config --set-workspace cwd         # always use ./.contextzip here
+      contextzip config --set-workspace git-root    # back to the default
+      contextzip config --set-workspace ~/zips      # a fixed custom location
+      contextzip config --reset-workspace           # clear the personal override
+      contextzip config --show-key-path             # print config file location
+
+    \b
+    A workspace location can also be pinned for the whole team by committing
+    a .contextzip.json file at the project root:
+      {"workspace_location": "git-root"}
+    Project config (if present) takes priority over this personal setting —
+    see the README for the full precedence order.
     """
     if show_key_path:
         console.print(f"\n  [dim]Config file:[/] [cyan]{config_path()}[/]\n")
+        return
+
+    if set_workspace is not None or reset_workspace:
+        if reset_workspace:
+            removed = delete_workspace_location()
+            if removed:
+                console.print(
+                    f"\n  [green]✓[/]  Workspace override removed from "
+                    f"[dim]{config_path()}[/]"
+                )
+            else:
+                console.print("\n  [dim]No personal workspace override was set.[/]")
+            if set_workspace is None:
+                return
+
+        if set_workspace is not None:
+            save_workspace_location(set_workspace)
+            console.print(
+                f"\n  [green]✓[/]  Personal workspace location set to "
+                f"[cyan]{set_workspace}[/] in [dim]{config_path()}[/]\n"
+                f"  [dim]A project-level .contextzip.json, if present, still "
+                f"takes priority over this.[/]"
+            )
         return
 
     if reset_key:
@@ -452,8 +503,24 @@ def cmd_config(
 
     console.print()
 
+    from contextzip.packager import _resolve_workspace_location
 
-# ---------------------------------------------------------------------------
+    ws_location, ws_source = _resolve_workspace_location(Path(os.getcwd()).resolve())
+    console.print(
+        Panel(
+            f"  [dim]Workspace location:[/]  [green]{ws_location}[/]  [dim]({ws_source})[/]\n\n"
+            "  [dim]Run [cyan]contextzip config --set-workspace <location>[/] to set "
+            "a personal default,\n"
+            "  or commit a [cyan].contextzip.json[/] at the project root to share "
+            "one with your team.[/]",
+            title="[bold]contextzip config[/]",
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+    console.print()
+
+
 # Core execution logic (shared by main command + all subcommands)
 # ---------------------------------------------------------------------------
 

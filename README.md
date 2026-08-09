@@ -18,12 +18,13 @@ contextzip eliminates that entirely. Run it from your project root — it detect
 
 ## Features
 
-- **Smart framework detection** — automatically identifies Node.js, Next.js, Python, Django, FastAPI, Rust, Go, and Ruby, applying the right exclusion rules for each
+- **Smart framework detection** — automatically identifies Node.js, Next.js, Python, Django, FastAPI, Rust, Go, and Ruby, applying the right exclusion rules for each. Detection isn't limited to the project root: a shallow, bounded scan of subdirectories means a monorepo (`frontend/` + `backend/`, etc.) gets every ecosystem it contains detected and excluded correctly, not just whatever sits at the top level
 - **Respects `.gitignore`** — your existing ignore patterns are honoured automatically
 - **Git-aware packaging** — use `--git-changes` to package only modified, staged, and untracked files; perfect for incremental debugging and PR review sessions
 - **AI-powered file selection** — describe your task in plain English with `--prompt` and Gemini selects the minimum relevant files automatically, no manual hunting required
 - **Terminal error watcher** — wrap any dev server with `contextzip watch` to auto-detect errors and package a ready-to-upload debug context in one keypress
-- **Persistent workspace** — all generated ZIPs land in `.contextzip/` at your project root, discoverable, reusable, and git-ignored automatically
+- **Configurable workspace location** — `.contextzip/` lives at the git root by default, but you can pin it elsewhere per-machine (`contextzip config --set-workspace`) or for the whole team via a committed `.contextzip.json`
+- **Persistent workspace** — all generated ZIPs land in `.contextzip/`, discoverable, reusable, and git-ignored automatically
 - **Warns before it's a problem** — flags large (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
 - **Handles edge cases** — dangling symlinks, unreadable files, and paths outside the project tree are caught and reported, never silently dropped
 - **Full CLI control** — `--include`, `--exclude`, `--dry-run`, `--output`, all composable
@@ -218,7 +219,7 @@ Press **D** and contextzip immediately writes `.contextzip/debug-context.zip`. Y
 
 contextzip stacks exclusion rules based on your detected stack, on top of your `.gitignore`.
 
-**Always excluded:** `.git/`, `.env` files, logs, caches, editor config (`.vscode/`, `.idea/`), OS files (`.DS_Store`, `Thumbs.db`), common binary formats, and contextzip's own `.contextzip/` and `exports/` working folders.
+**Always excluded:** `.git/`, `.env` files, logs, caches, editor config (`.vscode/`, `.idea/`), OS files (`.DS_Store`, `Thumbs.db`), common binary formats, and contextzip's own `.contextzip/` working folder.
 
 **By framework:**
 
@@ -229,7 +230,38 @@ contextzip stacks exclusion rules based on your detected stack, on top of your `
 | Rust | `target/`, `Cargo.lock`, `*.rlib` |
 | Go | `vendor/`, `go.sum`, `bin/` |
 
-Detection is additive — a monorepo with both `package.json` and `pyproject.toml` gets both rule sets applied.
+Detection is additive — a monorepo with both `package.json` and `pyproject.toml` gets both rule sets applied. Marker files don't have to sit at the project root: contextzip also does a shallow, bounded scan of subdirectories (2 levels deep, skipping `node_modules/`, `.venv/`, `.git/`, and other dependency/build dirs it would never want to look inside anyway), so a layout like
+
+```
+root/
+  frontend/package.json
+  backend/requirements.txt
+```
+
+detects both Node.js and Python from `root/`, without either marker existing at the top level. Run with default output (not `--dry-run --verbose`) and you'll see which subdirectory each ecosystem came from, e.g. `Next.js (frontend/) + FastAPI (backend/)`.
+
+---
+
+## Workspace location
+
+By default, `.contextzip/` is created at your git root — that's `_find_git_root()` walking up from the current directory until it finds a `.git` folder; outside a repo, it falls back to the current directory. This can be overridden two ways, in order of priority:
+
+1. **`CONTEXTZIP_WORKSPACE_LOCATION` environment variable** — for a one-off override on a single run
+2. **A committed `.contextzip.json` at the project root** — team-shared, applies to everyone who clones the repo:
+   ```json
+   { "workspace_location": "git-root" }
+   ```
+3. **Your personal config** — a per-machine default that doesn't get committed:
+   ```bash
+   contextzip config --set-workspace cwd          # always use ./.contextzip wherever you run it
+   contextzip config --set-workspace git-root      # back to the default
+   contextzip config --set-workspace ~/zips        # a fixed custom location, anywhere
+   contextzip config --reset-workspace             # clear your personal override
+   ```
+
+Accepted values are `"git-root"`, `"cwd"`, or any path (absolute, or relative to the git root). Run `contextzip config` with no flags to see which value is currently active and where it came from.
+
+This matters most for monorepos where you sometimes run contextzip from a subdirectory (`cd frontend && contextzip`) — with the default `git-root` setting, the workspace still lands at the repo root no matter where you ran it from, so you don't end up with scattered `.contextzip/` folders across `frontend/`, `backend/`, etc. Set `workspace_location: "cwd"` in a project's `.contextzip.json` instead if you'd rather each subproject keep its own.
 
 ---
 

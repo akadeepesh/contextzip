@@ -3,6 +3,28 @@ detector.py — Analyses a project directory and identifies the ecosystem(s) pre
 
 Detection is additive: base rules always apply, and each detected framework
 stacks its own rules on top. A monorepo can match multiple ecosystems at once.
+
+Detection isn't limited to the project root. Marker files (package.json,
+requirements.txt, etc.) are looked for at the root AND in a shallow scan of
+subdirectories, so a layout like:
+
+    root/
+      frontend/package.json
+      backend/requirements.txt
+
+correctly detects BOTH Node.js and Python and stacks both rule sets — rather
+than finding nothing at root and only applying the universal base rules,
+which would leave node_modules/ and .venv/ unexcluded except by whatever
+.gitignore happens to catch.
+
+The scan is unconditional (not "only if root finds nothing") because a
+root-level marker (e.g. shared tooling's package.json) doesn't imply there's
+nothing else to find in sibling directories — it only tells you about root.
+
+The scan is bounded and cheap: max depth of 2, and it never descends into
+directories that are themselves dependency/build output (node_modules,
+.venv, .git, etc.) — the same names those directories' own rule modules
+would exclude from the zip, so we skip them before we even look inside.
 """
 
 from __future__ import annotations
@@ -25,6 +47,10 @@ class DetectionResult:
     ecosystems: list[str] = field(default_factory=list)  # e.g. ["Node.js", "Next.js"]
     rule_modules: list[str] = field(default_factory=list)  # e.g. ["base", "node"]
     confidence: str = "low"  # "low" | "medium" | "high"
+    # Maps ecosystem name -> relative dir it was found in ("." for root),
+    # e.g. {"Node.js": "frontend", "Python": "backend"}. Purely informational,
+    # shown in CLI output so a monorepo detection doesn't feel like magic.
+    sources: dict[str, str] = field(default_factory=dict)
 
     @property
     def display_name(self) -> str:
@@ -124,13 +150,89 @@ _RULES: list[_Rule] = [
 
 
 # ---------------------------------------------------------------------------
+# Subdirectory scan — bounded, cheap, skips dependency/build dirs
+# ---------------------------------------------------------------------------
+
+# Directories we never descend into while scanning for markers: they're
+# either dependency trees (huge, and full of nested package.json/pyproject
+# files that would produce false positives) or build/VCS output. This
+# mirrors the directory names the rule modules themselves exclude.
+_SKIP_DIR_NAMES = {
+    "node_modules",
+    ".git",
+    ".svn",
+    ".hg",
+    ".venv",
+    "venv",
+    "env",
+    "ENV",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    "vendor",
+    "target",
+    "dist",
+    "build",
+    "out",
+    ".next",
+    ".nuxt",
+    ".turbo",
+    ".vercel",
+    ".netlify",
+    "coverage",
+    ".nyc_output",
+    "site-packages",
+    ".idea",
+    ".vscode",
+    ".cache",
+    "tmp",
+    "temp",
+}
+
+_MAX_SCAN_DEPTH = 2
+
+
+def _scan_dirs(project_dir: Path, max_depth: int = _MAX_SCAN_DEPTH) -> list[Path]:
+    """
+    Return [project_dir] plus a bounded, shallow list of subdirectories worth
+    checking for ecosystem markers. Never descends into _SKIP_DIR_NAMES.
+    """
+    dirs = [project_dir]
+    if max_depth <= 0:
+        return dirs
+
+    frontier = [project_dir]
+    for _ in range(max_depth):
+        next_frontier: list[Path] = []
+        for d in frontier:
+            try:
+                children = [c for c in d.iterdir() if c.is_dir()]
+            except OSError:
+                continue
+            for child in children:
+                if child.name in _SKIP_DIR_NAMES or child.name.startswith("."):
+                    continue
+                dirs.append(child)
+                next_frontier.append(child)
+        frontier = next_frontier
+
+    return dirs
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
-def detect(project_dir: Path) -> DetectionResult:
+def detect(project_dir: Path, max_scan_depth: int = _MAX_SCAN_DEPTH) -> DetectionResult:
     """
     Analyse *project_dir* and return a :class:`DetectionResult`.
+
+    Checks project_dir itself plus a shallow, bounded scan of subdirectories
+    (see module docstring), so multi-framework monorepos are detected even
+    when no marker file sits at the root.
 
     Always includes "base" in rule_modules.
     """
@@ -140,20 +242,28 @@ def detect(project_dir: Path) -> DetectionResult:
     seen_names: set[str] = set()
     total_weight = 0
 
-    for rule in _RULES:
-        try:
-            matched = rule.check(project_dir)
-        except Exception:
-            matched = False
+    for candidate_dir in _scan_dirs(project_dir, max_scan_depth):
+        for rule in _RULES:
+            if rule.name in seen_names:
+                continue  # already found this ecosystem elsewhere; don't re-check
+            try:
+                matched = rule.check(candidate_dir)
+            except Exception:
+                matched = False
 
-        if matched:
-            if rule.name not in seen_names:
+            if matched:
                 result.ecosystems.append(rule.name)
                 seen_names.add(rule.name)
-            if rule.module not in seen_modules:
-                result.rule_modules.append(rule.module)
-                seen_modules.add(rule.module)
-            total_weight += rule.weight
+                try:
+                    rel = candidate_dir.relative_to(project_dir)
+                    result.sources[rule.name] = str(rel) if str(rel) != "." else "."
+                except ValueError:
+                    result.sources[rule.name] = "."
+
+                if rule.module not in seen_modules:
+                    result.rule_modules.append(rule.module)
+                    seen_modules.add(rule.module)
+                total_weight += rule.weight
 
     # Confidence based on cumulative signal weight
     if total_weight >= 4:

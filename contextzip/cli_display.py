@@ -43,7 +43,14 @@ def print_detection(detection, *, con: Console = console) -> None:
             "Go": "cyan",
             "Ruby": "red",
         }
-        parts = [f"[{colours.get(n, 'white')}]{n}[/]" for n in detection.ecosystems]
+        parts = []
+        for n in detection.ecosystems:
+            colour = colours.get(n, "white")
+            src = detection.sources.get(n)
+            if src and src != ".":
+                parts.append(f"[{colour}]{n}[/] [dim]({src}/)[/]")
+            else:
+                parts.append(f"[{colour}]{n}[/]")
         ecosystem_line = " [dim]+[/] ".join(parts)
 
     conf_colour = {"high": "green", "medium": "yellow", "low": "dim"}.get(

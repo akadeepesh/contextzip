@@ -13,6 +13,14 @@ Git mode:
   - resolve_files_from_git() accepts a GitChanges result and builds a
     ResolveResult from only the modified/added/untracked files reported
     by git, while still running all size and binary checks.
+
+Force-include (Phase 7):
+  - build_force_include_spec() turns a project config's "always_include"
+    patterns into a PathSpec. resolve_files() accepts it as force_include
+    and, when a file (or one of its parent directories) matches, treats
+    the file as not excluded — a standing negation on top of auto-rules
+    and .gitignore. It does not apply in git-changes mode, and it does not
+    override an explicit --include/-i for the current run.
 """
 
 from __future__ import annotations
@@ -101,13 +109,35 @@ def build_spec(
     return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
 
 
+def build_force_include_spec(patterns: list[str] | None) -> pathspec.PathSpec | None:
+    """
+    Build a PathSpec from *patterns* (a project config's "always_include"
+    list) for use as resolve_files()'s force_include argument.
+
+    Returns None (rather than an empty PathSpec) when *patterns* is empty,
+    so callers can cheaply skip the force-include check entirely.
+    """
+    if not patterns:
+        return None
+    return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+
+
 def resolve_files(
     project_dir: Path,
     spec: pathspec.PathSpec,
     include_only: list[str] | None = None,
+    force_include: pathspec.PathSpec | None = None,
 ) -> ResolveResult:
     """
     Walk *project_dir* and classify every file.
+
+    *force_include*, if given, is checked before exclusion: a file (or any
+    of its parent directories) matching it is treated as not excluded, even
+    if it also matches *spec* (auto-rules / .gitignore / --exclude). This
+    implements a project config's "always_include" — a standing negation —
+    without touching *spec* itself. It's checked ahead of *include_only* so
+    an explicit `contextzip include PATH` for this run still has the final
+    say on what actually gets included.
 
     Returns a :class:`ResolveResult` with included/excluded/skipped/large/binary lists.
     """
@@ -144,15 +174,21 @@ def resolve_files(
 
         rel_str = rel.as_posix()
 
-        # ── Check directory-level exclusion ──────────────────────────────────
-        if _any_parent_excluded(rel, spec):
-            result.excluded.append(abs_path)
-            continue
+        # ── force_include short-circuits the exclusion checks below ─────────
+        forced = force_include is not None and (
+            force_include.match_file(rel_str) or _any_parent_excluded(rel, force_include)
+        )
 
-        # ── Check file-level exclusion ───────────────────────────────────────
-        if spec.match_file(rel_str):
-            result.excluded.append(abs_path)
-            continue
+        if not forced:
+            # ── Check directory-level exclusion ──────────────────────────────
+            if _any_parent_excluded(rel, spec):
+                result.excluded.append(abs_path)
+                continue
+
+            # ── Check file-level exclusion ─────────────────────────────────
+            if spec.match_file(rel_str):
+                result.excluded.append(abs_path)
+                continue
 
         # ── Apply --include filter (exact prefix, not substring) ─────────────
         if include_only:

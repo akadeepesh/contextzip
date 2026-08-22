@@ -503,3 +503,21 @@ This project uses [Semantic Versioning](https://semver.org/).
   - If you relied on `eod`/`handoff`, there's no replacement in this
     release — conversation exports and per-file diff prompts will need to be
     built by hand, or via your own script against `contextzip --git-changes`.
+
+
+## [0.3.6] — 2026-08-23
+
+### Added
+
+* **`cz` CLI alias.** `cz` can now be used as a shorthand for `contextzip`, with identical commands and behavior.
+* **`.contextzip/` project workspace.** Contextzip now uses a dedicated workspace containing `config.json` and an `output/` directory for generated context archives.
+* **Project configuration via `.contextzip/config.json`.** Added persistent project-level preferences for `always_include`, `always_exclude`, and AI-assisted context selection.
+* **AI configuration.** Added configurable AI preferences including whether AI selection is enabled, the provider to use, and the maximum number of files AI can select.
+* **Configured file selection.** `always_include` and `always_exclude` preferences are now applied during context generation.
+* **Configurable AI file limits.** The configured `ai.max_files` value is now respected by the AI selection pipeline.
+* **Legacy `.contextzip.json` deprecation.** Project configuration is moving from `.contextzip.json` to `.contextzip/config.json`.
+
+### Changed
+
+* Generated context archives are now organized under `.contextzip/output/`.
+* Contextzip configuration is now resolved through the new project configuration system while preserving the existing personal configuration for machine-specific settings and credentials.

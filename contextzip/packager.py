@@ -12,6 +12,17 @@ Phase 6 changes:
   - Auto-creates .contextzip/ and registers it in .gitignore when inside a git repo
   - Deterministic output names: codebase.zip (default) or changes.zip (--git-changes)
   - --output flag bypasses workspace logic entirely (user owns the path)
+
+Phase 7 changes:
+  - Workspace restructured: generated ZIPs now live under .contextzip/output/
+    instead of directly in .contextzip/, leaving room for config.json
+    alongside them.
+  - Ignoring is now handled by a self-contained .contextzip/.gitignore
+    (ignore everything except config.json) instead of a blanket
+    ".contextzip/" entry in the project's top-level .gitignore — this keeps
+    config.json trackable/shareable while output/ stays untracked, and it
+    keeps working even when the workspace is relocated outside the default
+    git-root anchor (see project_config.py / _resolve_workspace_location).
 """
 
 from __future__ import annotations
@@ -35,8 +46,27 @@ from rich.progress import (
 
 from contextzip.filters import ResolveResult
 
-# The entry written into .gitignore
-_GITIGNORE_ENTRY = ".contextzip/"
+# Subdirectory of the workspace where generated ZIPs are written.
+_OUTPUT_DIRNAME = "output"
+
+# Contents of .contextzip/.gitignore — ignore everything in the workspace
+# except the team-shareable project config and this file itself.
+_WORKSPACE_GITIGNORE_CONTENTS = (
+    "# contextzip workspace\n"
+    "# Everything here is a local, per-machine artifact except config.json,\n"
+    "# which holds project-level contextzip preferences meant to be shared\n"
+    "# with your team via Git.\n"
+    "*\n"
+    "!.gitignore\n"
+    "!config.json\n"
+)
+
+# A previous version of contextzip added this block to the project's
+# top-level .gitignore. Now that .contextzip/.gitignore handles ignoring
+# on its own (and does so in a way that keeps config.json trackable), we
+# clean up that older entry the first time we touch a project — see
+# _migrate_legacy_root_gitignore_entry.
+_LEGACY_GITIGNORE_BLOCK = "# contextzip workspace\n.contextzip/\n"
 
 
 # ---------------------------------------------------------------------------
@@ -265,30 +295,71 @@ def _find_git_root(start: Path) -> Path | None:
         current = parent
 
 
-def _ensure_gitignore(git_root: Path, entry: str = _GITIGNORE_ENTRY) -> None:
+def _ensure_workspace_gitignore(workspace: Path) -> None:
     """
-    Ensure *entry* is listed in <git_root>/.gitignore.
+    Ensure <workspace>/.gitignore exists with the standard contents that
+    ignore everything in the workspace except config.json (and the
+    .gitignore file itself).
 
-    Generalised beyond just .contextzip/ so other workspace-style folders
-    (e.g. exports/) can register themselves the same way.
+    This is self-contained: it works no matter where *workspace* ends up
+    living (git-root default, cwd, or a custom relocated path), since a
+    nested .gitignore applies to its own directory regardless of where
+    that directory sits in the tree — unlike a single blanket entry in a
+    distant top-level .gitignore, which can't be relied on to reach a
+    relocated workspace and (if it ignores the whole directory rather than
+    its contents) would prevent config.json from ever being trackable.
+
+    Idempotent — leaves an existing, already-correct file untouched, and
+    only rewrites files that don't yet match (e.g. hand-edited or from an
+    older contextzip version).
     """
-    gitignore_path = git_root / ".gitignore"
+    gitignore_path = workspace / ".gitignore"
 
     if gitignore_path.is_file():
-        content = gitignore_path.read_text(encoding="utf-8", errors="replace")
-        # Check for the entry on its own line (with or without trailing slash variants)
-        lines = [line.strip() for line in content.splitlines()]
-        if entry in lines or entry.rstrip("/") in lines:
+        try:
+            current = gitignore_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
             return
-        separator = "\n" if content and not content.endswith("\n") else ""
-        with gitignore_path.open("a", encoding="utf-8") as f:
-            f.write(f"{separator}\n# contextzip workspace\n{entry}\n")
-    else:
-        # .gitignore doesn't exist — create a minimal one
-        gitignore_path.write_text(
-            f"# contextzip workspace\n{entry}\n",
-            encoding="utf-8",
-        )
+        if current == _WORKSPACE_GITIGNORE_CONTENTS:
+            return
+
+    gitignore_path.write_text(_WORKSPACE_GITIGNORE_CONTENTS, encoding="utf-8")
+
+
+def _migrate_legacy_root_gitignore_entry(git_root: Path) -> None:
+    """
+    Remove the older "# contextzip workspace\\n.contextzip/\\n" block that a
+    previous version of contextzip added to the project's top-level
+    .gitignore, if present.
+
+    That blanket directory-level ignore predates .contextzip/.gitignore and
+    would otherwise stop config.json from ever becoming trackable (git does
+    not descend into an ignored directory to apply nested un-ignore rules).
+    Only ever removes the exact block contextzip itself wrote — never
+    touches unrelated .gitignore content, and is a no-op if the block isn't
+    present (e.g. it was already removed, or never added).
+    """
+    gitignore_path = git_root / ".gitignore"
+    if not gitignore_path.is_file():
+        return
+
+    try:
+        content = gitignore_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+
+    if _LEGACY_GITIGNORE_BLOCK not in content:
+        return
+
+    updated = content.replace(_LEGACY_GITIGNORE_BLOCK, "")
+    # Collapse any resulting run of 3+ blank lines left behind by the removal
+    while "\n\n\n" in updated:
+        updated = updated.replace("\n\n\n", "\n\n")
+
+    try:
+        gitignore_path.write_text(updated, encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _is_relative_to(path: Path, other: Path) -> bool:
@@ -311,7 +382,9 @@ def _resolve_workspace_location(project_dir: Path) -> tuple[str, str]:
 
     Precedence, highest wins:
       1. CONTEXTZIP_WORKSPACE_LOCATION env var
-      2. Project config (.contextzip.json at git root — team-shared, committed)
+      2. Project config (.contextzip/config.json at git root — team-shared,
+         committed; falls back to the deprecated .contextzip.json if that's
+         all a project has)
       3. Personal config (~/.config/contextzip/config.json — per-machine)
       4. Built-in default: "git-root"
 
@@ -329,7 +402,12 @@ def _resolve_workspace_location(project_dir: Path) -> tuple[str, str]:
 
     project_cfg = load_project_config(project_dir)
     if project_cfg.workspace_location:
-        return project_cfg.workspace_location, "project config (.contextzip.json)"
+        source_label = (
+            "project config (.contextzip.json, deprecated)"
+            if project_cfg.is_legacy
+            else "project config (.contextzip/config.json)"
+        )
+        return project_cfg.workspace_location, source_label
 
     from contextzip.config import get_workspace_location
 
@@ -378,22 +456,24 @@ def _workspace_output_path_silent(
     Falls back to the system temp directory if the workspace cannot be created.
     """
     workspace, is_git_repo = _workspace_dir(project_dir)
+    output_dir = workspace / _OUTPUT_DIRNAME
     filename = "changes.zip" if git_changes else "codebase.zip"
 
     try:
-        workspace.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
         return Path(tempfile.gettempdir()) / filename
 
     if is_git_repo:
-        git_root = _find_git_root(project_dir)
-        if git_root is not None and _is_relative_to(workspace, git_root):
-            try:
-                _ensure_gitignore(git_root)
-            except OSError:
-                pass
+        try:
+            _ensure_workspace_gitignore(workspace)
+            git_root = _find_git_root(project_dir)
+            if git_root is not None and _is_relative_to(workspace, git_root):
+                _migrate_legacy_root_gitignore_entry(git_root)
+        except OSError:
+            pass
 
-    return workspace / filename
+    return output_dir / filename
 
 
 def _workspace_output_path(
@@ -411,11 +491,12 @@ def _workspace_output_path(
       be created (e.g. read-only filesystem), printing a warning.
     """
     workspace, is_git_repo = _workspace_dir(project_dir)
+    output_dir = workspace / _OUTPUT_DIRNAME
     filename = "changes.zip" if git_changes else "codebase.zip"
 
-    # Attempt to create the workspace directory
+    # Attempt to create the workspace's output directory
     try:
-        workspace.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         # Graceful fallback: warn and use temp dir
         console.print(
@@ -428,12 +509,17 @@ def _workspace_output_path(
     # actually lives inside it (a custom absolute path outside the repo has
     # nothing for .gitignore to protect)
     if is_git_repo:
+        try:
+            _ensure_workspace_gitignore(workspace)
+        except OSError:
+            # Non-fatal: gitignore update failed, carry on silently
+            pass
+
         git_root = _find_git_root(project_dir)
         if git_root is not None and _is_relative_to(workspace, git_root):
             try:
-                _ensure_gitignore(git_root)
+                _migrate_legacy_root_gitignore_entry(git_root)
             except OSError:
-                # Non-fatal: gitignore update failed, carry on silently
                 pass
 
-    return workspace / filename
+    return output_dir / filename

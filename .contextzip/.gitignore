@@ -1,0 +1,7 @@
+# contextzip workspace
+# Everything here is a local, per-machine artifact except config.json,
+# which holds project-level contextzip preferences meant to be shared
+# with your team via Git.
+*
+!.gitignore
+!config.json

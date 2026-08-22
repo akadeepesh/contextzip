@@ -153,7 +153,7 @@ def config_path() -> Path:
 # now just output zips) gets created, when nothing more specific overrides
 # it. This is a *personal*, per-machine preference — for a setting the whole
 # team should share, use the project-level config instead (project_config.py,
-# a .contextzip.json file meant to be committed to the repo).
+# a .contextzip/config.json file meant to be committed to the repo).
 #
 # Resolution order (highest wins), enforced by packager.py, not here:
 #   CLI flag > CONTEXTZIP_WORKSPACE_LOCATION env var > project config

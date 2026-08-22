@@ -605,31 +605,31 @@ def _write_debug_zip(
     console: Console,
 ) -> Path | None:
     """
-    Write debug-context.zip to .contextzip/ workspace.
+    Write debug-context.zip to the .contextzip/output/ workspace.
 
     Structure (flat):
       prompt.txt
       terminal-error.txt
       source-files.zip    (inner zip with referenced source files)
     """
-    from contextzip.packager import _workspace_dir, _ensure_gitignore
+    from contextzip.packager import _workspace_dir, _ensure_workspace_gitignore
 
     workspace, is_git_repo = _workspace_dir(project_dir)
+    output_dir = workspace / "output"
 
     try:
-        workspace.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         console.print(f"[red]  ✗[/]  Could not create workspace: {exc}")
         return None
 
     if is_git_repo:
         try:
-            git_root = workspace.parent
-            _ensure_gitignore(git_root)
+            _ensure_workspace_gitignore(workspace)
         except OSError:
             pass
 
-    zip_path = workspace / "debug-context.zip"
+    zip_path = output_dir / "debug-context.zip"
 
     try:
         with zipfile.ZipFile(

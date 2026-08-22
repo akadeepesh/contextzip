@@ -21,10 +21,20 @@ from contextzip.config import (
     delete_workspace_location,
 )
 from contextzip.detector import detect
-from contextzip.filters import build_spec, resolve_files, resolve_files_from_git
+from contextzip.filters import (
+    build_spec,
+    build_force_include_spec,
+    resolve_files,
+    resolve_files_from_git,
+)
 from contextzip.git import get_changed_files, GitError
 from contextzip.packager import create_zip
 from contextzip.clipboard import handle as clipboard_handle
+from contextzip.project_config import (
+    load_project_config,
+    has_legacy_project_config,
+    is_known_ai_provider,
+)
 
 from contextzip.cli_display import (
     print_detection,
@@ -308,7 +318,7 @@ def cmd_watch(command: tuple[str, ...]) -> None:
 
         [D] package debug context   [S] skip
 
-      Pressing D immediately writes .contextzip/debug-context.zip containing:
+      Pressing D immediately writes .contextzip/output/debug-context.zip containing:
         · prompt.txt          auto-generated task description
         · terminal-error.txt  the cleaned error output
         · source-files.zip    source files referenced in the stack trace
@@ -419,7 +429,7 @@ def cmd_config(
 
     \b
     A workspace location can also be pinned for the whole team by committing
-    a .contextzip.json file at the project root:
+    a .contextzip/config.json file at the project root:
       {"workspace_location": "git-root"}
     Project config (if present) takes priority over this personal setting —
     see the README for the full precedence order.
@@ -446,7 +456,7 @@ def cmd_config(
             console.print(
                 f"\n  [green]✓[/]  Personal workspace location set to "
                 f"[cyan]{set_workspace}[/] in [dim]{config_path()}[/]\n"
-                f"  [dim]A project-level .contextzip.json, if present, still "
+                f"  [dim]A project-level .contextzip/config.json, if present, still "
                 f"takes priority over this.[/]"
             )
         return
@@ -504,15 +514,21 @@ def cmd_config(
     console.print()
 
     from contextzip.packager import _resolve_workspace_location
+    from contextzip.project_config import (
+        load_project_config,
+        has_legacy_project_config,
+        project_config_path,
+    )
 
-    ws_location, ws_source = _resolve_workspace_location(Path(os.getcwd()).resolve())
+    cwd = Path(os.getcwd()).resolve()
+    ws_location, ws_source = _resolve_workspace_location(cwd)
     console.print(
         Panel(
             f"  [dim]Workspace location:[/]  [green]{ws_location}[/]  [dim]({ws_source})[/]\n\n"
             "  [dim]Run [cyan]contextzip config --set-workspace <location>[/] to set "
             "a personal default,\n"
-            "  or commit a [cyan].contextzip.json[/] at the project root to share "
-            "one with your team.[/]",
+            "  or commit a [cyan].contextzip/config.json[/] at the project root to "
+            "share one with your team.[/]",
             title="[bold]contextzip config[/]",
             border_style="cyan",
             padding=(0, 2),
@@ -520,9 +536,73 @@ def cmd_config(
     )
     console.print()
 
+    project_cfg = load_project_config(cwd)
+    if has_legacy_project_config(cwd):
+        console.print(
+            Panel(
+                "  [yellow]Using the deprecated .contextzip.json.[/]\n\n"
+                "  [dim]Move its contents into [cyan].contextzip/config.json[/] — "
+                "same fields, new home. See the README for the current schema.[/]",
+                title="[bold]contextzip config[/]",
+                border_style="yellow",
+                padding=(0, 2),
+            )
+        )
+    else:
+        always_include = ", ".join(project_cfg.always_include) or "[dim]none[/]"
+        always_exclude = ", ".join(project_cfg.always_exclude) or "[dim]none[/]"
+        ai = project_cfg.ai
+        console.print(
+            Panel(
+                f"  [dim]Project config:[/]  [cyan]{project_config_path(cwd)}[/]"
+                f"{' [dim](not created yet — defaults shown)[/]' if not project_cfg.source_path else ''}\n\n"
+                f"  [dim]always_include:[/]  {always_include}\n"
+                f"  [dim]always_exclude:[/]  {always_exclude}\n"
+                f"  [dim]ai:[/]  enabled=[green]{ai.enabled}[/] "
+                f"provider=[green]{ai.provider}[/] max_files=[green]{ai.max_files}[/]",
+                title="[bold]contextzip config[/]",
+                border_style="cyan",
+                padding=(0, 2),
+            )
+        )
+    console.print()
+
 
 # Core execution logic (shared by main command + all subcommands)
 # ---------------------------------------------------------------------------
+
+
+def _enforce_ai_config(ai_cfg) -> None:
+    """
+    Validate a project's `ai` preferences before honouring --prompt.
+
+    Exits with a clear message (rather than silently ignoring --prompt or
+    silently falling back) if AI selection is disabled, or if the
+    configured provider isn't one contextzip currently supports.
+    """
+    if not ai_cfg.enabled:
+        console.print(
+            Panel.fit(
+                "[yellow]AI-powered selection is disabled for this project.[/]\n"
+                "[dim]Set [cyan]\"ai\": {\"enabled\": true}[/] in "
+                "[cyan].contextzip/config.json[/] to use --prompt here.[/]",
+                border_style="yellow",
+                padding=(0, 2),
+            )
+        )
+        raise SystemExit(1)
+
+    if not is_known_ai_provider(ai_cfg.provider):
+        console.print(
+            Panel.fit(
+                f"[red]Unsupported AI provider:[/] [cyan]{ai_cfg.provider}[/]\n"
+                "[dim]Only [cyan]\"gemini\"[/] is currently supported — update "
+                "[cyan]ai.provider[/] in [cyan].contextzip/config.json[/].[/]",
+                border_style="red",
+                padding=(0, 2),
+            )
+        )
+        raise SystemExit(1)
 
 
 def _run(
@@ -555,6 +635,16 @@ def _run(
         )
     )
     console.print()
+
+    # ── Project config (.contextzip/config.json) ────────────────────────────
+    project_cfg = load_project_config(project_dir)
+    if has_legacy_project_config(project_dir):
+        console.print(
+            "[yellow]⚠[/]  [dim]Found the deprecated [/dim][cyan].contextzip.json[/cyan]"
+            "[dim] — move its settings into [/dim][cyan].contextzip/config.json[/cyan]"
+            "[dim] when you get a chance.[/dim]"
+        )
+        console.print()
 
     # ── Detection ────────────────────────────────────────────────────────────
     with console.status("[cyan]Detecting project ecosystem…[/]", spinner="dots"):
@@ -599,15 +689,22 @@ def _run(
             not no_gitignore and gitignore_path is not None and gitignore_path.is_file()
         )
 
-        normalized_exclude = (
-            [normalize_pattern(p) for p in extra_exclude] if extra_exclude else []
-        )
+        # CLI --exclude/-e patterns plus any standing always_exclude patterns
+        # from project config — both are additive, persistent behavior comes
+        # from config.json so it doesn't need to be re-typed every run.
+        normalized_exclude = [normalize_pattern(p) for p in extra_exclude or []]
+        normalized_exclude += [
+            normalize_pattern(p) for p in project_cfg.always_exclude
+        ]
 
         with console.status("[cyan]Building exclusion rules…[/]", spinner="dots"):
             spec = build_spec(
                 rule_modules=detection.rule_modules,
                 extra_exclude=normalized_exclude if normalized_exclude else None,
                 gitignore_path=gitignore_path,
+            )
+            force_include = build_force_include_spec(
+                [normalize_pattern(p) for p in project_cfg.always_include]
             )
 
         if used_gitignore:
@@ -620,6 +717,7 @@ def _run(
                 project_dir=project_dir,
                 spec=spec,
                 include_only=include_only if include_only else None,
+                force_include=force_include,
             )
 
     # ── File scan summary + warnings ─────────────────────────────────────────
@@ -629,6 +727,7 @@ def _run(
     # ── Dry run ──────────────────────────────────────────────────────────────
     if dry_run:
         if prompt:
+            _enforce_ai_config(project_cfg.ai)
             diagnosis = diagnose_api_key()
             if diagnosis:
                 console.print(f"\n  [yellow]⚠[/]  {diagnosis}\n")
@@ -643,6 +742,7 @@ def _run(
                 prompt=prompt,
                 ecosystem=detection.display_name,
                 api_key=api_key,
+                max_files=project_cfg.ai.max_files,
             )
         else:
             console.print()
@@ -667,6 +767,7 @@ def _run(
     prompt_txt: str | None = None
 
     if prompt:
+        _enforce_ai_config(project_cfg.ai)
         diagnosis = diagnose_api_key()
         if diagnosis:
             console.print(f"\n  [yellow]⚠[/]  {diagnosis}\n")
@@ -682,6 +783,7 @@ def _run(
             prompt=prompt,
             ecosystem=detection.display_name,
             api_key=api_key,
+            max_files=project_cfg.ai.max_files,
         )
 
         if not selected_paths:

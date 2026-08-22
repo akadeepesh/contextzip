@@ -23,8 +23,8 @@ contextzip eliminates that entirely. Run it from your project root — it detect
 - **Git-aware packaging** — use `--git-changes` to package only modified, staged, and untracked files; perfect for incremental debugging and PR review sessions
 - **AI-powered file selection** — describe your task in plain English with `--prompt` and Gemini selects the minimum relevant files automatically, no manual hunting required
 - **Terminal error watcher** — wrap any dev server with `contextzip watch` to auto-detect errors and package a ready-to-upload debug context in one keypress
-- **Configurable workspace location** — `.contextzip/` lives at the git root by default, but you can pin it elsewhere per-machine (`contextzip config --set-workspace`) or for the whole team via a committed `.contextzip.json`
-- **Persistent workspace** — all generated ZIPs land in `.contextzip/`, discoverable, reusable, and git-ignored automatically
+- **Configurable workspace location** — `.contextzip/` lives at the git root by default, but you can pin it elsewhere per-machine (`contextzip config --set-workspace`) or for the whole team via a committed `.contextzip/config.json`
+- **Persistent workspace** — all generated ZIPs land in `.contextzip/output/`, discoverable, reusable, and git-ignored automatically
 - **Warns before it's a problem** — flags large (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
 - **Handles edge cases** — dangling symlinks, unreadable files, and paths outside the project tree are caught and reported, never silently dropped
 - **Full CLI control** — `--include`, `--exclude`, `--dry-run`, `--output`, all composable
@@ -66,7 +66,7 @@ contextzip will:
 
 1. Detect your framework (e.g. `Next.js + Node.js`)
 2. Apply the appropriate exclusion rules
-3. Create a compressed ZIP in `.contextzip/` at your project root
+3. Create a compressed ZIP in `.contextzip/output/` at your project root
 4. Open your file manager with the ZIP selected and ready to copy
 
 ---
@@ -76,6 +76,8 @@ contextzip will:
 ```
 contextzip [OPTIONS]
 ```
+
+> `cz` is a shorthand alias for `contextzip` — both commands are identical and support every option and subcommand shown below (e.g. `cz --git-changes`, `cz exclude node_modules`).
 
 | Option | Description |
 |---|---|
@@ -197,7 +199,7 @@ contextzip starts your process normally. You see output exactly as you would wit
 ╰───────────────────────────────────────────────────╯
 ```
 
-Press **D** and contextzip immediately writes `.contextzip/debug-context.zip`. Your server keeps running — no restart, no interruption.
+Press **D** and contextzip immediately writes `.contextzip/output/debug-context.zip`. Your server keeps running — no restart, no interruption.
 
 **What's in the ZIP:**
 
@@ -247,7 +249,7 @@ detects both Node.js and Python from `root/`, without either marker existing at 
 By default, `.contextzip/` is created at your git root — that's `_find_git_root()` walking up from the current directory until it finds a `.git` folder; outside a repo, it falls back to the current directory. This can be overridden two ways, in order of priority:
 
 1. **`CONTEXTZIP_WORKSPACE_LOCATION` environment variable** — for a one-off override on a single run
-2. **A committed `.contextzip.json` at the project root** — team-shared, applies to everyone who clones the repo:
+2. **A committed `.contextzip/config.json` at the project root** — team-shared, applies to everyone who clones the repo:
    ```json
    { "workspace_location": "git-root" }
    ```
@@ -261,7 +263,63 @@ By default, `.contextzip/` is created at your git root — that's `_find_git_roo
 
 Accepted values are `"git-root"`, `"cwd"`, or any path (absolute, or relative to the git root). Run `contextzip config` with no flags to see which value is currently active and where it came from.
 
-This matters most for monorepos where you sometimes run contextzip from a subdirectory (`cd frontend && contextzip`) — with the default `git-root` setting, the workspace still lands at the repo root no matter where you ran it from, so you don't end up with scattered `.contextzip/` folders across `frontend/`, `backend/`, etc. Set `workspace_location: "cwd"` in a project's `.contextzip.json` instead if you'd rather each subproject keep its own.
+This matters most for monorepos where you sometimes run contextzip from a subdirectory (`cd frontend && contextzip`) — with the default `git-root` setting, the workspace still lands at the repo root no matter where you ran it from, so you don't end up with scattered `.contextzip/` folders across `frontend/`, `backend/`, etc. Set `workspace_location: "cwd"` in a project's `.contextzip/config.json` instead if you'd rather each subproject keep its own.
+
+---
+
+## Project configuration
+
+Every project gets a `.contextzip/` workspace at the project root:
+
+```
+.contextzip/
+├── config.json     # project preferences — commit this
+├── .gitignore       # keeps output/ untracked, config.json trackable
+└── output/          # generated ZIPs — never committed
+    ├── codebase.zip
+    ├── changes.zip       (--git-changes)
+    └── debug-context.zip (contextzip watch)
+```
+
+`.contextzip/` is **not** committed to Git by default — `.contextzip/.gitignore` is written automatically the first time you run contextzip in a repo, and it ignores everything in the folder *except* `config.json` and itself. That's deliberate: `output/` is per-machine, disposable scratch space, while `config.json` holds team-shared preferences you'll usually want everyone on the same page about.
+
+`config.json` currently supports:
+
+```json
+{
+  "workspace_location": "git-root",
+  "scan_depth": null,
+  "always_include": [],
+  "always_exclude": [],
+  "ai": {
+    "enabled": true,
+    "provider": "gemini",
+    "max_files": 10
+  }
+}
+```
+
+All keys are optional — start with just the ones you need.
+
+| Key | What it does |
+| --- | --- |
+| `workspace_location` | Same as `contextzip config --set-workspace`, but team-shared. See [Workspace location](#workspace-location). |
+| `scan_depth` | Reserved for a future bounded-depth scan mode. |
+| `always_include` | A standing "force include" list (gitwildmatch patterns). Files matching it are packaged even if an auto-rule or `.gitignore` would otherwise exclude them — e.g. `["docs/architecture.md"]` to always pull in a doc that lives in an otherwise-excluded folder. |
+| `always_exclude` | A standing exclusion list, applied on every run without retyping `-e`/`--exclude`. |
+| `ai.enabled` | Set to `false` to disable `--prompt` entirely for this project; contextzip will refuse with a clear message instead of silently ignoring it. |
+| `ai.provider` | Reserved for future AI providers. Only `"gemini"` is currently supported. |
+| `ai.max_files` | Caps how many files `--prompt` mode may return, for both the Gemini and keyword-heuristic paths. |
+
+`always_include`/`always_exclude` are additive on top of `--include`/`--exclude` for that run — an explicit `contextzip include PATH` still has the final say over what's actually packaged. Persistent preferences belong in `config.json` rather than an ever-growing list of CLI flags; CLI flags stay for one-off, explicit actions (`--dry-run`, `--prompt "…"`, `--output FILE`, etc.).
+
+A **web-based configuration UI** that generates `config.json` for you is on the roadmap — the schema above is designed to grow additively, so future preferences (including ones set visually) won't require another migration.
+
+### Deprecation: `.contextzip.json`
+
+Earlier versions of contextzip read a `.contextzip.json` file at the project root for `workspace_location`/`scan_depth`. That file is now **deprecated** in favor of `.contextzip/config.json` — contextzip still reads it automatically if `.contextzip/config.json` doesn't exist yet (so nothing breaks), and prints a one-time reminder to migrate. To migrate, just move its contents into the `"workspace_location"`/`"scan_depth"` keys of a new `.contextzip/config.json` and delete the old file.
+
+`~/.config/contextzip/config.json` (your personal, per-machine config — API key, personal workspace override) is unrelated and unaffected by any of this.
 
 ---
 

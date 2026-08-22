@@ -40,6 +40,7 @@ Issues = "https://github.com/akadeepesh/contextzip/issues"
 
 [project.scripts]
 contextzip = "contextzip.cli:main"
+cz = "contextzip.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

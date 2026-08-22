@@ -201,6 +201,7 @@ def select_files(
     *,
     prompt: str,
     file_tree: list[tuple[str, int]],
+    max_files: int | None = None,
 ) -> list[str]:
     """
     Score and rank *file_tree* entries by relevance to *prompt*.
@@ -212,17 +213,23 @@ def select_files(
     file_tree:
         Candidate files as (relative_posix_path, size_bytes) tuples.
         Standard exclusions must already have been applied by the caller.
+    max_files:
+        Cap on how many files may be returned. Defaults to MAX_FILES (8)
+        when omitted — typically overridden by a project's `ai.max_files`
+        preference (.contextzip/config.json).
 
     Returns
     -------
     list[str]
         Relative POSIX paths of the top-scoring files, best first.
-        Files scoring zero are excluded. Result is capped at MAX_FILES.
+        Files scoring zero are excluded. Result is capped at *max_files*.
     """
     tokens = _tokenize(prompt)
     if not tokens:
         # Degenerate prompt — return nothing rather than random files
         return []
+
+    effective_max_files = max_files if max_files and max_files > 0 else MAX_FILES
 
     scored: list[tuple[float, str]] = []
 
@@ -234,7 +241,7 @@ def select_files(
     # Sort descending by score, then alphabetically for determinism on ties
     scored.sort(key=lambda x: (-x[0], x[1]))
 
-    return [path for _, path in scored[:MAX_FILES]]
+    return [path for _, path in scored[:effective_max_files]]
 
 
 # ---------------------------------------------------------------------------

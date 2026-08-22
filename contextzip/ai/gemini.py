@@ -70,6 +70,7 @@ def select_files(
     file_tree: list[tuple[str, int]],  # [(rel_path, size_bytes), ...]
     ecosystem: str,
     model: str = DEFAULT_MODEL,
+    max_files: int | None = None,
 ) -> list[str]:
     """
     Ask Gemini which files are relevant to *prompt* and return their paths.
@@ -89,6 +90,11 @@ def select_files(
         Gives the model important context for relevance scoring.
     model:
         Gemini model identifier. Defaults to gemini-2.5-flash-lite.
+    max_files:
+        Hard cap on how many files may be returned, regardless of what the
+        model outputs. Defaults to _MAX_FILES (12) when omitted — typically
+        overridden by a project's `ai.max_files` preference
+        (.contextzip/config.json).
 
     Returns
     -------
@@ -110,7 +116,8 @@ def select_files(
             "Install it with: pip install httpx"
         )
 
-    system_prompt = _build_system_prompt()
+    effective_max_files = max_files if max_files and max_files > 0 else _MAX_FILES
+    system_prompt = _build_system_prompt(effective_max_files)
     user_message = _build_user_message(prompt, file_tree, ecosystem)
 
     url = _API_URL.format(model=model, key=api_key)
@@ -153,7 +160,7 @@ def select_files(
             f"Gemini API returned HTTP {response.status_code}: {response.text[:200]}"
         )
 
-    return _parse_response(response.json(), file_tree)
+    return _parse_response(response.json(), file_tree, effective_max_files)
 
 
 # ---------------------------------------------------------------------------
@@ -161,8 +168,8 @@ def select_files(
 # ---------------------------------------------------------------------------
 
 
-def _build_system_prompt() -> str:
-    return """\
+def _build_system_prompt(max_files: int = _MAX_FILES) -> str:
+    return f"""\
 You are a precise file relevance assistant for software projects.
 
 Your only job: given a developer's task description and a project file tree,
@@ -178,7 +185,7 @@ Rules you must follow:
 - Prefer files that will be MODIFIED over files that are merely referenced.
 - Config files, test files, and documentation should only appear if the
   task explicitly concerns them.
-- Never return more than 10 files. For most tasks 2–5 files is correct.
+- Never return more than {max_files} files. For most tasks 2–5 files is correct.
 - Order by relevance: most directly relevant file first.\
 """
 
@@ -209,13 +216,14 @@ Return only a JSON array of the most relevant file paths for this task.\
 def _parse_response(
     data: dict,
     file_tree: list[tuple[str, int]],
+    max_files: int = _MAX_FILES,
 ) -> list[str]:
     """
     Extract and validate the file list from the Gemini API response.
 
     - Parses the JSON array from the model's text output
     - Drops any path the model hallucinated (not in the real file tree)
-    - Enforces the _MAX_FILES hard cap
+    - Enforces the *max_files* hard cap
     - Warns (via exception) if the model returned mostly invalid paths
     """
     # Navigate the Gemini response structure
@@ -266,7 +274,7 @@ def _parse_response(
         )
 
     # Enforce hard cap
-    return validated[:_MAX_FILES]
+    return validated[:max_files]
 
 
 # ---------------------------------------------------------------------------

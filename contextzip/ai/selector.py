@@ -32,9 +32,14 @@ def ai_select(
     prompt: str,
     ecosystem: str,
     api_key: str,
+    max_files: int | None = None,
 ) -> tuple[list[Path], str, str]:
     """
     Select the minimum relevant files for *prompt* from *resolved.included*.
+
+    *max_files* caps how many files either backend may return — typically a
+    project's `ai.max_files` preference (.contextzip/config.json). None
+    falls back to each backend's own built-in default cap.
 
     Returns
     -------
@@ -54,12 +59,14 @@ def ai_select(
             prompt=prompt,
             file_tree=file_tree,
             ecosystem=ecosystem,
+            max_files=max_files,
         )
     except GeminiRateLimitError:
         # Confirmed HTTP 429 only — fall back to keyword heuristic
         selected_rel = _heuristic.select_files(
             prompt=prompt,
             file_tree=file_tree,
+            max_files=max_files,
         )
         method = USED_HEURISTIC
     # All other GeminiErrors (bad key, network, unexpected status) propagate

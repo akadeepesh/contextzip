@@ -26,6 +26,7 @@ Force-include (Phase 7):
 from __future__ import annotations
 
 import importlib
+import os
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -50,6 +51,40 @@ LARGE_FILE_WARN_BYTES = 1 * 1024 * 1024  # 1 MB
 
 # Peek this many bytes to detect binary files
 _BINARY_PEEK = 512
+
+# Directory names scan_all_files() prunes during the walk itself, before
+# even reading their contents. These are always dependency/build/VCS
+# noise that no ecosystem's rule module would ever include, and — for
+# .venv/venv especially — often contain symlinks to files well outside
+# the project tree (e.g. bin/python -> the system interpreter), which is
+# exactly the kind of thing that must never reach classify_scanned_files.
+# Kept intentionally small and generic (not ecosystem-specific — that's
+# what rules/*.py is for) since this list affects every project's scan.
+_ALWAYS_PRUNED_DIRNAMES = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        "node_modules",
+        ".venv",
+        "venv",
+        "env",
+        "__pycache__",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+        ".next",
+        ".nuxt",
+        ".cache",
+        "target",
+        "vendor",
+        "site-packages",
+        ".contextzip",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +134,9 @@ def build_spec(
                 encoding="utf-8", errors="ignore"
             ).splitlines()
             # Strip comments and blank lines; pathspec handles the rest
-            patterns.extend(l for l in lines if l.strip() and not l.startswith("#"))
+            patterns.extend(
+                line for line in lines if line.strip() and not line.startswith("#")
+            )
         except OSError:
             pass
 
@@ -120,6 +157,111 @@ def build_force_include_spec(patterns: list[str] | None) -> pathspec.PathSpec | 
     if not patterns:
         return None
     return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+
+
+def scan_all_files(project_dir: Path) -> list[tuple[Path, int]]:
+    """
+    Lightweight full-tree walk that returns every regular file under
+    *project_dir* once, as (abs_path, size_bytes) tuples, without
+    classifying anything.
+
+    Meant for tools that need to classify the same file list against
+    several different specs without re-touching the filesystem each time
+    (the local config UI — see webui/server.py — scans once at startup,
+    then reclassifies purely in memory on every checkbox toggle). Pair
+    with classify_scanned_files().
+
+    Two things this does that a plain rglob() wouldn't:
+
+    - Prunes a fixed list of known-huge, always-irrelevant directories
+      (.venv, node_modules, .git, __pycache__, build output, etc.) during
+      the walk itself, not just at classification time. These can easily
+      be tens of thousands of files (a .venv's site-packages, in
+      particular) that would never end up in a ZIP anyway — walking into
+      them at all makes the scan needlessly slow and floods the UI's tree
+      with noise nobody wants to look at.
+    - Rejects symlinks whose real target resolves outside project_dir.
+      A virtualenv's bin/python is a classic example (symlinks to the
+      system interpreter) — without this check, relative_to() calls
+      downstream (see webui/server.py's _rel()) raise ValueError and
+      crash the request entirely.
+
+    Deliberately simpler than resolve_files()'s walk (no skipped/binary
+    bookkeeping) since callers here only need "does this file exist, and
+    how big is it" — resolve_files() remains the source of truth for an
+    actual packaging run, and still sees everything within the pruned
+    dirs is excluded via the normal rules (rules/base.py etc.) whether or
+    not the config UI ever looked at them.
+    """
+    files: list[tuple[Path, int]] = []
+
+    for dirpath, dirnames, filenames in os.walk(project_dir, topdown=True):
+        dirnames[:] = [d for d in dirnames if d not in _ALWAYS_PRUNED_DIRNAMES]
+
+        for filename in filenames:
+            abs_path = Path(dirpath) / filename
+
+            if abs_path.is_symlink():
+                try:
+                    real = abs_path.resolve(strict=True)
+                except (OSError, RuntimeError):
+                    continue  # dangling symlink — skip silently, this is best-effort
+                try:
+                    real.relative_to(project_dir)
+                except ValueError:
+                    continue  # resolves outside the project tree — never include
+                if not real.is_file():
+                    continue
+                abs_path = real
+            elif not abs_path.is_file():
+                continue
+
+            try:
+                size = abs_path.stat().st_size
+            except OSError:
+                continue
+
+            files.append((abs_path, size))
+
+    return files
+
+
+def classify_scanned_files(
+    project_dir: Path,
+    files: list[tuple[Path, int]],
+    spec: pathspec.PathSpec,
+    force_include: pathspec.PathSpec | None = None,
+) -> dict[Path, bool]:
+    """
+    Classify each (abs_path, size) from scan_all_files() against *spec*
+    (and optional *force_include*) without touching the filesystem again.
+
+    Mirrors resolve_files()'s force_include-then-spec precedence exactly,
+    reusing the same matching primitives, but works off an already-scanned
+    file list. Returns {abs_path: is_included}.
+    """
+    result: dict[Path, bool] = {}
+    for abs_path, _size in files:
+        try:
+            rel = abs_path.relative_to(project_dir)
+        except ValueError:
+            continue
+
+        rel_str = rel.as_posix()
+
+        forced = force_include is not None and (
+            force_include.match_file(rel_str)
+            or _any_parent_excluded(rel, force_include)
+        )
+
+        if forced:
+            result[abs_path] = True
+            continue
+
+        excluded = _any_parent_excluded(rel, spec) or spec.match_file(rel_str)
+        result[abs_path] = not excluded
+
+    return result
 
 
 def resolve_files(
@@ -176,7 +318,8 @@ def resolve_files(
 
         # ── force_include short-circuits the exclusion checks below ─────────
         forced = force_include is not None and (
-            force_include.match_file(rel_str) or _any_parent_excluded(rel, force_include)
+            force_include.match_file(rel_str)
+            or _any_parent_excluded(rel, force_include)
         )
 
         if not forced:

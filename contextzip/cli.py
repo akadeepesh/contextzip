@@ -409,11 +409,20 @@ def cmd_watch(command: tuple[str, ...]) -> None:
     default=False,
     help="Print the path to the config file and exit.",
 )
+@click.option(
+    "--ui",
+    "launch_ui",
+    is_flag=True,
+    default=False,
+    help="Open a local browser UI to set include/exclude preferences visually "
+    "and write .contextzip/config.json.",
+)
 def cmd_config(
     reset_key: bool,
     set_workspace: str | None,
     reset_workspace: bool,
     show_key_path: bool,
+    launch_ui: bool,
 ) -> None:
     """
     Manage contextzip configuration.
@@ -426,6 +435,7 @@ def cmd_config(
       contextzip config --set-workspace ~/zips      # a fixed custom location
       contextzip config --reset-workspace           # clear the personal override
       contextzip config --show-key-path             # print config file location
+      contextzip config --ui                        # visually set include/exclude
 
     \b
     A workspace location can also be pinned for the whole team by committing
@@ -434,6 +444,16 @@ def cmd_config(
     Project config (if present) takes priority over this personal setting —
     see the README for the full precedence order.
     """
+    if launch_ui:
+        from contextzip.detector import detect as _detect
+        from contextzip.webui.server import launch_config_ui
+
+        project_dir = Path(os.getcwd()).resolve()
+        with console.status("[cyan]Detecting project ecosystem…[/]", spinner="dots"):
+            detection = _detect(project_dir)
+        launch_config_ui(project_dir, detection, con=console)
+        return
+
     if show_key_path:
         console.print(f"\n  [dim]Config file:[/] [cyan]{config_path()}[/]\n")
         return
@@ -528,7 +548,9 @@ def cmd_config(
             "  [dim]Run [cyan]contextzip config --set-workspace <location>[/] to set "
             "a personal default,\n"
             "  or commit a [cyan].contextzip/config.json[/] at the project root to "
-            "share one with your team.[/]",
+            "share one with your team.\n"
+            "  Run [cyan]contextzip config --ui[/] to set include/exclude "
+            "preferences visually.[/]",
             title="[bold]contextzip config[/]",
             border_style="cyan",
             padding=(0, 2),
@@ -605,6 +627,69 @@ def _enforce_ai_config(ai_cfg) -> None:
         raise SystemExit(1)
 
 
+def _maybe_offer_config_ui(
+    project_dir: Path,
+    detection,
+    *,
+    prompt: str | None,
+    output: str | None,
+) -> bool:
+    """
+    On a project's very first run — no .contextzip/config.json and no
+    legacy .contextzip.json at all — offer to open the local config UI
+    instead of silently proceeding with bare defaults.
+
+    Deliberately conservative about when to ask:
+      - never if --prompt or --output were given (the user is mid-task,
+        not exploring — don't interrupt with a browser tab)
+      - never outside an interactive terminal, or with CI set (scripted/
+        automated runs must never block on a prompt)
+      - never again once declined once (persisted personally, not per
+        project — see config.get_config_ui_dismissed)
+
+    Returns True if the user saved a config during the offered session
+    (the caller should reload project config before continuing).
+    """
+    import sys
+
+    if prompt or output:
+        return False
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
+    if os.environ.get("CI"):
+        return False
+
+    from contextzip.config import get_config_ui_dismissed, save_config_ui_dismissed
+
+    if get_config_ui_dismissed():
+        return False
+
+    console.print(
+        Panel.fit(
+            "[bold]No project config found yet.[/]\n\n"
+            "[dim]contextzip can open a local browser tab where you pick "
+            "exactly what\nto include/exclude — with live file counts and "
+            "one-click suggestions\nfor things like PDFs or other non-code "
+            "files. Nothing leaves your machine.[/]",
+            title="[cyan]First run[/]",
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+    console.print()
+
+    if not click.confirm("  Set up include/exclude visually now?", default=True):
+        save_config_ui_dismissed()
+        console.print(
+            "  [dim]No problem — run [cyan]contextzip config --ui[/] anytime.[/]\n"
+        )
+        return False
+
+    from contextzip.webui.server import launch_config_ui
+
+    return launch_config_ui(project_dir, detection, con=console)
+
+
 def _run(
     *,
     extra_exclude: list[str] | None,
@@ -651,6 +736,15 @@ def _run(
         detection = detect(project_dir)
 
     print_detection(detection)
+
+    # ── First-run offer: visual config UI ────────────────────────────────────
+    if project_cfg.source_path is None:
+        saved = _maybe_offer_config_ui(
+            project_dir, detection, prompt=prompt, output=output
+        )
+        if saved:
+            project_cfg = load_project_config(project_dir)
+            console.print()
 
     # ── Git-changes mode ─────────────────────────────────────────────────────
     if git_changes:

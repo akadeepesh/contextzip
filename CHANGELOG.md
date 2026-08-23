@@ -521,3 +521,20 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 * Generated context archives are now organized under `.contextzip/output/`.
 * Contextzip configuration is now resolved through the new project configuration system while preserving the existing personal configuration for machine-specific settings and credentials.
+
+
+## [0.3.7] — 2026-08-23
+
+### Added
+
+* **Visual config UI.** `contextzip config --ui` opens a local browser tab for setting `always_include`/`always_exclude` by clicking through your actual file tree, with live file counts and packed size as you go.
+* **Exclude suggestions.** The config UI automatically flags common non-code file types not already covered by the default exclusion rules — PDFs, office docs, fonts, media, design files, and anything over 1MB — as one-click "exclude all" chips.
+* **First-run offer.** A project with no config at all offers to launch the visual config UI on its first run. Declining is remembered — it won't ask again unless you run `contextzip config --ui` yourself.
+
+### Changed
+
+* Declining the visual config UI's first-run offer is now stored in the personal config (`~/.config/contextzip/config.json`) so it's asked at most once per machine.
+
+### Security
+
+* The local config UI binds to `127.0.0.1` only and requires a random per-session token on every request (matching Jupyter Notebook's approach) — nothing about the project's file structure leaves the machine.

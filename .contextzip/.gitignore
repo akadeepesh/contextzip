@@ -4,4 +4,4 @@
 # with your team via Git.
 *
 !.gitignore
-!config.json
+config.json

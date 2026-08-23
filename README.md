@@ -24,6 +24,7 @@ contextzip eliminates that entirely. Run it from your project root — it detect
 - **AI-powered file selection** — describe your task in plain English with `--prompt` and Gemini selects the minimum relevant files automatically, no manual hunting required
 - **Terminal error watcher** — wrap any dev server with `contextzip watch` to auto-detect errors and package a ready-to-upload debug context in one keypress
 - **Configurable workspace location** — `.contextzip/` lives at the git root by default, but you can pin it elsewhere per-machine (`contextzip config --set-workspace`) or for the whole team via a committed `.contextzip/config.json`
+- **Visual config UI** — `contextzip config --ui` opens a local browser tab to set include/exclude by clicking through your actual file tree, with live counts and one-click suggestions for PDFs, media, and other non-code files — nothing leaves your machine
 - **Persistent workspace** — all generated ZIPs land in `.contextzip/output/`, discoverable, reusable, and git-ignored automatically
 - **Warns before it's a problem** — flags large (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
 - **Handles edge cases** — dangling symlinks, unreadable files, and paths outside the project tree are caught and reported, never silently dropped
@@ -313,13 +314,44 @@ All keys are optional — start with just the ones you need.
 
 `always_include`/`always_exclude` are additive on top of `--include`/`--exclude` for that run — an explicit `contextzip include PATH` still has the final say over what's actually packaged. Persistent preferences belong in `config.json` rather than an ever-growing list of CLI flags; CLI flags stay for one-off, explicit actions (`--dry-run`, `--prompt "…"`, `--output FILE`, etc.).
 
-A **web-based configuration UI** that generates `config.json` for you is on the roadmap — the schema above is designed to grow additively, so future preferences (including ones set visually) won't require another migration.
+You don't have to hand-write `config.json` — see [Visual config UI](#visual-config-ui) below for a point-and-click way to produce it.
 
 ### Deprecation: `.contextzip.json`
 
 Earlier versions of contextzip read a `.contextzip.json` file at the project root for `workspace_location`/`scan_depth`. That file is now **deprecated** in favor of `.contextzip/config.json` — contextzip still reads it automatically if `.contextzip/config.json` doesn't exist yet (so nothing breaks), and prints a one-time reminder to migrate. To migrate, just move its contents into the `"workspace_location"`/`"scan_depth"` keys of a new `.contextzip/config.json` and delete the old file.
 
 `~/.config/contextzip/config.json` (your personal, per-machine config — API key, personal workspace override) is unrelated and unaffected by any of this.
+
+---
+
+## Visual config UI
+
+```
+contextzip config --ui
+```
+
+Opens a local browser tab for setting `always_include`/`always_exclude` by clicking through your actual file tree instead of hand-writing patterns — live file counts and packed size update as you go, and one-click chips suggest excluding things like PDFs, office docs, fonts, media, or anything over 1MB that isn't already covered by contextzip's default rules.
+
+It's also offered automatically the **first time** you run `contextzip` in a project that has no config at all:
+
+```
+$ contextzip
+╭─────────────────────────╮
+│  contextzip v0.3.5      │
+╰─────────────────────────╯
+...
+╭─ First run ─────────────────────────────────────╮
+│  No project config found yet.                   │
+│  contextzip can open a local browser tab...      │
+╰───────────────────────────────────────────────────╯
+  Set up include/exclude visually now? [Y/n]:
+```
+
+Decline once and it won't ask again (run `contextzip config --ui` any time you want it). It's also skipped automatically for non-interactive runs, when `CI` is set, or when `--prompt`/`--output` are passed — it only ever offers on a plain, interactive, first-ever run.
+
+**Nothing about your project leaves your machine.** The server binds to `127.0.0.1` only (never `0.0.0.0`), every request needs a random per-session token embedded in the URL (the same approach Jupyter Notebook uses), and the page itself makes no calls anywhere except back to that local server — no CDN scripts, no web fonts, no analytics. Saving writes straight to `.contextzip/config.json` on disk and the server shuts itself down; if you close the tab without saving, it also shuts down after a short idle period so a forgotten session doesn't linger as an open port.
+
+If you accept the first-run offer, the same `contextzip` invocation picks up whatever you saved and finishes packaging immediately — no need to run it again.
 
 ---
 

@@ -44,6 +44,17 @@ from contextzip.cli_display import (
     print_package_result,
     print_zip_write_warnings,
     print_clipboard_result,
+    print_apply_plan,
+    print_apply_result,
+)
+from contextzip.applier import (
+    ApplyError,
+    MultipleZipsFoundError,
+    build_plan,
+    discard_plan,
+    execute_plan,
+    find_latest_manifest,
+    find_zip_to_apply,
 )
 from contextzip.cli_ai import (
     normalize_pattern,
@@ -290,6 +301,140 @@ def cmd_include(
         git_changes=git_changes,
         verbose=verbose,
     )
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: apply-zip
+# ---------------------------------------------------------------------------
+
+
+@main.command("apply-zip")
+@click.argument("zip_path", required=False, metavar="[ZIP]")
+@click.option(
+    "--manifest",
+    "manifest_path",
+    default=None,
+    metavar="PATH",
+    help=(
+        "Manifest to diff against, instead of auto-detecting the most "
+        "recently created one in .contextzip/output/."
+    ),
+)
+@click.option(
+    "--dry-run",
+    "-n",
+    is_flag=True,
+    default=False,
+    help="Preview what would change without writing anything.",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    default=False,
+    help="Show every file and its status, not just the summary.",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    default=False,
+    help="Skip the confirmation prompt, even for risky changes.",
+)
+def cmd_apply_zip(
+    zip_path: str | None,
+    manifest_path: str | None,
+    dry_run: bool,
+    verbose: bool,
+    yes: bool,
+) -> None:
+    """
+    Apply an AI-returned ZIP back into the project.
+
+    \b
+    EXAMPLES
+      contextzip apply-zip                  # auto-detect from .contextzip/inbox/
+      contextzip apply-zip fix.zip          # explicit path overrides the inbox
+      contextzip apply-zip --dry-run --verbose
+      contextzip apply-zip -y               # skip confirmation, even if risky
+
+    \b
+    HOW IT WORKS
+      Every zip contextzip creates gets a local manifest — a hash of each
+      included file — written next to it in .contextzip/output/. Never
+      inside the zip itself, so it's never uploaded and never visible to
+      whatever AI tool the zip is pasted into.
+
+      apply-zip diffs the returned zip against that manifest to classify
+      every file as new, modified, unchanged, or one needing a closer look
+      (edited locally since zipping, or with no baseline at all) before
+      writing anything. Only adds and modifies files — nothing is ever
+      deleted. Every overwritten file is backed up first, under
+      .contextzip/backups/<timestamp>/.
+    """
+    project_dir = Path(os.getcwd()).resolve()
+
+    console.print()
+    console.print(
+        Panel.fit(
+            f"[bold cyan]contextzip[/] [dim]apply-zip[/]\n"
+            f"[dim]Project:[/] [white]{project_dir}[/]",
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+    console.print()
+
+    try:
+        resolved_zip = find_zip_to_apply(project_dir, zip_path)
+    except MultipleZipsFoundError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise SystemExit(1)
+    except ApplyError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise SystemExit(1)
+
+    manifest = find_latest_manifest(project_dir, manifest_path)
+
+    try:
+        plan = build_plan(resolved_zip, project_dir, manifest)
+    except ApplyError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise SystemExit(1)
+
+    print_apply_plan(plan, project_dir, verbose=verbose)
+
+    if not plan.writable_entries:
+        console.print(
+            "[yellow]Nothing to apply.[/] Every file already matches the project."
+        )
+        discard_plan(plan)
+        return
+
+    if dry_run:
+        console.print(
+            Panel.fit(
+                "[yellow]Dry run — no files written.[/]\n"
+                "[dim]Remove --dry-run to apply these changes.[/]",
+                border_style="yellow",
+                padding=(0, 2),
+            )
+        )
+        discard_plan(plan)
+        return
+
+    if plan.is_risky and not yes:
+        proceed = click.confirm(
+            "  Some files above need a closer look — apply anyway?", default=False
+        )
+        if not proceed:
+            console.print("[dim]Cancelled — no files written.[/]")
+            discard_plan(plan)
+            return
+        console.print()
+
+    result = execute_plan(plan, project_dir)
+    print_apply_result(result)
 
 
 # ---------------------------------------------------------------------------

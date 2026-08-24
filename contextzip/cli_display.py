@@ -10,6 +10,7 @@ Imported by cli.py; nothing here imports from cli.py (no circular deps).
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from rich.console import Console
@@ -320,6 +321,97 @@ def print_clipboard_result(cb, *, con: Console = console) -> None:
             title=f"[bold {border}]{title}[/]",
             border_style=border,
             padding=(0, 2),
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# apply-zip
+# ---------------------------------------------------------------------------
+
+_APPLY_STATUS_STYLE = {
+    "new": ("green", "+"),
+    "modified": ("cyan", "~"),
+    "unchanged": ("dim", "="),
+    "drifted": ("yellow", "!"),
+    "untracked": ("yellow", "?"),
+}
+
+
+def print_apply_plan(
+    plan,
+    project_dir: Path,
+    *,
+    verbose: bool = False,
+    con: Console = console,
+) -> None:
+    """Render the apply-zip plan: which zip/manifest were used, and a status breakdown."""
+    con.print(f"  [dim]Zip     :[/]  [cyan]{plan.zip_path}[/]")
+    if plan.has_manifest:
+        con.print(f"  [dim]Manifest:[/]  [cyan]{plan.manifest_path}[/]")
+    else:
+        con.print(
+            "  [dim]Manifest:[/]  [yellow]none found[/] "
+            "[dim](every existing path will be treated as untracked)[/]"
+        )
+    con.print()
+
+    counts = Counter(e.status.value for e in plan.entries)
+    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row("New", f"[green]{counts.get('new', 0)}[/]")
+    table.add_row("Modified", f"[cyan]{counts.get('modified', 0)}[/]")
+    table.add_row("Unchanged", f"[dim]{counts.get('unchanged', 0)}[/]")
+    if counts.get("drifted", 0):
+        table.add_row("Drifted (locally changed)", f"[yellow]{counts['drifted']}[/]")
+    if counts.get("untracked", 0):
+        table.add_row("Untracked (no baseline)", f"[yellow]{counts['untracked']}[/]")
+
+    con.print(
+        Panel(table, title="[bold]Apply Plan[/]", border_style="blue", padding=(0, 1))
+    )
+    con.print()
+
+    if verbose:
+        con.print("[bold]All files:[/]")
+        for e in plan.entries:
+            colour, sym = _APPLY_STATUS_STYLE[e.status.value]
+            con.print(f"  [{colour}]{sym}[/] {e.rel_path}  [dim]({e.status.value})[/]")
+        con.print()
+    elif plan.risky_entries:
+        con.print("[bold]Needs a closer look:[/]")
+        for e in plan.risky_entries[:10]:
+            colour, sym = _APPLY_STATUS_STYLE[e.status.value]
+            reason = (
+                "changed or removed locally since this zip was made"
+                if e.status.value == "drifted"
+                else "no baseline — wasn't part of the original zip"
+            )
+            con.print(f"  [{colour}]{sym}[/] {e.rel_path}  [dim]— {reason}[/]")
+        if len(plan.risky_entries) > 10:
+            con.print(f"  [dim]… and {len(plan.risky_entries) - 10} more[/]")
+        con.print()
+
+
+def print_apply_result(result, *, con: Console = console) -> None:
+    """Render the apply-zip result: what was written, backed up, and archived."""
+    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
+    table.add_column(style="dim", min_width=16)
+    table.add_column()
+    table.add_row("Files written", f"[green]{len(result.written)}[/]")
+    table.add_row(
+        "Backup",
+        f"[cyan]{result.backup_dir}[/]" if result.backup_dir else "[dim]none needed[/]",
+    )
+    table.add_row("Zip archived to", f"[dim]{result.applied_zip_path}[/]")
+
+    con.print(
+        Panel(
+            table,
+            title="[bold green]✓ Applied[/]",
+            border_style="green",
+            padding=(0, 1),
         )
     )
 

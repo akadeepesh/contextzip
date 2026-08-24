@@ -23,6 +23,15 @@ Phase 7 changes:
     config.json trackable/shareable while output/ stays untracked, and it
     keeps working even when the workspace is relocated outside the default
     git-root anchor (see project_config.py / _resolve_workspace_location).
+
+Phase 8 changes:
+  - Every ZIP now gets a sidecar manifest written next to it (e.g.
+    codebase.zip -> codebase.manifest.json), never inside the ZIP itself.
+    It records a hash of each included file at zip-time, and is what
+    `contextzip apply-zip` (applier.py) later diffs an AI-returned ZIP
+    against. Keeping it out of the archive means it's never uploaded and
+    never visible to whatever AI tool the ZIP is pasted into — nothing
+    for a model (or a teammate) to notice or ask about.
 """
 
 from __future__ import annotations
@@ -165,6 +174,8 @@ def create_zip_silent(
 
     compressed = zip_path.stat().st_size
 
+    _write_manifest_sidecar(zip_path, project_dir, included)
+
     return PackageResult(
         zip_path=zip_path,
         file_count=file_count,
@@ -265,6 +276,8 @@ def create_zip(
 
     compressed = zip_path.stat().st_size
 
+    _write_manifest_sidecar(zip_path, project_dir, included)
+
     return PackageResult(
         zip_path=zip_path,
         file_count=file_count,
@@ -272,6 +285,40 @@ def create_zip(
         compressed_bytes=compressed,
         skipped_in_zip=skipped_in_zip,
     )
+
+
+# ---------------------------------------------------------------------------
+# Manifest sidecar (local-only — never written into the ZIP itself)
+# ---------------------------------------------------------------------------
+
+
+def _write_manifest_sidecar(
+    zip_path: Path,
+    project_dir: Path,
+    included: list[Path],
+) -> None:
+    """
+    Write the local manifest for the ZIP just created at *zip_path*.
+
+    This lives next to the archive on disk (e.g. codebase.zip ->
+    codebase.manifest.json) and is never added as a ZIP entry — it must
+    never travel with the archive when it's uploaded to an AI tool.
+    `contextzip apply-zip` reads it later, from this same local location,
+    to classify an AI-returned ZIP's files as new / modified / unchanged
+    without needing any extra metadata inside the returned ZIP.
+
+    Best-effort: failures here (e.g. read-only filesystem) never affect
+    the ZIP creation itself, since apply-zip degrades gracefully when no
+    manifest is found.
+    """
+    # Lazy import: applier.py resolves the workspace dir via this module,
+    # so importing it at module load time would be circular.
+    from contextzip.applier import write_manifest
+
+    try:
+        write_manifest(zip_path=zip_path, project_dir=project_dir, included=included)
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------

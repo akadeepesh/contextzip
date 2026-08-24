@@ -14,6 +14,8 @@ Every AI session starts the same way: hunt down the relevant files, manually ski
 
 contextzip eliminates that entirely. Run it from your project root — it detects your stack, applies smart exclusions, produces a lean ZIP, and opens your file manager with the archive already selected. One `Ctrl+C` and you're done.
 
+And when the AI tool hands you a ZIP back with the changes, `contextzip apply-zip` closes the loop — no manual unzip-and-hope, no losing track of what actually changed.
+
 ---
 
 ## Features
@@ -22,10 +24,10 @@ contextzip eliminates that entirely. Run it from your project root — it detect
 - **Respects `.gitignore`** — your existing ignore patterns are honoured automatically
 - **Git-aware packaging** — use `--git-changes` to package only modified, staged, and untracked files; perfect for incremental debugging and PR review sessions
 - **AI-powered file selection** — describe your task in plain English with `--prompt` and Gemini selects the minimum relevant files automatically, no manual hunting required
+- **Apply AI-returned changes back** — `contextzip apply-zip` takes the ZIP an AI tool hands you back and writes it into your project safely: diffed against what was actually sent, backed up before anything is overwritten, and never silently deleting anything
 - **Terminal error watcher** — wrap any dev server with `contextzip watch` to auto-detect errors and package a ready-to-upload debug context in one keypress
-- **Configurable workspace location** — `.contextzip/` lives at the git root by default, but you can pin it elsewhere per-machine (`contextzip config --set-workspace`) or for the whole team via a committed `.contextzip/config.json`
-- **Visual config UI** — `contextzip config --ui` opens a local browser tab to set include/exclude by clicking through your actual file tree, with live counts and one-click suggestions for PDFs, media, and other non-code files — nothing leaves your machine
-- **Persistent workspace** — all generated ZIPs land in `.contextzip/output/`, discoverable, reusable, and git-ignored automatically
+- **Configurable workspace location** — `.contextzip/` lives at the git root by default, but you can pin it elsewhere per-machine (`contextzip config --set-workspace`) or for the whole team via a committed `.contextzip.json`
+- **Persistent workspace** — all generated ZIPs land in `.contextzip/`, discoverable, reusable, and git-ignored automatically
 - **Warns before it's a problem** — flags large (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
 - **Handles edge cases** — dangling symlinks, unreadable files, and paths outside the project tree are caught and reported, never silently dropped
 - **Full CLI control** — `--include`, `--exclude`, `--dry-run`, `--output`, all composable
@@ -67,7 +69,7 @@ contextzip will:
 
 1. Detect your framework (e.g. `Next.js + Node.js`)
 2. Apply the appropriate exclusion rules
-3. Create a compressed ZIP in `.contextzip/output/` at your project root
+3. Create a compressed ZIP in `.contextzip/` at your project root
 4. Open your file manager with the ZIP selected and ready to copy
 
 ---
@@ -77,8 +79,6 @@ contextzip will:
 ```
 contextzip [OPTIONS]
 ```
-
-> `cz` is a shorthand alias for `contextzip` — both commands are identical and support every option and subcommand shown below (e.g. `cz --git-changes`, `cz exclude node_modules`).
 
 | Option | Description |
 |---|---|
@@ -92,7 +92,7 @@ contextzip [OPTIONS]
 | `--no-clipboard` | Skip the clipboard / folder-open step |
 | `--no-gitignore` | Ignore the project's `.gitignore` |
 
-**Subcommands:** `exclude`, `include`, `watch`, `config` — run `contextzip --help` for full details.
+**Subcommands:** `exclude`, `include`, `apply-zip`, `watch`, `config` — run `contextzip --help` for full details.
 
 ---
 
@@ -119,6 +119,9 @@ contextzip --prompt "Refactor auth middleware" --dry-run
 
 # Save to a custom path
 contextzip --output ~/Desktop/project-context.zip
+
+# Apply the ZIP an AI tool handed back
+contextzip apply-zip
 ```
 
 ---
@@ -128,7 +131,7 @@ contextzip --output ~/Desktop/project-context.zip
 contextzip is also usable as a library. All CLI capabilities are available as plain Python functions — no Click, no Rich output, no `SystemExit`.
 
 ```python
-from contextzip import get_git_changes, get_files, create_zip
+from contextzip import get_git_changes, get_files, create_zip, apply_zip
 
 # Get changed files and use them directly
 collection = get_git_changes()
@@ -144,6 +147,10 @@ with open(pkg.zip_path, "rb") as f:
 collection = get_files(include=["src/"], exclude=["tests/"])
 pkg = create_zip(collection, output="/tmp/upload.zip")
 print(f"{pkg.file_count} files, {pkg.compressed_bytes} bytes")
+
+# Apply a ZIP an AI tool returned (auto-detects from .contextzip/inbox/)
+result = apply_zip()
+print(f"Wrote {len(result.written)} files, backup at {result.backup_dir}")
 ```
 
 | Function | Description |
@@ -151,9 +158,10 @@ print(f"{pkg.file_count} files, {pkg.compressed_bytes} bytes")
 | `get_git_changes(path?)` | Modified, added, and untracked files from git |
 | `get_files(path?, include?, exclude?)` | All project files after exclusion rules |
 | `create_zip(collection, output?)` | Write a `FileCollection` to a ZIP archive |
+| `apply_zip(zip_path?, project_dir?, manifest?)` | Apply an AI-returned ZIP back into the project |
 | `detect_ecosystem(path?)` | Detect framework and confidence level |
 
-All functions default `path` to `Path.cwd()`. Errors raise typed exceptions (`NotARepositoryError`, `GitNotFoundError`, `NoFilesError`, etc.) rather than exiting.
+All functions default `path` to `Path.cwd()`. Errors raise typed exceptions (`NotARepositoryError`, `GitNotFoundError`, `NoFilesError`, `ZipNotFoundError`, etc.) rather than exiting.
 
 ---
 
@@ -180,6 +188,61 @@ Manage your key at any time:
 contextzip config               # show current key status
 contextzip config --reset-key   # clear and re-run setup
 ```
+
+---
+
+## Applying AI-returned changes
+
+Once an AI tool has made its edits and handed you back a ZIP, `contextzip apply-zip` writes those changes into your project — safely.
+
+```bash
+# Drop the AI's returned zip into .contextzip/inbox/, then:
+contextzip apply-zip
+
+# Or point at it directly, wherever it landed:
+contextzip apply-zip ~/Downloads/fixed-project.zip
+
+# Preview first, with full per-file detail:
+contextzip apply-zip --dry-run --verbose
+
+# Skip the confirmation prompt (e.g. in a script):
+contextzip apply-zip --yes
+```
+
+### How it knows what's safe to apply
+
+Every ZIP `contextzip` creates gets a small manifest written next to it in `.contextzip/output/` — a hash of each included file, taken at zip-time. This manifest is **never added to the ZIP itself**. It stays local, so it's never uploaded and never visible to whatever AI tool the ZIP is pasted into — nothing for a model, or a curious teammate, to notice or ask about.
+
+When you run `apply-zip`, it diffs the returned ZIP against that manifest and classifies every file:
+
+| Status | Meaning | Applied automatically? |
+|---|---|---|
+| **New** | Wasn't part of the original ZIP | Yes |
+| **Modified** | Was sent, content changed, and your local copy hasn't moved since | Yes |
+| **Unchanged** | Identical to what's already on disk | Skipped — nothing to do |
+| **Drifted** | Your local file changed (or was deleted) since you zipped it | No — flagged, asks first |
+| **Untracked** | In the returned ZIP but has no baseline to compare against | No — flagged, asks first |
+
+The common case — you zip some files, the AI edits them, nothing else touched your project meanwhile — applies straight through with just a summary printed, no prompt. Anything that could clobber your own work, or introduce a path you didn't expect, stops and asks before writing.
+
+If a ZIP arrives with no matching manifest at all (e.g. it wasn't produced by a `contextzip` round trip), every already-existing path is treated as untracked and you'll be asked to confirm the whole batch.
+
+### What it does and doesn't do
+
+- **Only adds and modifies files.** Deletions are never inferred from a ZIP's contents — a file that's simply missing from the returned ZIP is left alone.
+- **Backs up before overwriting.** Every file about to be touched is copied into `.contextzip/backups/<timestamp>/` first, preserving its relative path.
+- **Rejects unsafe paths outright.** Any ZIP entry that would resolve outside your project (`../../etc/passwd`-style path traversal) is refused before anything is written — no override flag, no exceptions.
+- **Archives what it consumes.** Once applied, the ZIP is moved to `.contextzip/inbox/applied/<timestamp>-name.zip` — it won't be picked up again by accident, and stays around as an audit trail. ZIPs applied via an explicit path outside the inbox are left where you put them.
+
+### Finding the right ZIP and manifest
+
+```bash
+contextzip apply-zip                    # exactly one *.zip in .contextzip/inbox/ → uses it
+contextzip apply-zip path/to/fix.zip    # explicit path always overrides the inbox
+contextzip apply-zip --manifest path/to/codebase.manifest.json   # override auto-detection
+```
+
+If `.contextzip/inbox/` has more than one ZIP and you don't specify which, `apply-zip` lists them and asks you to be explicit rather than guessing. Manifest auto-detection picks the most recently created `*.manifest.json` under `.contextzip/output/` — correct for the normal one-round-trip-at-a-time flow; pass `--manifest` explicitly if you've generated several ZIPs before getting a response back.
 
 ---
 
@@ -250,7 +313,7 @@ detects both Node.js and Python from `root/`, without either marker existing at 
 By default, `.contextzip/` is created at your git root — that's `_find_git_root()` walking up from the current directory until it finds a `.git` folder; outside a repo, it falls back to the current directory. This can be overridden two ways, in order of priority:
 
 1. **`CONTEXTZIP_WORKSPACE_LOCATION` environment variable** — for a one-off override on a single run
-2. **A committed `.contextzip/config.json` at the project root** — team-shared, applies to everyone who clones the repo:
+2. **A committed `.contextzip.json` at the project root** — team-shared, applies to everyone who clones the repo:
    ```json
    { "workspace_location": "git-root" }
    ```
@@ -264,94 +327,24 @@ By default, `.contextzip/` is created at your git root — that's `_find_git_roo
 
 Accepted values are `"git-root"`, `"cwd"`, or any path (absolute, or relative to the git root). Run `contextzip config` with no flags to see which value is currently active and where it came from.
 
-This matters most for monorepos where you sometimes run contextzip from a subdirectory (`cd frontend && contextzip`) — with the default `git-root` setting, the workspace still lands at the repo root no matter where you ran it from, so you don't end up with scattered `.contextzip/` folders across `frontend/`, `backend/`, etc. Set `workspace_location: "cwd"` in a project's `.contextzip/config.json` instead if you'd rather each subproject keep its own.
+This matters most for monorepos where you sometimes run contextzip from a subdirectory (`cd frontend && contextzip`) — with the default `git-root` setting, the workspace still lands at the repo root no matter where you ran it from, so you don't end up with scattered `.contextzip/` folders across `frontend/`, `backend/`, etc. Set `workspace_location: "cwd"` in a project's `.contextzip.json` instead if you'd rather each subproject keep its own.
 
----
-
-## Project configuration
-
-Every project gets a `.contextzip/` workspace at the project root:
+**Workspace layout:**
 
 ```
 .contextzip/
-├── config.json     # project preferences — commit this
-├── .gitignore       # keeps output/ untracked, config.json trackable
-└── output/          # generated ZIPs — never committed
-    ├── codebase.zip
-    ├── changes.zip       (--git-changes)
-    └── debug-context.zip (contextzip watch)
+  config.json               # team-shared preferences (committed)
+  .gitignore                # ignores everything below except itself + config.json
+  output/
+    codebase.zip            # what you generate and send out
+    codebase.manifest.json  # local-only — never uploaded, used by apply-zip
+  inbox/
+    <ai-returned>.zip        # drop AI-returned zips here for apply-zip to pick up
+    applied/
+      <timestamp>-name.zip   # archived after a successful apply-zip
+  backups/
+    <timestamp>/             # pre-overwrite copies, one folder per apply-zip run
 ```
-
-`.contextzip/` is **not** committed to Git by default — `.contextzip/.gitignore` is written automatically the first time you run contextzip in a repo, and it ignores everything in the folder *except* `config.json` and itself. That's deliberate: `output/` is per-machine, disposable scratch space, while `config.json` holds team-shared preferences you'll usually want everyone on the same page about.
-
-`config.json` currently supports:
-
-```json
-{
-  "workspace_location": "git-root",
-  "scan_depth": null,
-  "always_include": [],
-  "always_exclude": [],
-  "ai": {
-    "enabled": true,
-    "provider": "gemini",
-    "max_files": 10
-  }
-}
-```
-
-All keys are optional — start with just the ones you need.
-
-| Key | What it does |
-| --- | --- |
-| `workspace_location` | Same as `contextzip config --set-workspace`, but team-shared. See [Workspace location](#workspace-location). |
-| `scan_depth` | Reserved for a future bounded-depth scan mode. |
-| `always_include` | A standing "force include" list (gitwildmatch patterns). Files matching it are packaged even if an auto-rule or `.gitignore` would otherwise exclude them — e.g. `["docs/architecture.md"]` to always pull in a doc that lives in an otherwise-excluded folder. |
-| `always_exclude` | A standing exclusion list, applied on every run without retyping `-e`/`--exclude`. |
-| `ai.enabled` | Set to `false` to disable `--prompt` entirely for this project; contextzip will refuse with a clear message instead of silently ignoring it. |
-| `ai.provider` | Reserved for future AI providers. Only `"gemini"` is currently supported. |
-| `ai.max_files` | Caps how many files `--prompt` mode may return, for both the Gemini and keyword-heuristic paths. |
-
-`always_include`/`always_exclude` are additive on top of `--include`/`--exclude` for that run — an explicit `contextzip include PATH` still has the final say over what's actually packaged. Persistent preferences belong in `config.json` rather than an ever-growing list of CLI flags; CLI flags stay for one-off, explicit actions (`--dry-run`, `--prompt "…"`, `--output FILE`, etc.).
-
-You don't have to hand-write `config.json` — see [Visual config UI](#visual-config-ui) below for a point-and-click way to produce it.
-
-### Deprecation: `.contextzip.json`
-
-Earlier versions of contextzip read a `.contextzip.json` file at the project root for `workspace_location`/`scan_depth`. That file is now **deprecated** in favor of `.contextzip/config.json` — contextzip still reads it automatically if `.contextzip/config.json` doesn't exist yet (so nothing breaks), and prints a one-time reminder to migrate. To migrate, just move its contents into the `"workspace_location"`/`"scan_depth"` keys of a new `.contextzip/config.json` and delete the old file.
-
-`~/.config/contextzip/config.json` (your personal, per-machine config — API key, personal workspace override) is unrelated and unaffected by any of this.
-
----
-
-## Visual config UI
-
-```
-contextzip config --ui
-```
-
-Opens a local browser tab for setting `always_include`/`always_exclude` by clicking through your actual file tree instead of hand-writing patterns — live file counts and packed size update as you go, and one-click chips suggest excluding things like PDFs, office docs, fonts, media, or anything over 1MB that isn't already covered by contextzip's default rules.
-
-It's also offered automatically the **first time** you run `contextzip` in a project that has no config at all:
-
-```
-$ contextzip
-╭─────────────────────────╮
-│  contextzip v0.3.5      │
-╰─────────────────────────╯
-...
-╭─ First run ─────────────────────────────────────╮
-│  No project config found yet.                   │
-│  contextzip can open a local browser tab...      │
-╰───────────────────────────────────────────────────╯
-  Set up include/exclude visually now? [Y/n]:
-```
-
-Decline once and it won't ask again (run `contextzip config --ui` any time you want it). It's also skipped automatically for non-interactive runs, when `CI` is set, or when `--prompt`/`--output` are passed — it only ever offers on a plain, interactive, first-ever run.
-
-**Nothing about your project leaves your machine.** The server binds to `127.0.0.1` only (never `0.0.0.0`), every request needs a random per-session token embedded in the URL (the same approach Jupyter Notebook uses), and the page itself makes no calls anywhere except back to that local server — no CDN scripts, no web fonts, no analytics. Saving writes straight to `.contextzip/config.json` on disk and the server shuts itself down; if you close the tab without saving, it also shuts down after a short idle period so a forgotten session doesn't linger as an open port.
-
-If you accept the first-run offer, the same `contextzip` invocation picks up whatever you saved and finishes packaging immediately — no need to run it again.
 
 ---
 

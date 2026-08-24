@@ -39,6 +39,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from contextzip.applier import ApplyResult
 from contextzip.detector import DetectionResult, detect
 from contextzip.filters import (
     ResolveResult,
@@ -125,6 +126,10 @@ class GitCommandError(ContextzipError):
 
 class NoFilesError(ContextzipError):
     """Raised when file resolution produces an empty result."""
+
+
+class ZipNotFoundError(ContextzipError):
+    """Raised when apply_zip() can't resolve which zip to apply."""
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +338,82 @@ def create_zip(
         project_dir=collection.project_dir,
         output_path=output_path,
     )
+
+
+def apply_zip(
+    zip_path: str | Path | None = None,
+    *,
+    project_dir: str | Path | None = None,
+    manifest: str | Path | None = None,
+) -> ApplyResult:
+    """
+    Apply an AI-returned ZIP back into *project_dir* (defaults to cwd).
+
+    Diffs the zip against the local sidecar manifest most recently written
+    to ``.contextzip/output/`` (or the one at *manifest*, if given) to
+    classify every file as new, modified, unchanged, or one with no safe
+    baseline (locally edited since zipping, or never part of the original
+    manifest). Only adds and modifies files — nothing is ever deleted.
+    Every overwritten file is backed up first, under
+    ``.contextzip/backups/<timestamp>/``.
+
+    Unlike the CLI, this applies immediately and does not prompt — check
+    ``contextzip.applier.build_plan()`` yourself first if you want to
+    inspect risk before writing (see ``ApplyPlan.is_risky`` /
+    ``.risky_entries``).
+
+    Parameters
+    ----------
+    zip_path:
+        Path to the returned zip. If omitted, auto-detects from
+        ``.contextzip/inbox/`` — exactly one zip must be present there.
+    project_dir:
+        Project root to apply into. Defaults to ``Path.cwd()``.
+    manifest:
+        Explicit manifest path to diff against, overriding auto-detection.
+
+    Returns
+    -------
+    ApplyResult
+        ``written`` (list of relative paths written), ``backup_dir``
+        (``Path`` or ``None`` if nothing needed backing up), and
+        ``applied_zip_path`` (where the consumed zip ended up).
+
+    Raises
+    ------
+    ZipNotFoundError
+        If no zip could be resolved — missing, or multiple candidates in
+        the inbox with none specified.
+
+    Example
+    -------
+    ::
+
+        from contextzip import apply_zip
+
+        result = apply_zip()  # picks up .contextzip/inbox/*.zip
+        print(f"Wrote {len(result.written)} files")
+        if result.backup_dir:
+            print(f"Backup at {result.backup_dir}")
+    """
+    from contextzip.applier import (
+        ApplyError,
+        build_plan,
+        execute_plan,
+        find_latest_manifest,
+        find_zip_to_apply,
+    )
+
+    pdir = _resolve_dir(project_dir)
+
+    try:
+        resolved_zip = find_zip_to_apply(pdir, zip_path)
+    except ApplyError as exc:
+        raise ZipNotFoundError(str(exc)) from exc
+
+    manifest_path = find_latest_manifest(pdir, manifest)
+    plan = build_plan(resolved_zip, pdir, manifest_path)
+    return execute_plan(plan, pdir)
 
 
 def detect_ecosystem(

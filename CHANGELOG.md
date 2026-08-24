@@ -538,3 +538,27 @@ This project uses [Semantic Versioning](https://semver.org/).
 ### Security
 
 * The local config UI binds to `127.0.0.1` only and requires a random per-session token on every request (matching Jupyter Notebook's approach) — nothing about the project's file structure leaves the machine.
+
+
+## [0.3.8] — 2026-08-24
+
+### Added
+
+* **`apply-zip` command.** Closes the other half of the round trip: takes a ZIP handed back by an AI tool and writes it into the project. Every file is classified — new, modified, unchanged, drifted (changed or removed locally since it was sent), or untracked (no baseline to compare against) — before anything is written.
+* **Local sidecar manifest.** Every ZIP `contextzip` creates now also gets a `<name>.manifest.json` written next to it in `.contextzip/output/` — a hash of each included file, taken at zip-time. It's written to disk only, **never inside the ZIP**, so it's never uploaded and never visible to whatever AI tool the ZIP is pasted into.
+* **`.contextzip/inbox/`.** Drop an AI-returned ZIP here and `apply-zip` finds it automatically; passing a path explicitly always overrides auto-detection. Multiple ZIPs in the inbox are listed and you're asked to be explicit rather than guessed at.
+* **Automatic backups.** Every file `apply-zip` is about to overwrite is copied first into `.contextzip/backups/<timestamp>/`.
+* **`apply_zip()`** Python API function, mirroring `create_zip()`'s plain-function, no-Click, no-Rich style.
+* New `--dry-run`, `--verbose`, `--yes`, and `--manifest` flags on `apply-zip`.
+
+### Changed
+
+* Consumed ZIPs are moved to `.contextzip/inbox/applied/<timestamp>-name.zip` rather than deleted, so they double as an audit trail alongside the backups.
+
+### Security
+
+* `apply-zip` validates every ZIP entry's resolved path before extracting anything, refusing archives with path-traversal entries (`../`) that would write outside the project tree — no override flag, no exceptions.
+
+### Notes
+
+* v1 of `apply-zip` only adds and modifies files — deletions are never inferred from a ZIP's contents. A file missing from a returned ZIP is left alone.

@@ -29,6 +29,7 @@ And when the AI tool hands you a ZIP back with the changes, `contextzip apply-zi
 - **Configurable workspace location** — `.contextzip/` lives at the git root by default, but you can pin it elsewhere per-machine (`contextzip config --set-workspace`) or for the whole team via a committed `.contextzip.json`
 - **Persistent workspace** — all generated ZIPs land in `.contextzip/`, discoverable, reusable, and git-ignored automatically
 - **Warns before it's a problem** — flags large (≥ 1 MB) and binary files that AI tools can't read, before you waste an upload
+- **Never packages secrets** — SSH keys, cloud credentials, keystores, Terraform state, and other credential files are always excluded, on top of your `.gitignore` (see [What gets excluded](#what-gets-excluded))
 - **Handles edge cases** — dangling symlinks, unreadable files, and paths outside the project tree are caught and reported, never silently dropped
 - **Full CLI control** — `--include`, `--exclude`, `--dry-run`, `--output`, all composable
 
@@ -92,7 +93,7 @@ contextzip [OPTIONS]
 | `--no-clipboard` | Skip the clipboard / folder-open step |
 | `--no-gitignore` | Ignore the project's `.gitignore` |
 
-**Subcommands:** `exclude`, `include`, `apply-zip`, `watch`, `config` — run `contextzip --help` for full details.
+**Subcommands:** `exclude`, `include`, `watch`, `config` — run `contextzip --help` for full details.
 
 ---
 
@@ -131,7 +132,7 @@ contextzip apply-zip
 contextzip is also usable as a library. All CLI capabilities are available as plain Python functions — no Click, no Rich output, no `SystemExit`.
 
 ```python
-from contextzip import get_git_changes, get_files, create_zip, apply_zip
+from contextzip import get_git_changes, get_files, create_zip
 
 # Get changed files and use them directly
 collection = get_git_changes()
@@ -161,7 +162,7 @@ print(f"Wrote {len(result.written)} files, backup at {result.backup_dir}")
 | `apply_zip(zip_path?, project_dir?, manifest?)` | Apply an AI-returned ZIP back into the project |
 | `detect_ecosystem(path?)` | Detect framework and confidence level |
 
-All functions default `path` to `Path.cwd()`. Errors raise typed exceptions (`NotARepositoryError`, `GitNotFoundError`, `NoFilesError`, `ZipNotFoundError`, etc.) rather than exiting.
+All functions default `path` to `Path.cwd()`. Errors raise typed exceptions (`NotARepositoryError`, `GitNotFoundError`, `NoFilesError`, etc.) rather than exiting.
 
 ---
 
@@ -189,60 +190,7 @@ contextzip config               # show current key status
 contextzip config --reset-key   # clear and re-run setup
 ```
 
----
-
-## Applying AI-returned changes
-
-Once an AI tool has made its edits and handed you back a ZIP, `contextzip apply-zip` writes those changes into your project — safely.
-
-```bash
-# Drop the AI's returned zip into .contextzip/inbox/, then:
-contextzip apply-zip
-
-# Or point at it directly, wherever it landed:
-contextzip apply-zip ~/Downloads/fixed-project.zip
-
-# Preview first, with full per-file detail:
-contextzip apply-zip --dry-run --verbose
-
-# Skip the confirmation prompt (e.g. in a script):
-contextzip apply-zip --yes
-```
-
-### How it knows what's safe to apply
-
-Every ZIP `contextzip` creates gets a small manifest written next to it in `.contextzip/output/` — a hash of each included file, taken at zip-time. This manifest is **never added to the ZIP itself**. It stays local, so it's never uploaded and never visible to whatever AI tool the ZIP is pasted into — nothing for a model, or a curious teammate, to notice or ask about.
-
-When you run `apply-zip`, it diffs the returned ZIP against that manifest and classifies every file:
-
-| Status | Meaning | Applied automatically? |
-|---|---|---|
-| **New** | Wasn't part of the original ZIP | Yes |
-| **Modified** | Was sent, content changed, and your local copy hasn't moved since | Yes |
-| **Unchanged** | Identical to what's already on disk | Skipped — nothing to do |
-| **Drifted** | Your local file changed (or was deleted) since you zipped it | No — flagged, asks first |
-| **Untracked** | In the returned ZIP but has no baseline to compare against | No — flagged, asks first |
-
-The common case — you zip some files, the AI edits them, nothing else touched your project meanwhile — applies straight through with just a summary printed, no prompt. Anything that could clobber your own work, or introduce a path you didn't expect, stops and asks before writing.
-
-If a ZIP arrives with no matching manifest at all (e.g. it wasn't produced by a `contextzip` round trip), every already-existing path is treated as untracked and you'll be asked to confirm the whole batch.
-
-### What it does and doesn't do
-
-- **Only adds and modifies files.** Deletions are never inferred from a ZIP's contents — a file that's simply missing from the returned ZIP is left alone.
-- **Backs up before overwriting.** Every file about to be touched is copied into `.contextzip/backups/<timestamp>/` first, preserving its relative path.
-- **Rejects unsafe paths outright.** Any ZIP entry that would resolve outside your project (`../../etc/passwd`-style path traversal) is refused before anything is written — no override flag, no exceptions.
-- **Archives what it consumes.** Once applied, the ZIP is moved to `.contextzip/inbox/applied/<timestamp>-name.zip` — it won't be picked up again by accident, and stays around as an audit trail. ZIPs applied via an explicit path outside the inbox are left where you put them.
-
-### Finding the right ZIP and manifest
-
-```bash
-contextzip apply-zip                    # exactly one *.zip in .contextzip/inbox/ → uses it
-contextzip apply-zip path/to/fix.zip    # explicit path always overrides the inbox
-contextzip apply-zip --manifest path/to/codebase.manifest.json   # override auto-detection
-```
-
-If `.contextzip/inbox/` has more than one ZIP and you don't specify which, `apply-zip` lists them and asks you to be explicit rather than guessing. Manifest auto-detection picks the most recently created `*.manifest.json` under `.contextzip/output/` — correct for the normal one-round-trip-at-a-time flow; pass `--manifest` explicitly if you've generated several ZIPs before getting a response back.
+Saved keys live in your OS user-config directory (e.g. `~/.config/contextzip/config.json` on Linux/macOS), and that file's permissions are locked down to your user only (`0600`) on every save.
 
 ---
 
@@ -263,7 +211,7 @@ contextzip starts your process normally. You see output exactly as you would wit
 ╰───────────────────────────────────────────────────╯
 ```
 
-Press **D** and contextzip immediately writes `.contextzip/output/debug-context.zip`. Your server keeps running — no restart, no interruption.
+Press **D** and contextzip immediately writes `.contextzip/debug-context.zip`. Your server keeps running — no restart, no interruption.
 
 **What's in the ZIP:**
 
@@ -285,7 +233,19 @@ Press **D** and contextzip immediately writes `.contextzip/output/debug-context.
 
 contextzip stacks exclusion rules based on your detected stack, on top of your `.gitignore`.
 
-**Always excluded:** `.git/`, `.env` files, logs, caches, editor config (`.vscode/`, `.idea/`), OS files (`.DS_Store`, `Thumbs.db`), common binary formats, and contextzip's own `.contextzip/` working folder.
+**Always excluded:** `.git/`, `.env` files, logs, caches, editor config (`.vscode/`, `.idea/`), OS files (`.DS_Store`, `Thumbs.db`), common binary formats, secrets and credential files (see below), and contextzip's own `.contextzip/` working folder.
+
+**Secrets & credentials — always excluded, regardless of framework:**
+
+| Category | Examples |
+|---|---|
+| SSH private keys | `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519` (public counterparts like `id_rsa.pub` are kept) |
+| Keystores & certs | `*.p12`, `*.pfx`, `*.pkcs12`, `*.jks`, `*.keystore`, `*.ppk`, `*.key` |
+| CLI / package manager credentials | `.npmrc`, `.netrc`, `.pypirc`, `.pgpass`, `.dockercfg`, Docker `config.json` |
+| Cloud provider credentials | `.aws/credentials`, `.aws/config`, `*serviceaccount*.json`, `*credentials*.json`, `kubeconfig` |
+| Infra-as-code state | `*.tfstate`, `*.tfstate.*`, `.terraform/` (Terraform state routinely contains plaintext secrets, even for "just infra" resources) |
+
+These patterns are applied on top of your `.gitignore` and can't be re-included, so a stray credential file lying around your project never accidentally ends up in a ZIP you paste into an AI tool.
 
 **By framework:**
 

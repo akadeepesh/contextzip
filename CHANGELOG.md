@@ -562,3 +562,51 @@ This project uses [Semantic Versioning](https://semver.org/).
 ### Notes
 
 * v1 of `apply-zip` only adds and modifies files — deletions are never inferred from a ZIP's contents. A file missing from a returned ZIP is left alone.
+
+
+## [0.3.9] - 2026-08-26
+
+### Security
+
+- Config file permissions (`~/.config/contextzip/config.json`) are now
+  locked to `0600` on **every** write, not just on creation. Previously a
+  pre-existing config file from an older install (or one created under a
+  permissive umask) could stay group/world-readable indefinitely — the
+  file can hold a Gemini API key in plaintext, so this closes a real local
+  exposure on shared machines.
+- The local config UI (`contextzip config --ui`) now compares the request
+  token with `hmac.compare_digest` instead of `==`, removing a
+  timing-based side channel on the single-use session token.
+- Substantially expanded the list of secret/credential files that are
+  always excluded from packaged zips, regardless of framework:
+  SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`),
+  keystores (`.jks`, `.keystore`, `.p12`, `.pkcs12`, `.ppk`),
+  CLI/package-manager credential files (`.npmrc`, `.netrc`, `.pypirc`,
+  `.pgpass`, `.dockercfg`, Docker `config.json`), cloud provider
+  credentials (`.aws/credentials`, `.aws/config`, `*serviceaccount*.json`,
+  `kubeconfig`), and Terraform state (`*.tfstate*`, `.terraform/`), which
+  routinely contains plaintext secrets even for "just infra" resources.
+
+### Fixed
+
+- `apply-zip` now detects when every entry in an AI-returned zip is
+  nested under one incidental top-level folder — the shape produced by
+  `zip -r out.zip myfolder` or GitHub's "Download ZIP" — and strips it
+  automatically when doing so clearly improves the match against the
+  project's manifest, so files land at their real project-relative paths
+  instead of recreating a wrapper folder.
+- `apply-zip` now warns before applying a zip whose structure barely
+  matches the project at all (under 10% of paths found in the manifest,
+  even after wrapper stripping), instead of silently treating every file
+  as brand new.
+
+### Changed
+
+- `.contextzip/inbox/applied/` now keeps only the most recently applied
+  zip instead of accumulating one per session.
+
+### Internal
+
+- Removed an unused `GitChanges` import in `api.py`.
+- Clarified the `.gitignore` comment describing what lives under
+  `.contextzip/` and confirming the Gemini API key is never stored there.

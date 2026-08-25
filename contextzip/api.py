@@ -47,7 +47,7 @@ from contextzip.filters import (
     resolve_files,
     resolve_files_from_git,
 )
-from contextzip.git import GitChanges, GitError, GitErrorKind, get_changed_files
+from contextzip.git import GitError, GitErrorKind, get_changed_files
 from contextzip.packager import PackageResult, create_zip_silent
 
 

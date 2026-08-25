@@ -36,6 +36,12 @@ desktop.ini
 # contextzip output files (don't commit test zips)
 *_context_*.zip
 
-# contextzip workspace
+# contextzip workspace — inbox/output/backups live here, project-local,
+# never meant to be committed (may contain manifests, backups of source
+# files, and applied zips). Note: the Gemini API key is NOT here — it's
+# stored outside the repo entirely, in the OS user-config dir
+# (~/.config/contextzip/config.json on Linux/macOS), so it was never at
+# risk from this file being missing.
+.contextzip/
 exports/
 

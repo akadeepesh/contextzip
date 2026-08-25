@@ -24,6 +24,7 @@ preview feeling instant even on larger projects.
 
 from __future__ import annotations
 
+import hmac
 import json
 import secrets
 import threading
@@ -90,7 +91,9 @@ class _ConfigUIState:
             gitignore_path=self.gitignore_path,
         )
         force_include = build_force_include_spec(always_include or None)
-        return classify_scanned_files(self.project_dir, self.all_files, spec, force_include)
+        return classify_scanned_files(
+            self.project_dir, self.all_files, spec, force_include
+        )
 
 
 def _make_handler(state: _ConfigUIState):
@@ -112,7 +115,10 @@ def _make_handler(state: _ConfigUIState):
             return self.headers.get("X-Contextzip-Token")
 
         def _authorized(self) -> bool:
-            return self._token_from_request() == state.token
+            token = self._token_from_request()
+            if not token:
+                return False
+            return hmac.compare_digest(token, state.token)
 
         def _send_json(self, status: int, payload: dict) -> None:
             body = json.dumps(payload).encode("utf-8")
@@ -158,7 +164,9 @@ def _make_handler(state: _ConfigUIState):
             except ValueError:
                 return None
 
-        def _build_payload(self, always_include: list[str], always_exclude: list[str]) -> dict:
+        def _build_payload(
+            self, always_include: list[str], always_exclude: list[str]
+        ) -> dict:
             classified = state.classify(always_include, always_exclude)
 
             root: dict = {"name": "", "path": "", "type": "dir", "children": {}}
@@ -279,7 +287,9 @@ def _make_handler(state: _ConfigUIState):
                 if not self._authorized():
                     self._send_json(403, {"error": "invalid token"})
                     return
-                payload = self._build_payload(state.always_include, state.always_exclude)
+                payload = self._build_payload(
+                    state.always_include, state.always_exclude
+                )
                 payload["project"] = {
                     "name": state.project_dir.name or str(state.project_dir),
                     "path": str(state.project_dir),
@@ -324,8 +334,12 @@ def _make_handler(state: _ConfigUIState):
                     self._send_json(403, {"error": "invalid token"})
                     return
                 body = self._read_json_body()
-                always_include = [p for p in body.get("always_include", []) if isinstance(p, str)]
-                always_exclude = [p for p in body.get("always_exclude", []) if isinstance(p, str)]
+                always_include = [
+                    p for p in body.get("always_include", []) if isinstance(p, str)
+                ]
+                always_exclude = [
+                    p for p in body.get("always_exclude", []) if isinstance(p, str)
+                ]
                 payload = self._build_payload(always_include, always_exclude)
                 self._send_json(200, payload)
                 return
@@ -336,10 +350,14 @@ def _make_handler(state: _ConfigUIState):
                     return
                 body = self._read_json_body()
                 always_include = [
-                    p.strip() for p in body.get("always_include", []) if isinstance(p, str) and p.strip()
+                    p.strip()
+                    for p in body.get("always_include", [])
+                    if isinstance(p, str) and p.strip()
                 ]
                 always_exclude = [
-                    p.strip() for p in body.get("always_exclude", []) if isinstance(p, str) and p.strip()
+                    p.strip()
+                    for p in body.get("always_exclude", [])
+                    if isinstance(p, str) and p.strip()
                 ]
                 with state.lock:
                     try:
@@ -404,7 +422,9 @@ def launch_config_ui(project_dir: Path, detection, *, con: Console = None) -> bo
 
     start = time.monotonic()
     try:
-        with con.status("[cyan]Waiting for you to finish in the browser…[/]", spinner="dots"):
+        with con.status(
+            "[cyan]Waiting for you to finish in the browser…[/]", spinner="dots"
+        ):
             while not state.should_stop.is_set() and not state.saved:
                 now = time.monotonic()
                 if now - state.last_activity > _IDLE_TIMEOUT_SECONDS:
@@ -419,7 +439,9 @@ def launch_config_ui(project_dir: Path, detection, *, con: Console = None) -> bo
         httpd.server_close()
 
     if state.saved:
-        con.print(f"  [green]✓[/]  Saved to [dim]{project_config_path(project_dir)}[/]\n")
+        con.print(
+            f"  [green]✓[/]  Saved to [dim]{project_config_path(project_dir)}[/]\n"
+        )
     else:
         con.print("  [dim]Config UI closed without saving.[/]\n")
 

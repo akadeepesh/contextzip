@@ -36,6 +36,37 @@ PATTERNS = [
     "*.key",
     "*.p12",
     "*.pfx",
+    "*.pkcs12",
+    "*.jks",
+    "*.keystore",
+    "*.ppk",
+    # SSH private keys — no extension, so matched by exact basename.
+    # Public counterparts (id_rsa.pub etc.) are intentionally NOT excluded.
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    # Credential files for common CLIs/package managers (auth tokens)
+    ".npmrc",
+    ".netrc",
+    ".pypirc",
+    ".pgpass",
+    ".dockercfg",
+    "docker/config.json",
+    ".docker/config.json",
+    # Cloud provider credential/config files
+    ".aws/credentials",
+    ".aws/config",
+    "*serviceaccount*.json",
+    "*service-account*.json",
+    "*credentials*.json",
+    "kubeconfig",
+    "*.kubeconfig",
+    # Infra-as-code state (Terraform state routinely contains plaintext
+    # secrets — resource passwords, keys — even for "just infra" resources)
+    "*.tfstate",
+    "*.tfstate.*",
+    ".terraform/",
     # Binaries & media (rarely useful for AI context)
     "*.exe",
     "*.dll",

@@ -354,7 +354,20 @@ def print_apply_plan(
             "  [dim]Manifest:[/]  [yellow]none found[/] "
             "[dim](every existing path will be treated as untracked)[/]"
         )
+    if plan.wrapper_note:
+        con.print(f"  [dim]Note    :[/]  [cyan]{plan.wrapper_note}[/]")
     con.print()
+
+    if plan.structure_warning:
+        con.print(
+            Panel(
+                f"[bold yellow]{plan.structure_warning}[/]",
+                title="[bold yellow]⚠ Structure mismatch[/]",
+                border_style="yellow",
+                padding=(0, 1),
+            )
+        )
+        con.print()
 
     counts = Counter(e.status.value for e in plan.entries)
     table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))

@@ -112,6 +112,9 @@ class ApplyPlan:
     manifest_path: Path | None
     entries: list[ApplyEntry] = field(default_factory=list)
     extraction_dir: Path = None  # type: ignore[assignment]
+    wrapper_stripped: str | None = None
+    wrapper_note: str | None = None
+    structure_warning: str | None = None
 
     @property
     def has_manifest(self) -> bool:
@@ -133,7 +136,11 @@ class ApplyPlan:
     @property
     def is_risky(self) -> bool:
         """True if anything here warrants a confirmation prompt before writing."""
-        return bool(self.risky_entries) or not self.has_manifest
+        return (
+            bool(self.risky_entries)
+            or not self.has_manifest
+            or bool(self.structure_warning)
+        )
 
 
 @dataclass
@@ -316,20 +323,36 @@ def _is_within(path: Path, parent: Path) -> bool:
         return False
 
 
-def _safe_extract(zip_path: Path, dest: Path) -> None:
+def _safe_extract(zip_path: Path, dest: Path, strip_prefix: str | None = None) -> None:
     """
     Extract *zip_path* into *dest*, refusing to write anything if any entry
     would resolve outside *dest* (zip-slip protection). Validated in a full
     first pass before any file is written, so a malicious entry never
     causes a partial extraction.
+
+    If *strip_prefix* is given (see `_detect_common_wrapper`), that leading
+    path component is removed from every entry before it's resolved against
+    *dest* — e.g. `codebase/contextzip/config.py` extracts to
+    `contextzip/config.py` instead of recreating a `codebase/` folder.
     """
     dest = dest.resolve()
+    strip = f"{strip_prefix}/" if strip_prefix else None
     with zipfile.ZipFile(zip_path) as zf:
         targets: dict[str, Path] = {}
         for info in zf.infolist():
             if info.is_dir():
                 continue
-            target = (dest / info.filename).resolve()
+            name = info.filename
+            if strip:
+                if not name.startswith(strip):
+                    # Shouldn't happen given how strip_prefix is detected
+                    # (every entry shares it), but never silently misplace
+                    # a file if it somehow doesn't.
+                    continue
+                name = name[len(strip):]
+                if not name:
+                    continue
+            target = (dest / name).resolve()
             if not _is_within(target, dest):
                 raise UnsafeZipEntryError(
                     f"Refusing to apply: entry '{info.filename}' resolves "
@@ -340,10 +363,51 @@ def _safe_extract(zip_path: Path, dest: Path) -> None:
         for info in zf.infolist():
             if info.is_dir():
                 continue
-            target = targets[info.filename]
+            target = targets.get(info.filename)
+            if target is None:
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(info) as src, target.open("wb") as out:
                 shutil.copyfileobj(src, out)
+
+
+# ---------------------------------------------------------------------------
+# Wrapper-folder detection ((1) in the apply-zip structure fix)
+# ---------------------------------------------------------------------------
+
+
+def _detect_common_wrapper(names: list[str]) -> str | None:
+    """
+    If every entry in *names* is nested one level under the exact same
+    single top-level directory, return that directory's name — otherwise
+    None. This is the shape produced by `zip -r out.zip myfolder`, GitHub's
+    "Download ZIP" (`repo-branch/...`), and similar: an incidental wrapper
+    around the real, root-relative paths, rather than an intentional part
+    of the project's structure.
+
+    Deliberately conservative: a single root-level file mixed in with the
+    rest (no wrapper actually applies), or more than one top-level
+    directory, both return None rather than guessing.
+    """
+    if not names:
+        return None
+    tops: set[str] = set()
+    for n in names:
+        if "/" not in n:
+            return None
+        tops.add(n.split("/", 1)[0])
+    if len(tops) != 1:
+        return None
+    candidate = next(iter(tops))
+    return candidate or None
+
+
+def _match_rate(names: list[str], manifest_files: dict) -> float:
+    """Fraction of *names* that appear as a path in *manifest_files*."""
+    if not names:
+        return 0.0
+    known = sum(1 for n in names if n in manifest_files)
+    return known / len(names)
 
 
 # ---------------------------------------------------------------------------
@@ -360,12 +424,55 @@ def build_plan(
     Extract *zip_path* to a temp directory and classify every file against
     *manifest_path* (may be None). Caller is responsible for eventually
     calling `execute_plan` or `discard_plan` to clean up the temp dir.
+
+    Before extracting, checks whether every entry in the zip shares a
+    single wrapping top-level directory (e.g. `codebase/contextzip/...`)
+    that isn't actually part of the project — see `_detect_common_wrapper`.
+    If so, and stripping it would line paths up with the manifest better
+    than leaving them alone, it's stripped automatically. Separately, if a
+    manifest exists and almost none of the resulting paths match it,
+    `structure_warning` is set so the caller can make sure the person
+    actually looks before applying — a zip whose files come out looking
+    all-new is exactly what a silently-mismatched structure produces.
     """
     manifest = load_manifest(manifest_path) if manifest_path else {}
     manifest_files: dict = manifest.get("files", {}) if manifest else {}
 
+    with zipfile.ZipFile(zip_path) as zf:
+        raw_names = sorted(i.filename for i in zf.infolist() if not i.is_dir())
+
+    strip_prefix: str | None = None
+    wrapper_note: str | None = None
+    candidate = _detect_common_wrapper(raw_names)
+    if candidate and not (project_dir / candidate).is_dir():
+        if manifest_files:
+            unstripped_rate = _match_rate(raw_names, manifest_files)
+            stripped_names = [n[len(candidate) + 1:] for n in raw_names]
+            stripped_rate = _match_rate(stripped_names, manifest_files)
+            # Only strip when it clearly helps — meaningfully better match
+            # against paths we know this project actually has, not just a
+            # coincidental improvement on a tiny zip.
+            if stripped_rate > unstripped_rate and stripped_rate >= 0.5:
+                strip_prefix = candidate
+                wrapper_note = (
+                    f"Removed wrapping folder '{candidate}/' present in every "
+                    f"zip entry — {stripped_rate:.0%} of paths matched the "
+                    f"project manifest after stripping vs {unstripped_rate:.0%} "
+                    "before."
+                )
+        else:
+            # No manifest to confirm against, so this is a softer call —
+            # still strip (matches how `tar` and GitHub's own zip downloads
+            # behave), but say so plainly since it's not manifest-verified.
+            strip_prefix = candidate
+            wrapper_note = (
+                f"Removed wrapping folder '{candidate}/' present in every zip "
+                "entry (no manifest available to confirm — double-check the "
+                "result before trusting it)."
+            )
+
     extraction_dir = Path(tempfile.mkdtemp(prefix="contextzip-apply-"))
-    _safe_extract(zip_path, extraction_dir)
+    _safe_extract(zip_path, extraction_dir, strip_prefix=strip_prefix)
 
     entries: list[ApplyEntry] = []
     for extracted in sorted(extraction_dir.rglob("*")):
@@ -406,11 +513,30 @@ def build_plan(
             ApplyEntry(rel_path=rel, status=status, size=size, extracted_path=extracted)
         )
 
+    structure_warning: str | None = None
+    if manifest_files and len(entries) >= 3:
+        known = sum(1 for e in entries if e.rel_path in manifest_files)
+        rate = known / len(entries)
+        if rate < 0.1:
+            structure_warning = (
+                f"Only {known} of {len(entries)} files in this zip match paths "
+                "from the project manifest, even after checking for a wrapping "
+                "folder. That usually means the zip's internal structure "
+                "doesn't line up with this project — the wrong zip, or one "
+                "built with an unexpected layout. Applying it as-is will "
+                "likely create a pile of unrelated new files rather than "
+                "update the ones you meant to change. Double-check the zip "
+                "before proceeding."
+            )
+
     return ApplyPlan(
         zip_path=zip_path,
         manifest_path=manifest_path,
         entries=entries,
         extraction_dir=extraction_dir,
+        wrapper_stripped=strip_prefix,
+        wrapper_note=wrapper_note,
+        structure_warning=structure_warning,
     )
 
 
@@ -450,15 +576,28 @@ def _backup_entries(
 def _move_zip_to_applied(zip_path: Path, project_dir: Path, workspace_root: Path) -> Path:
     """
     Move a consumed inbox zip into .contextzip/inbox/applied/, timestamped,
-    so it can't be accidentally re-applied and stays around as an audit
-    trail. Zips passed by an explicit path outside the inbox are left where
-    the user put them rather than being moved unexpectedly.
+    so it can't be accidentally re-applied. Zips passed by an explicit path
+    outside the inbox are left where the user put them rather than being
+    moved unexpectedly.
+
+    Only the most recently applied zip is kept: anything already in
+    applied/ from a prior run is removed first, so this folder holds one
+    zip at most and doesn't grow across sessions. If keeping a full
+    history ever matters, that's a deliberate future feature, not a
+    default behavior.
     """
     if zip_path.parent.resolve() != inbox_dir(project_dir).resolve():
         return zip_path
 
     applied_dir = workspace_root / _INBOX_DIRNAME / _APPLIED_DIRNAME
     applied_dir.mkdir(parents=True, exist_ok=True)
+
+    for old in applied_dir.glob("*.zip"):
+        try:
+            old.unlink()
+        except OSError:
+            pass  # best-effort — a leftover old zip isn't worth failing the apply over
+
     stamp = time.strftime("%Y%m%d-%H%M%S")
     dest = applied_dir / f"{stamp}-{zip_path.name}"
     try:

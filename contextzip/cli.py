@@ -424,9 +424,12 @@ def cmd_apply_zip(
         return
 
     if plan.is_risky and not yes:
-        proceed = click.confirm(
-            "  Some files above need a closer look — apply anyway?", default=False
+        prompt = (
+            "  This zip's structure doesn't look right — apply anyway?"
+            if plan.structure_warning
+            else "  Some files above need a closer look — apply anyway?"
         )
+        proceed = click.confirm(prompt, default=False)
         if not proceed:
             console.print("[dim]Cancelled — no files written.[/]")
             discard_plan(plan)

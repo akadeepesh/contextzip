@@ -87,10 +87,7 @@ def save_api_key(key: str) -> None:
     _CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     data = _read_config()
     data["gemini_api_key"] = key.strip()
-    _CONFIG_FILE.write_text(
-        json.dumps(data, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    _write_config(data)
 
 
 def delete_api_key() -> bool:
@@ -105,10 +102,7 @@ def delete_api_key() -> bool:
         if "gemini_api_key" not in data:
             return False
         del data["gemini_api_key"]
-        _CONFIG_FILE.write_text(
-            json.dumps(data, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        _write_config(data)
         return True
     except Exception:
         return False
@@ -179,10 +173,7 @@ def save_workspace_location(value: str) -> None:
     _CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     data = _read_config()
     data["workspace_location"] = value.strip()
-    _CONFIG_FILE.write_text(
-        json.dumps(data, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    _write_config(data)
 
 
 def delete_workspace_location() -> bool:
@@ -192,10 +183,7 @@ def delete_workspace_location() -> bool:
         if "workspace_location" not in data:
             return False
         del data["workspace_location"]
-        _CONFIG_FILE.write_text(
-            json.dumps(data, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        _write_config(data)
         return True
     except Exception:
         return False
@@ -225,10 +213,30 @@ def save_config_ui_dismissed() -> None:
     _CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     data = _read_config()
     data["config_ui_prompt_dismissed"] = True
+    _write_config(data)
+
+
+def _write_config(data: dict) -> None:
+    """
+    Write *data* to the config file and lock its permissions down to the
+    owner only (0600) on POSIX systems.
+
+    The file may hold a Gemini API key in plaintext, so it shouldn't be
+    left group/world-readable — other local accounts on a shared machine
+    could otherwise read it straight off disk. Applied on every write
+    (not just creation) since some platforms reset perms on rewrite, and
+    a pre-existing file from an older contextzip version may still have
+    the old default (umask-dependent) permissions.
+    """
     _CONFIG_FILE.write_text(
         json.dumps(data, indent=2) + "\n",
         encoding="utf-8",
     )
+    if os.name != "nt":
+        try:
+            os.chmod(_CONFIG_FILE, 0o600)
+        except OSError:
+            pass  # best-effort — never block a save over a chmod failure
 
 
 def _read_config() -> dict:

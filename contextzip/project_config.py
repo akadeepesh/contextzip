@@ -21,7 +21,17 @@ Currently supports:
       "ai": {
         "enabled": true,
         "provider": "gemini",
-        "max_files": 10
+        "max_files": 10,
+        "prompt_template": "We use pytest, not unittest."
+      },
+      "limits": {
+        "max_file_size_mb": 1,
+        "redact_secrets": false
+      },
+      "applied_zip_retention": 1,
+      "webui": {
+        "auto_open": true,
+        "port": null
       }
     }
 
@@ -47,15 +57,44 @@ built-in default for the newer preference fields.
 
   ai
       Persistent AI-selection preferences.
-        enabled     — if false, --prompt is refused with a clear message
-                       instead of silently ignored.
-        provider    — reserved for future providers; only "gemini" is
-                       currently supported.
-        max_files   — caps how many files the AI selector may return.
+        enabled          — if false, --prompt is refused with a clear
+                            message instead of silently ignored.
+        provider         — reserved for future providers; only "gemini"
+                            is currently supported.
+        max_files        — caps how many files the AI selector may return.
+        prompt_template  — prepended to every generated prompt.txt, ahead
+                            of the task description — house conventions
+                            the AI tool receiving the zip should always
+                            see (testing framework, folder conventions,
+                            etc.). Empty string means nothing is added.
+
+  limits
+      Packaging thresholds.
+        max_file_size_mb — files at or above this size are flagged as
+                            "large" before packaging (still included,
+                            just surfaced) instead of the fixed 1 MB
+                            default. Fractional values are allowed.
+        redact_secrets   — reserved for a future best-effort scrub of
+                            secret-shaped values (API keys, tokens) inside
+                            otherwise-included files, on top of the
+                            always-excluded credential file patterns.
+                            Currently persisted but not yet enforced.
+
+  applied_zip_retention
+      How many past `apply-zip` archives to keep in
+      `.contextzip/inbox/applied/` before pruning the oldest. Defaults to
+      1 (only the most recent). Set higher to keep a longer audit trail.
+
+  webui
+      Preferences for `contextzip config --ui`.
+        auto_open  — if false, the server still starts and prints the
+                     URL, but doesn't try to launch a browser tab itself.
+        port       — bind to this fixed port instead of a random free
+                     one; useful behind strict local-port firewall rules.
+                     null means "pick a random free port" (the default).
 
 The schema is intentionally a flat, easily-extended dict so future
-preferences (including ones set by a future web-based config UI) can be
-added without another migration.
+preferences can be added without another migration.
 
 Deprecation
 -----------
@@ -79,6 +118,15 @@ _LEGACY_PROJECT_CONFIG_FILENAME = ".contextzip.json"
 _VALID_AI_PROVIDERS = frozenset({"gemini"})
 _DEFAULT_AI_PROVIDER = "gemini"
 _DEFAULT_AI_MAX_FILES = 10
+_DEFAULT_PROMPT_TEMPLATE = ""
+
+_DEFAULT_MAX_FILE_SIZE_MB = 1.0
+_DEFAULT_REDACT_SECRETS = False
+
+_DEFAULT_APPLIED_ZIP_RETENTION = 1
+
+_DEFAULT_WEBUI_AUTO_OPEN = True
+_DEFAULT_WEBUI_PORT = None
 
 
 @dataclass
@@ -86,6 +134,19 @@ class AIConfig:
     enabled: bool = True
     provider: str = _DEFAULT_AI_PROVIDER
     max_files: int = _DEFAULT_AI_MAX_FILES
+    prompt_template: str = _DEFAULT_PROMPT_TEMPLATE
+
+
+@dataclass
+class LimitsConfig:
+    max_file_size_mb: float = _DEFAULT_MAX_FILE_SIZE_MB
+    redact_secrets: bool = _DEFAULT_REDACT_SECRETS
+
+
+@dataclass
+class WebUIConfig:
+    auto_open: bool = _DEFAULT_WEBUI_AUTO_OPEN
+    port: int | None = _DEFAULT_WEBUI_PORT
 
 
 @dataclass
@@ -95,6 +156,9 @@ class ProjectConfig:
     always_include: list[str] = field(default_factory=list)
     always_exclude: list[str] = field(default_factory=list)
     ai: AIConfig = field(default_factory=AIConfig)
+    limits: LimitsConfig = field(default_factory=LimitsConfig)
+    applied_zip_retention: int = _DEFAULT_APPLIED_ZIP_RETENTION
+    webui: WebUIConfig = field(default_factory=WebUIConfig)
 
     # Diagnostics — not part of the schema, set by load_project_config so
     # callers (the CLI) can decide whether to surface a deprecation notice.
@@ -188,6 +252,16 @@ def _parse_config_dict(data: dict) -> ProjectConfig:
     always_include = _parse_str_list(data.get("always_include"))
     always_exclude = _parse_str_list(data.get("always_exclude"))
     ai_config = _parse_ai_config(data.get("ai"))
+    limits_config = _parse_limits_config(data.get("limits"))
+    webui_config = _parse_webui_config(data.get("webui"))
+
+    applied_zip_retention = data.get("applied_zip_retention", _DEFAULT_APPLIED_ZIP_RETENTION)
+    if (
+        not isinstance(applied_zip_retention, int)
+        or isinstance(applied_zip_retention, bool)
+        or applied_zip_retention < 1
+    ):
+        applied_zip_retention = _DEFAULT_APPLIED_ZIP_RETENTION
 
     return ProjectConfig(
         workspace_location=workspace_location,
@@ -195,6 +269,9 @@ def _parse_config_dict(data: dict) -> ProjectConfig:
         always_include=always_include,
         always_exclude=always_exclude,
         ai=ai_config,
+        limits=limits_config,
+        applied_zip_retention=applied_zip_retention,
+        webui=webui_config,
     )
 
 
@@ -223,7 +300,58 @@ def _parse_ai_config(value: object) -> AIConfig:
     if not isinstance(max_files, int) or isinstance(max_files, bool) or max_files < 1:
         max_files = _DEFAULT_AI_MAX_FILES
 
-    return AIConfig(enabled=enabled, provider=provider, max_files=max_files)
+    prompt_template = value.get("prompt_template", _DEFAULT_PROMPT_TEMPLATE)
+    if not isinstance(prompt_template, str):
+        prompt_template = _DEFAULT_PROMPT_TEMPLATE
+    else:
+        prompt_template = prompt_template.strip()
+
+    return AIConfig(
+        enabled=enabled,
+        provider=provider,
+        max_files=max_files,
+        prompt_template=prompt_template,
+    )
+
+
+def _parse_limits_config(value: object) -> LimitsConfig:
+    if not isinstance(value, dict):
+        return LimitsConfig()
+
+    max_file_size_mb = value.get("max_file_size_mb", _DEFAULT_MAX_FILE_SIZE_MB)
+    if (
+        not isinstance(max_file_size_mb, (int, float))
+        or isinstance(max_file_size_mb, bool)
+        or max_file_size_mb <= 0
+    ):
+        max_file_size_mb = _DEFAULT_MAX_FILE_SIZE_MB
+
+    redact_secrets = value.get("redact_secrets", _DEFAULT_REDACT_SECRETS)
+    if not isinstance(redact_secrets, bool):
+        redact_secrets = _DEFAULT_REDACT_SECRETS
+
+    return LimitsConfig(
+        max_file_size_mb=float(max_file_size_mb), redact_secrets=redact_secrets
+    )
+
+
+def _parse_webui_config(value: object) -> WebUIConfig:
+    if not isinstance(value, dict):
+        return WebUIConfig()
+
+    auto_open = value.get("auto_open", _DEFAULT_WEBUI_AUTO_OPEN)
+    if not isinstance(auto_open, bool):
+        auto_open = _DEFAULT_WEBUI_AUTO_OPEN
+
+    port = value.get("port", _DEFAULT_WEBUI_PORT)
+    if (
+        not isinstance(port, int)
+        or isinstance(port, bool)
+        or not (1024 <= port <= 65535)
+    ):
+        port = _DEFAULT_WEBUI_PORT
+
+    return WebUIConfig(auto_open=auto_open, port=port)
 
 
 def is_known_ai_provider(provider: str) -> bool:

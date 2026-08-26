@@ -61,6 +61,7 @@ def run_ai_selection(
     ecosystem: str,
     api_key: str,
     max_files: int | None = None,
+    prompt_template: str = "",
     con: Console = console,
 ) -> tuple[list[Path], str]:
     """
@@ -69,6 +70,9 @@ def run_ai_selection(
     *max_files* caps how many files the selector may return — typically a
     project's `ai.max_files` preference (.contextzip/config.json). None
     falls back to each backend's own built-in default.
+
+    *prompt_template*, if non-empty, is a project's `ai.prompt_template`
+    preference, prepended to the generated prompt.txt.
 
     Handles progress display, heuristic-fallback warning, and Gemini
     errors. Raises SystemExit(1) on hard failure.
@@ -86,6 +90,7 @@ def run_ai_selection(
                 ecosystem=ecosystem,
                 api_key=api_key,
                 max_files=max_files,
+                prompt_template=prompt_template,
             )
         except GeminiError as exc:
             con.print(

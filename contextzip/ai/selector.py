@@ -33,6 +33,7 @@ def ai_select(
     ecosystem: str,
     api_key: str,
     max_files: int | None = None,
+    prompt_template: str = "",
 ) -> tuple[list[Path], str, str]:
     """
     Select the minimum relevant files for *prompt* from *resolved.included*.
@@ -40,6 +41,10 @@ def ai_select(
     *max_files* caps how many files either backend may return — typically a
     project's `ai.max_files` preference (.contextzip/config.json). None
     falls back to each backend's own built-in default cap.
+
+    *prompt_template*, if non-empty, is a project's `ai.prompt_template`
+    preference — house conventions prepended to the generated prompt.txt
+    ahead of the task description.
 
     Returns
     -------
@@ -78,14 +83,20 @@ def ai_select(
     }
     selected_paths = [rel_to_abs[rel] for rel in selected_rel if rel in rel_to_abs]
 
-    prompt_txt = _build_prompt_txt(prompt, selected_rel, ecosystem, method)
+    prompt_txt = _build_prompt_txt(
+        prompt, selected_rel, ecosystem, method, prompt_template=prompt_template
+    )
 
     return selected_paths, prompt_txt, method
 
 
-def build_prompt_only_txt(prompt: str, ecosystem: str) -> str:
+def build_prompt_only_txt(
+    prompt: str, ecosystem: str, prompt_template: str = ""
+) -> str:
     """Build a minimal prompt.txt when no AI selection was performed."""
-    return _build_prompt_txt(prompt, [], ecosystem, USED_GEMINI)
+    return _build_prompt_txt(
+        prompt, [], ecosystem, USED_GEMINI, prompt_template=prompt_template
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -125,12 +136,14 @@ def _build_prompt_txt(
     selected_rel: list[str],
     ecosystem: str,
     method: str,
+    prompt_template: str = "",
 ) -> str:
     """
     Build the prompt.txt to include inside the ZIP.
 
-    Any AI tool that receives the ZIP immediately sees the task description,
-    the framework, and exactly which files were selected and why.
+    Any AI tool that receives the ZIP immediately sees the project's own
+    conventions (if any are configured), the task description, the
+    framework, and exactly which files were selected and why.
     """
 
     selector_label = (
@@ -139,12 +152,21 @@ def _build_prompt_txt(
         else "contextzip (keyword heuristic — Gemini was rate limited)"
     )
 
-    lines: list[str] = [
-        f"Task: {prompt}",
-        "",
-        f"Framework: {ecosystem}",
-        "",
-    ]
+    lines: list[str] = []
+
+    if prompt_template:
+        lines.append("Project conventions:")
+        lines.append(prompt_template)
+        lines.append("")
+
+    lines.extend(
+        [
+            f"Task: {prompt}",
+            "",
+            f"Framework: {ecosystem}",
+            "",
+        ]
+    )
 
     if selected_rel:
         lines.append(f"Files selected by {selector_label}:")

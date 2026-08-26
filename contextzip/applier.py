@@ -573,18 +573,21 @@ def _backup_entries(
     return backup_dir
 
 
-def _move_zip_to_applied(zip_path: Path, project_dir: Path, workspace_root: Path) -> Path:
+def _move_zip_to_applied(
+    zip_path: Path, project_dir: Path, workspace_root: Path, retain: int = 1
+) -> Path:
     """
     Move a consumed inbox zip into .contextzip/inbox/applied/, timestamped,
     so it can't be accidentally re-applied. Zips passed by an explicit path
     outside the inbox are left where the user put them rather than being
     moved unexpectedly.
 
-    Only the most recently applied zip is kept: anything already in
-    applied/ from a prior run is removed first, so this folder holds one
-    zip at most and doesn't grow across sessions. If keeping a full
-    history ever matters, that's a deliberate future feature, not a
-    default behavior.
+    Keeps at most *retain* applied zips (default 1 — only the most recent).
+    Filenames are timestamp-prefixed, so a lexicographic sort is also a
+    chronological one; the oldest are pruned first, before this run's zip
+    is moved in, so the folder never holds more than *retain* at once.
+    Typically a project's `applied_zip_retention` preference
+    (.contextzip/config.json) — raise it to keep a longer audit trail.
     """
     if zip_path.parent.resolve() != inbox_dir(project_dir).resolve():
         return zip_path
@@ -592,7 +595,12 @@ def _move_zip_to_applied(zip_path: Path, project_dir: Path, workspace_root: Path
     applied_dir = workspace_root / _INBOX_DIRNAME / _APPLIED_DIRNAME
     applied_dir.mkdir(parents=True, exist_ok=True)
 
-    for old in applied_dir.glob("*.zip"):
+    retain = max(1, retain)
+    existing = sorted(applied_dir.glob("*.zip"))
+    # Keep room for the zip we're about to add: prune down to retain - 1
+    # existing entries before moving the new one in.
+    overflow = len(existing) - (retain - 1)
+    for old in existing[: max(0, overflow)]:
         try:
             old.unlink()
         except OSError:
@@ -607,13 +615,17 @@ def _move_zip_to_applied(zip_path: Path, project_dir: Path, workspace_root: Path
     return dest
 
 
-def execute_plan(plan: ApplyPlan, project_dir: Path) -> ApplyResult:
+def execute_plan(plan: ApplyPlan, project_dir: Path, retain: int = 1) -> ApplyResult:
     """
     Write every non-unchanged entry from *plan* into the project.
 
     Backs up whatever's about to be overwritten first. Assumes the caller
     has already decided to proceed — dry-run and confirmation prompts are
     handled upstream (see cli.py's `apply-zip` command).
+
+    *retain* caps how many applied zips are kept in
+    .contextzip/inbox/applied/ — typically a project's
+    `applied_zip_retention` preference (.contextzip/config.json).
     """
     workspace_root = _workspace_dir(project_dir)
     to_write = plan.writable_entries
@@ -627,7 +639,9 @@ def execute_plan(plan: ApplyPlan, project_dir: Path) -> ApplyResult:
         shutil.copy2(entry.extracted_path, dest)
         written.append(entry.rel_path)
 
-    applied_zip_path = _move_zip_to_applied(plan.zip_path, project_dir, workspace_root)
+    applied_zip_path = _move_zip_to_applied(
+        plan.zip_path, project_dir, workspace_root, retain=retain
+    )
     shutil.rmtree(plan.extraction_dir, ignore_errors=True)
 
     return ApplyResult(

@@ -269,6 +269,7 @@ def resolve_files(
     spec: pathspec.PathSpec,
     include_only: list[str] | None = None,
     force_include: pathspec.PathSpec | None = None,
+    large_file_warn_bytes: int = LARGE_FILE_WARN_BYTES,
 ) -> ResolveResult:
     """
     Walk *project_dir* and classify every file.
@@ -280,6 +281,9 @@ def resolve_files(
     without touching *spec* itself. It's checked ahead of *include_only* so
     an explicit `contextzip include PATH` for this run still has the final
     say on what actually gets included.
+
+    *large_file_warn_bytes* overrides the module default (1 MB) — typically
+    a project's `limits.max_file_size_mb` preference (.contextzip/config.json).
 
     Returns a :class:`ResolveResult` with included/excluded/skipped/large/binary lists.
     """
@@ -347,7 +351,7 @@ def resolve_files(
             continue
 
         # ── Large file warning ───────────────────────────────────────────────
-        if file_size >= LARGE_FILE_WARN_BYTES:
+        if file_size >= large_file_warn_bytes:
             result.large_files.append((abs_path, file_size))
 
         # ── Binary file detection ────────────────────────────────────────────
@@ -363,6 +367,7 @@ def resolve_files(
 def resolve_files_from_git(
     git_files: list[Path],
     project_dir: Path,
+    large_file_warn_bytes: int = LARGE_FILE_WARN_BYTES,
 ) -> ResolveResult:
     """
     Build a :class:`ResolveResult` from a pre-selected list of files reported
@@ -380,6 +385,9 @@ def resolve_files_from_git(
         :attr:`GitChanges.files`.
     project_dir:
         Absolute path to the project root (used for relative-path guards).
+    large_file_warn_bytes:
+        Overrides the module default (1 MB) — typically a project's
+        `limits.max_file_size_mb` preference (.contextzip/config.json).
     """
     # Build the base spec once — this is our safety floor regardless of what
     # git reports as changed. It blocks .env, secrets, binaries, etc.
@@ -423,7 +431,7 @@ def resolve_files_from_git(
             continue
 
         # ── Large file warning ───────────────────────────────────────────────
-        if file_size >= LARGE_FILE_WARN_BYTES:
+        if file_size >= large_file_warn_bytes:
             result.large_files.append((abs_path, file_size))
 
         # ── Binary file detection ────────────────────────────────────────────

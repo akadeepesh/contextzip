@@ -170,14 +170,25 @@ def print_scan_summary(
 # ---------------------------------------------------------------------------
 
 
-def print_file_warnings(resolved, project_dir: Path, *, con: Console = console) -> None:
-    """Render large-file, binary-file, and skipped-file warnings."""
+def print_file_warnings(
+    resolved,
+    project_dir: Path,
+    *,
+    large_file_warn_bytes: int = LARGE_FILE_WARN_BYTES,
+    con: Console = console,
+) -> None:
+    """Render large-file, binary-file, and skipped-file warnings.
+
+    *large_file_warn_bytes* only affects the displayed threshold text —
+    typically a project's `limits.max_file_size_mb` preference — the actual
+    filtering already happened in resolve_files()/resolve_files_from_git().
+    """
     if resolved.large_files:
         con.print()
         con.print(
             f"  [yellow]⚠[/]  [bold]{len(resolved.large_files)} large file"
             f"{'s' if len(resolved.large_files) != 1 else ''}[/] "
-            f"[dim](≥ {human_size(LARGE_FILE_WARN_BYTES)}) will be included:[/]"
+            f"[dim](≥ {human_size(large_file_warn_bytes)}) will be included:[/]"
         )
         for p, size in resolved.large_files[:5]:
             rel = p.relative_to(project_dir).as_posix()

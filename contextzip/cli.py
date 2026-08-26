@@ -373,6 +373,7 @@ def cmd_apply_zip(
       .contextzip/backups/<timestamp>/.
     """
     project_dir = Path(os.getcwd()).resolve()
+    project_cfg = load_project_config(project_dir)
 
     console.print()
     console.print(
@@ -436,7 +437,7 @@ def cmd_apply_zip(
             return
         console.print()
 
-    result = execute_plan(plan, project_dir)
+    result = execute_plan(plan, project_dir, retain=project_cfg.applied_zip_retention)
     print_apply_result(result)
 
 
@@ -922,6 +923,9 @@ def _run(
             resolved = resolve_files_from_git(
                 git_files=git_result.files,
                 project_dir=project_dir,
+                large_file_warn_bytes=int(
+                    project_cfg.limits.max_file_size_mb * 1024 * 1024
+                ),
             )
 
     else:
@@ -960,11 +964,18 @@ def _run(
                 spec=spec,
                 include_only=include_only if include_only else None,
                 force_include=force_include,
+                large_file_warn_bytes=int(
+                    project_cfg.limits.max_file_size_mb * 1024 * 1024
+                ),
             )
 
     # ── File scan summary + warnings ─────────────────────────────────────────
     print_scan_summary(resolved, project_dir, verbose, git_mode=git_changes)
-    print_file_warnings(resolved, project_dir)
+    print_file_warnings(
+        resolved,
+        project_dir,
+        large_file_warn_bytes=int(project_cfg.limits.max_file_size_mb * 1024 * 1024),
+    )
 
     # ── Dry run ──────────────────────────────────────────────────────────────
     if dry_run:
@@ -1026,6 +1037,7 @@ def _run(
             ecosystem=detection.display_name,
             api_key=api_key,
             max_files=project_cfg.ai.max_files,
+            prompt_template=project_cfg.ai.prompt_template,
         )
 
         if not selected_paths:

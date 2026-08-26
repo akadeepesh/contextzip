@@ -80,6 +80,25 @@ class _ConfigUIState:
         # shows what's actually in effect, not a blank slate.
         self.always_include: list[str] = list(project_cfg.always_include)
         self.always_exclude: list[str] = list(project_cfg.always_exclude)
+        self.workspace_location: str = project_cfg.workspace_location or "git-root"
+        self.scan_depth: int = (
+            project_cfg.scan_depth if project_cfg.scan_depth is not None else 2
+        )
+        self.ai: dict = {
+            "enabled": project_cfg.ai.enabled,
+            "provider": project_cfg.ai.provider,
+            "max_files": project_cfg.ai.max_files,
+            "prompt_template": project_cfg.ai.prompt_template,
+        }
+        self.limits: dict = {
+            "max_file_size_mb": project_cfg.limits.max_file_size_mb,
+            "redact_secrets": project_cfg.limits.redact_secrets,
+        }
+        self.applied_zip_retention: int = project_cfg.applied_zip_retention
+        self.webui: dict = {
+            "auto_open": project_cfg.webui.auto_open,
+            "port": project_cfg.webui.port,
+        }
 
     def touch(self) -> None:
         self.last_activity = time.monotonic()
@@ -298,6 +317,12 @@ def _make_handler(state: _ConfigUIState):
                 payload["config"] = {
                     "always_include": state.always_include,
                     "always_exclude": state.always_exclude,
+                    "workspace_location": state.workspace_location,
+                    "scan_depth": state.scan_depth,
+                    "ai": state.ai,
+                    "limits": state.limits,
+                    "applied_zip_retention": state.applied_zip_retention,
+                    "webui": state.webui,
                 }
                 payload["configPath"] = str(project_config_path(state.project_dir))
                 self._send_json(200, payload)
@@ -359,18 +384,91 @@ def _make_handler(state: _ConfigUIState):
                     for p in body.get("always_exclude", [])
                     if isinstance(p, str) and p.strip()
                 ]
+
+                workspace_location = body.get("workspace_location")
+                if (
+                    not isinstance(workspace_location, str)
+                    or not workspace_location.strip()
+                ):
+                    workspace_location = None
+
+                scan_depth = body.get("scan_depth")
+                if (
+                    not isinstance(scan_depth, int)
+                    or isinstance(scan_depth, bool)
+                    or scan_depth < 0
+                ):
+                    scan_depth = None
+
+                ai_in = body.get("ai") if isinstance(body.get("ai"), dict) else {}
+                ai = {}
+                if isinstance(ai_in.get("enabled"), bool):
+                    ai["enabled"] = ai_in["enabled"]
+                if isinstance(ai_in.get("provider"), str) and ai_in["provider"].strip():
+                    ai["provider"] = ai_in["provider"].strip()
+                mf = ai_in.get("max_files")
+                if isinstance(mf, int) and not isinstance(mf, bool) and mf >= 1:
+                    ai["max_files"] = mf
+                if isinstance(ai_in.get("prompt_template"), str):
+                    ai["prompt_template"] = ai_in["prompt_template"].strip()
+
+                limits_in = (
+                    body.get("limits") if isinstance(body.get("limits"), dict) else {}
+                )
+                limits = {}
+                mfs = limits_in.get("max_file_size_mb")
+                if isinstance(mfs, (int, float)) and not isinstance(mfs, bool) and mfs > 0:
+                    limits["max_file_size_mb"] = mfs
+                if isinstance(limits_in.get("redact_secrets"), bool):
+                    limits["redact_secrets"] = limits_in["redact_secrets"]
+
+                applied_zip_retention = body.get("applied_zip_retention")
+                if (
+                    not isinstance(applied_zip_retention, int)
+                    or isinstance(applied_zip_retention, bool)
+                    or applied_zip_retention < 1
+                ):
+                    applied_zip_retention = None
+
+                webui_in = (
+                    body.get("webui") if isinstance(body.get("webui"), dict) else {}
+                )
+                webui = {}
+                if isinstance(webui_in.get("auto_open"), bool):
+                    webui["auto_open"] = webui_in["auto_open"]
+                port = webui_in.get("port")
+                if port is None:
+                    webui["port"] = None
+                elif isinstance(port, int) and not isinstance(port, bool) and 1024 <= port <= 65535:
+                    webui["port"] = port
+
                 with state.lock:
                     try:
                         saved_path = save_config_from_ui(
                             state.project_dir,
                             always_include=always_include,
                             always_exclude=always_exclude,
+                            workspace_location=workspace_location,
+                            scan_depth=scan_depth,
+                            ai=ai or None,
+                            limits=limits or None,
+                            applied_zip_retention=applied_zip_retention,
+                            webui=webui or None,
                         )
                     except OSError as exc:
                         self._send_json(500, {"error": str(exc)})
                         return
                     state.always_include = always_include
                     state.always_exclude = always_exclude
+                    if workspace_location is not None:
+                        state.workspace_location = workspace_location
+                    if scan_depth is not None:
+                        state.scan_depth = scan_depth
+                    state.ai.update(ai)
+                    state.limits.update(limits)
+                    if applied_zip_retention is not None:
+                        state.applied_zip_retention = applied_zip_retention
+                    state.webui.update(webui)
                     state.saved = True
                 self._send_json(200, {"ok": True, "path": str(saved_path)})
                 return
@@ -393,11 +491,28 @@ def launch_config_ui(project_dir: Path, detection, *, con: Console = None) -> bo
     state = _ConfigUIState(project_dir, detection, project_cfg)
     handler_cls = _make_handler(state)
 
-    try:
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
-    except OSError as exc:
-        con.print(f"\n  [red]✗[/]  Could not start the local config UI: {exc}\n")
-        return False
+    # A configured fixed port (project_cfg.webui.port) is tried first —
+    # useful behind strict local-port firewall rules — but never blocks
+    # startup: if it's taken, fall straight back to a random free port
+    # rather than failing the whole command over one occupied port.
+    preferred_port = project_cfg.webui.port
+    httpd = None
+    if preferred_port is not None:
+        try:
+            httpd = ThreadingHTTPServer(("127.0.0.1", preferred_port), handler_cls)
+        except OSError:
+            con.print(
+                f"  [yellow]⚠[/]  [dim]Configured port {preferred_port} is in use — "
+                "picking a free one instead.[/]"
+            )
+            httpd = None
+
+    if httpd is None:
+        try:
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
+        except OSError as exc:
+            con.print(f"\n  [red]✗[/]  Could not start the local config UI: {exc}\n")
+            return False
 
     port = httpd.server_address[1]
     url = f"http://127.0.0.1:{port}/?token={state.token}"
@@ -418,7 +533,10 @@ def launch_config_ui(project_dir: Path, detection, *, con: Console = None) -> bo
     )
     con.print()
 
-    open_browser_silent(url)
+    if project_cfg.webui.auto_open:
+        open_browser_silent(url)
+    else:
+        con.print("  [dim]Auto-open is off — open the link above manually.[/]\n")
 
     start = time.monotonic()
     try:

@@ -610,3 +610,93 @@ This project uses [Semantic Versioning](https://semver.org/).
 - Removed an unused `GitChanges` import in `api.py`.
 - Clarified the `.gitignore` comment describing what lives under
   `.contextzip/` and confirming the Gemini API key is never stored there.
+
+
+## [0.4.0] - 2026-08-26
+
+### Added
+
+- **Config UI redesign.** `contextzip config --ui` is now a five-tab
+  interface (Files, AI selection, Workspace, Advanced, Raw JSON) instead
+  of a single always_include/always_exclude pane. The file tree and
+  pattern list now render as a diff — a solid gutter and `+`/`-` marks on
+  every row and pattern, matching the git-diff mental model the rest of
+  the tool already uses. Still a single dependency-free HTML string with
+  no build step, no Node.js, and no network calls from the page itself.
+- **New, persisted project preferences** (`.contextzip/config.json`),
+  editable from the new UI tabs or by hand:
+  - `ai.prompt_template` — house conventions prepended to every generated
+    `prompt.txt`, ahead of the task description.
+  - `limits.max_file_size_mb` — replaces the fixed 1 MB "large file"
+    threshold with a per-project value.
+  - `limits.redact_secrets` — reserved for a future scrub of
+    secret-shaped values inside otherwise-included files. Persisted and
+    editable now; not yet enforced during packaging (see Known
+    limitations below).
+  - `applied_zip_retention` — how many past `apply-zip` archives to keep
+    in `.contextzip/inbox/applied/` before pruning (was hardcoded to 1).
+  - `webui.auto_open` / `webui.port` — skip auto-launching a browser tab
+    and/or pin the config UI to a fixed local port instead of a random
+    free one.
+
+### Changed
+
+- `contextzip config --ui`'s local server now exposes the full project
+  config through `/api/state` and accepts the full config through
+  `/api/save`, instead of only always_include/always_exclude.
+- Large-file warnings in normal CLI output now reflect the project's
+  configured threshold instead of a fixed 1 MB.
+
+### Known limitations
+
+- `limits.redact_secrets` can be toggled on and is saved correctly, but
+  nothing reads it yet — no redaction currently happens during
+  packaging. Flagging this explicitly so it isn't relied on before the
+  enforcement lands.
+
+## [0.3.9] - 2026-08-26
+
+### Security
+
+- Config file permissions (`~/.config/contextzip/config.json`) are now
+  locked to `0600` on **every** write, not just on creation. Previously a
+  pre-existing config file from an older install (or one created under a
+  permissive umask) could stay group/world-readable indefinitely — the
+  file can hold a Gemini API key in plaintext, so this closes a real local
+  exposure on shared machines.
+- The local config UI (`contextzip config --ui`) now compares the request
+  token with `hmac.compare_digest` instead of `==`, removing a
+  timing-based side channel on the single-use session token.
+- Substantially expanded the list of secret/credential files that are
+  always excluded from packaged zips, regardless of framework:
+  SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`),
+  keystores (`.jks`, `.keystore`, `.p12`, `.pkcs12`, `.ppk`),
+  CLI/package-manager credential files (`.npmrc`, `.netrc`, `.pypirc`,
+  `.pgpass`, `.dockercfg`, Docker `config.json`), cloud provider
+  credentials (`.aws/credentials`, `.aws/config`, `*serviceaccount*.json`,
+  `kubeconfig`), and Terraform state (`*.tfstate*`, `.terraform/`), which
+  routinely contains plaintext secrets even for "just infra" resources.
+
+### Fixed
+
+- `apply-zip` now detects when every entry in an AI-returned zip is
+  nested under one incidental top-level folder — the shape produced by
+  `zip -r out.zip myfolder` or GitHub's "Download ZIP" — and strips it
+  automatically when doing so clearly improves the match against the
+  project's manifest, so files land at their real project-relative paths
+  instead of recreating a wrapper folder.
+- `apply-zip` now warns before applying a zip whose structure barely
+  matches the project at all (under 10% of paths found in the manifest,
+  even after wrapper stripping), instead of silently treating every file
+  as brand new.
+
+### Changed
+
+- `.contextzip/inbox/applied/` now keeps only the most recently applied
+  zip instead of accumulating one per session.
+
+### Internal
+
+- Removed an unused `GitChanges` import in `api.py`.
+- Clarified the `.gitignore` comment describing what lives under
+  `.contextzip/` and confirming the Gemini API key is never stored there.

@@ -34,9 +34,9 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 from rich.console import Console
-from rich.panel import Panel
 
 from contextzip.cli_onboard import open_browser_silent
+from contextzip.cli_display import ok, warn, err, info
 from contextzip.filters import (
     build_spec,
     build_force_include_spec,
@@ -501,17 +501,14 @@ def launch_config_ui(project_dir: Path, detection, *, con: Console = None) -> bo
         try:
             httpd = ThreadingHTTPServer(("127.0.0.1", preferred_port), handler_cls)
         except OSError:
-            con.print(
-                f"  [yellow]⚠[/]  [dim]Configured port {preferred_port} is in use — "
-                "picking a free one instead.[/]"
-            )
+            warn(f"Configured port {preferred_port} is in use — picking a free one instead", con=con)
             httpd = None
 
     if httpd is None:
         try:
             httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
         except OSError as exc:
-            con.print(f"\n  [red]✗[/]  Could not start the local config UI: {exc}\n")
+            err(f"Could not start the local config UI: {exc}", con=con)
             return False
 
     port = httpd.server_address[1]
@@ -520,23 +517,13 @@ def launch_config_ui(project_dir: Path, detection, *, con: Console = None) -> bo
     server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     server_thread.start()
 
-    con.print()
-    con.print(
-        Panel.fit(
-            f"[bold cyan]contextzip config UI[/] is running locally\n\n"
-            f"[dim]→[/]  [bold cyan link={url}]{url}[/]\n\n"
-            f"[dim]Bound to 127.0.0.1 only — nothing about this project leaves "
-            f"your machine.\nPress [/][bold]Ctrl+C[/][dim] here at any time to stop.[/]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
-    con.print()
+    ok("Config UI running", url, con=con)
+    info("Bound to 127.0.0.1 only · Ctrl+C to stop", con=con)
 
     if project_cfg.webui.auto_open:
         open_browser_silent(url)
     else:
-        con.print("  [dim]Auto-open is off — open the link above manually.[/]\n")
+        info("Auto-open is off — open the link above manually.", con=con)
 
     start = time.monotonic()
     try:
@@ -551,16 +538,14 @@ def launch_config_ui(project_dir: Path, detection, *, con: Console = None) -> bo
                     break
                 time.sleep(0.25)
     except KeyboardInterrupt:
-        con.print("\n  [dim]Stopped.[/]")
+        info("Stopped.", con=con)
     finally:
         httpd.shutdown()
         httpd.server_close()
 
     if state.saved:
-        con.print(
-            f"  [green]✓[/]  Saved to [dim]{project_config_path(project_dir)}[/]\n"
-        )
+        ok("Saved to", str(project_config_path(project_dir)), con=con)
     else:
-        con.print("  [dim]Config UI closed without saving.[/]\n")
+        info("Config UI closed without saving.", con=con)
 
     return state.saved

@@ -9,7 +9,6 @@ from pathlib import Path
 
 import click
 from rich.console import Console
-from rich.panel import Panel
 
 from contextzip import __version__
 from contextzip.config import (
@@ -37,16 +36,26 @@ from contextzip.project_config import (
 )
 
 from contextzip.cli_display import (
+    ok,
+    warn,
+    err,
+    info,
     print_detection,
-    print_git_summary,
+    print_git_deleted_and_submodules,
+    git_scan_label_and_detail,
+    print_git_verbose_files,
+    scan_label_and_detail,
     print_scan_summary,
+    print_scan_and_pack,
     print_file_warnings,
     print_package_result,
     print_zip_write_warnings,
+    print_report_hint,
     print_clipboard_result,
     print_apply_plan,
     print_apply_result,
 )
+from contextzip.report import write_scan_report, write_apply_report
 from contextzip.applier import (
     ApplyError,
     MultipleZipsFoundError,
@@ -376,23 +385,14 @@ def cmd_apply_zip(
     project_cfg = load_project_config(project_dir)
 
     console.print()
-    console.print(
-        Panel.fit(
-            f"[bold cyan]contextzip[/] [dim]apply-zip[/]\n"
-            f"[dim]Project:[/] [white]{project_dir}[/]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
-    console.print()
 
     try:
         resolved_zip = find_zip_to_apply(project_dir, zip_path)
     except MultipleZipsFoundError as exc:
-        console.print(f"[red]{exc}[/]")
+        err(str(exc))
         raise SystemExit(1)
     except ApplyError as exc:
-        console.print(f"[red]{exc}[/]")
+        err(str(exc))
         raise SystemExit(1)
 
     manifest = find_latest_manifest(project_dir, manifest_path)
@@ -400,27 +400,20 @@ def cmd_apply_zip(
     try:
         plan = build_plan(resolved_zip, project_dir, manifest)
     except ApplyError as exc:
-        console.print(f"[red]{exc}[/]")
+        err(str(exc))
         raise SystemExit(1)
 
     print_apply_plan(plan, project_dir, verbose=verbose)
+    report_path = write_apply_report(project_dir=project_dir, plan=plan)
 
     if not plan.writable_entries:
-        console.print(
-            "[yellow]Nothing to apply.[/] Every file already matches the project."
-        )
+        info("Nothing to apply — every file already matches the project.")
         discard_plan(plan)
         return
 
     if dry_run:
-        console.print(
-            Panel.fit(
-                "[yellow]Dry run — no files written.[/]\n"
-                "[dim]Remove --dry-run to apply these changes.[/]",
-                border_style="yellow",
-                padding=(0, 2),
-            )
-        )
+        info("Dry run — no files written. Remove --dry-run to apply these changes.")
+        print_report_hint(report_path)
         discard_plan(plan)
         return
 
@@ -432,13 +425,14 @@ def cmd_apply_zip(
         )
         proceed = click.confirm(prompt, default=False)
         if not proceed:
-            console.print("[dim]Cancelled — no files written.[/]")
+            info("Cancelled — no files written.")
             discard_plan(plan)
             return
-        console.print()
 
     result = execute_plan(plan, project_dir, retain=project_cfg.applied_zip_retention)
     print_apply_result(result)
+    report_path = write_apply_report(project_dir=project_dir, plan=plan, result=result)
+    print_report_hint(report_path)
 
 
 # ---------------------------------------------------------------------------
@@ -492,20 +486,9 @@ def cmd_watch(command: tuple[str, ...]) -> None:
         cmd_list = cmd_list[1:]
 
     if not cmd_list:
-        console.print(
-            "[red]No command specified.[/] Usage: contextzip watch -- COMMAND [ARGS]"
-        )
+        err("No command specified. Usage: contextzip watch -- COMMAND [ARGS]")
         raise SystemExit(1)
 
-    console.print()
-    console.print(
-        Panel.fit(
-            f"[bold cyan]contextzip[/] [dim]watch mode[/]\n"
-            f"[dim]Project:[/] [white]{project_dir}[/]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
     console.print()
 
     with console.status("[cyan]Detecting project ecosystem…[/]", spinner="dots"):
@@ -514,10 +497,7 @@ def cmd_watch(command: tuple[str, ...]) -> None:
     print_detection(detection)
 
     if os.name == "nt":
-        console.print(
-            "[yellow]  ⚠[/]  [dim]Windows detected — color passthrough may be limited. "
-            "PTY mode is not used.[/]\n"
-        )
+        warn("Windows detected — color passthrough may be limited (no PTY mode)")
 
     from contextzip.watcher import run_watch
 
@@ -604,83 +584,60 @@ def cmd_config(
         return
 
     if show_key_path:
-        console.print(f"\n  [dim]Config file:[/] [cyan]{config_path()}[/]\n")
+        console.print()
+        info(f"Config file: {config_path()}")
+        console.print()
         return
 
     if set_workspace is not None or reset_workspace:
+        console.print()
         if reset_workspace:
             removed = delete_workspace_location()
             if removed:
-                console.print(
-                    f"\n  [green]✓[/]  Workspace override removed from "
-                    f"[dim]{config_path()}[/]"
-                )
+                ok("Workspace override removed", str(config_path()))
             else:
-                console.print("\n  [dim]No personal workspace override was set.[/]")
+                info("No personal workspace override was set.")
             if set_workspace is None:
+                console.print()
                 return
 
         if set_workspace is not None:
             save_workspace_location(set_workspace)
-            console.print(
-                f"\n  [green]✓[/]  Personal workspace location set to "
-                f"[cyan]{set_workspace}[/] in [dim]{config_path()}[/]\n"
-                f"  [dim]A project-level .contextzip/config.json, if present, still "
-                f"takes priority over this.[/]"
+            ok(f"Workspace location set to {set_workspace}", str(config_path()))
+            info(
+                "A project-level .contextzip/config.json, if present, still "
+                "takes priority over this."
             )
+        console.print()
         return
 
     if reset_key:
+        console.print()
         removed = delete_api_key()
         if removed:
-            console.print(
-                f"\n  [green]✓[/]  API key removed from [dim]{config_path()}[/]"
-            )
+            ok("API key removed", str(config_path()))
         else:
-            console.print("\n  [dim]No API key was stored.[/]")
+            info("No API key was stored.")
 
         console.print()
         new_key = onboard_api_key()
         if not new_key:
-            console.print(
-                "  [dim]You can set [cyan]GEMINI_API_KEY[/] as an environment "
-                "variable instead.[/]\n"
-            )
+            info("You can set GEMINI_API_KEY as an environment variable instead.")
+            console.print()
         return
 
     # Default: show current config status
+    console.print()
     key = get_api_key()
     from_env = bool(os.environ.get("GEMINI_API_KEY", "").strip())
 
     if key:
         masked = key[:8] + "…" + key[-4:] if len(key) > 12 else "****"
-        source = (
-            "[dim](from environment variable)[/]"
-            if from_env
-            else f"[dim]({config_path()})[/]"
-        )
-        console.print(
-            Panel(
-                f"  [dim]Gemini API key:[/]  [green]{masked}[/]  {source}\n\n"
-                "  [dim]Run [cyan]contextzip config --reset-key[/] to change it.[/]",
-                title="[bold]contextzip config[/]",
-                border_style="cyan",
-                padding=(0, 2),
-            )
-        )
+        source = "environment variable" if from_env else str(config_path())
+        ok(f"Gemini API key configured", f"{masked} · {source}")
     else:
-        console.print(
-            Panel(
-                "  No Gemini API key configured.\n\n"
-                '  Run [cyan]contextzip --prompt "your task"[/] to set one up,\n'
-                "  or [cyan]contextzip config --reset-key[/] to go through setup now.",
-                title="[bold]contextzip config[/]",
-                border_style="yellow",
-                padding=(0, 2),
-            )
-        )
-
-    console.print()
+        warn("No Gemini API key configured")
+        info('Run contextzip --prompt "your task" to set one up.')
 
     from contextzip.packager import _resolve_workspace_location
     from contextzip.project_config import (
@@ -691,51 +648,23 @@ def cmd_config(
 
     cwd = Path(os.getcwd()).resolve()
     ws_location, ws_source = _resolve_workspace_location(cwd)
-    console.print(
-        Panel(
-            f"  [dim]Workspace location:[/]  [green]{ws_location}[/]  [dim]({ws_source})[/]\n\n"
-            "  [dim]Run [cyan]contextzip config --set-workspace <location>[/] to set "
-            "a personal default,\n"
-            "  or commit a [cyan].contextzip/config.json[/] at the project root to "
-            "share one with your team.\n"
-            "  Run [cyan]contextzip config --ui[/] to set include/exclude "
-            "preferences visually.[/]",
-            title="[bold]contextzip config[/]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
-    console.print()
+    ok(f"Workspace: {ws_location}", ws_source)
 
     project_cfg = load_project_config(cwd)
     if has_legacy_project_config(cwd):
-        console.print(
-            Panel(
-                "  [yellow]Using the deprecated .contextzip.json.[/]\n\n"
-                "  [dim]Move its contents into [cyan].contextzip/config.json[/] — "
-                "same fields, new home. See the README for the current schema.[/]",
-                title="[bold]contextzip config[/]",
-                border_style="yellow",
-                padding=(0, 2),
-            )
-        )
+        warn("Using the deprecated .contextzip.json — move it to .contextzip/config.json")
     else:
-        always_include = ", ".join(project_cfg.always_include) or "[dim]none[/]"
-        always_exclude = ", ".join(project_cfg.always_exclude) or "[dim]none[/]"
+        always_include = ", ".join(project_cfg.always_include) or "none"
+        always_exclude = ", ".join(project_cfg.always_exclude) or "none"
         ai = project_cfg.ai
-        console.print(
-            Panel(
-                f"  [dim]Project config:[/]  [cyan]{project_config_path(cwd)}[/]"
-                f"{' [dim](not created yet — defaults shown)[/]' if not project_cfg.source_path else ''}\n\n"
-                f"  [dim]always_include:[/]  {always_include}\n"
-                f"  [dim]always_exclude:[/]  {always_exclude}\n"
-                f"  [dim]ai:[/]  enabled=[green]{ai.enabled}[/] "
-                f"provider=[green]{ai.provider}[/] max_files=[green]{ai.max_files}[/]",
-                title="[bold]contextzip config[/]",
-                border_style="cyan",
-                padding=(0, 2),
-            )
+        cfg_note = (
+            " (not created yet — defaults shown)" if not project_cfg.source_path else ""
         )
+        ok(f"Project config: {project_config_path(cwd)}{cfg_note}")
+        info(f"always_include: {always_include}")
+        info(f"always_exclude: {always_exclude}")
+        info(f"ai: enabled={ai.enabled} provider={ai.provider} max_files={ai.max_files}")
+
     console.print()
 
 
@@ -752,27 +681,13 @@ def _enforce_ai_config(ai_cfg) -> None:
     configured provider isn't one contextzip currently supports.
     """
     if not ai_cfg.enabled:
-        console.print(
-            Panel.fit(
-                "[yellow]AI-powered selection is disabled for this project.[/]\n"
-                "[dim]Set [cyan]\"ai\": {\"enabled\": true}[/] in "
-                "[cyan].contextzip/config.json[/] to use --prompt here.[/]",
-                border_style="yellow",
-                padding=(0, 2),
-            )
-        )
+        err("AI-powered selection is disabled for this project.")
+        info('Set "ai": {"enabled": true} in .contextzip/config.json to use --prompt.')
         raise SystemExit(1)
 
     if not is_known_ai_provider(ai_cfg.provider):
-        console.print(
-            Panel.fit(
-                f"[red]Unsupported AI provider:[/] [cyan]{ai_cfg.provider}[/]\n"
-                "[dim]Only [cyan]\"gemini\"[/] is currently supported — update "
-                "[cyan]ai.provider[/] in [cyan].contextzip/config.json[/].[/]",
-                border_style="red",
-                padding=(0, 2),
-            )
-        )
+        err(f"Unsupported AI provider: {ai_cfg.provider}")
+        info('Only "gemini" is currently supported — update ai.provider in .contextzip/config.json.')
         raise SystemExit(1)
 
 
@@ -813,25 +728,14 @@ def _maybe_offer_config_ui(
     if get_config_ui_dismissed():
         return False
 
-    console.print(
-        Panel.fit(
-            "[bold]No project config found yet.[/]\n\n"
-            "[dim]contextzip can open a local browser tab where you pick "
-            "exactly what\nto include/exclude — with live file counts and "
-            "one-click suggestions\nfor things like PDFs or other non-code "
-            "files. Nothing leaves your machine.[/]",
-            title="[cyan]First run[/]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
+    info("No project config found yet.")
+    info("contextzip can open a local browser tab to set include/exclude visually.")
     console.print()
 
     if not click.confirm("  Set up include/exclude visually now?", default=True):
         save_config_ui_dismissed()
-        console.print(
-            "  [dim]No problem — run [cyan]contextzip config --ui[/] anytime.[/]\n"
-        )
+        info("No problem — run contextzip config --ui anytime.")
+        console.print()
         return False
 
     from contextzip.webui.server import launch_config_ui
@@ -857,28 +761,12 @@ def _run(
     keeping the CLI surface thin and the logic testable in isolation.
     """
     project_dir = Path(os.getcwd()).resolve()
-
-    # ── Header ───────────────────────────────────────────────────────────────
-    console.print()
-    console.print(
-        Panel.fit(
-            f"[bold cyan]contextzip[/] [dim]v{__version__}[/]\n"
-            f"[dim]Project:[/] [white]{project_dir}[/]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
     console.print()
 
     # ── Project config (.contextzip/config.json) ────────────────────────────
     project_cfg = load_project_config(project_dir)
     if has_legacy_project_config(project_dir):
-        console.print(
-            "[yellow]⚠[/]  [dim]Found the deprecated [/dim][cyan].contextzip.json[/cyan]"
-            "[dim] — move its settings into [/dim][cyan].contextzip/config.json[/cyan]"
-            "[dim] when you get a chance.[/dim]"
-        )
-        console.print()
+        warn("Found the deprecated .contextzip.json — move it to .contextzip/config.json")
 
     # ── Detection ────────────────────────────────────────────────────────────
     with console.status("[cyan]Detecting project ecosystem…[/]", spinner="dots"):
@@ -893,7 +781,6 @@ def _run(
         )
         if saved:
             project_cfg = load_project_config(project_dir)
-            console.print()
 
     # ── Git-changes mode ─────────────────────────────────────────────────────
     if git_changes:
@@ -901,23 +788,18 @@ def _run(
             git_result = get_changed_files(project_dir)
 
         if isinstance(git_result, GitError):
-            console.print(
-                Panel.fit(
-                    f"[red]Git error:[/] {git_result.message}",
-                    border_style="red",
-                    padding=(0, 2),
-                )
-            )
+            err(f"Git error: {git_result.message}")
             raise SystemExit(1)
 
-        print_git_summary(git_result, project_dir, verbose)
+        print_git_deleted_and_submodules(git_result)
 
         if git_result.is_empty:
-            console.print(
-                "\n[yellow]Nothing to package.[/] "
-                "No modified, added, or untracked files found — working tree is clean."
-            )
+            info("Nothing to package — working tree is clean.")
             return
+
+        scan_label, scan_detail = git_scan_label_and_detail(git_result)
+        if verbose:
+            print_git_verbose_files(git_result)
 
         with console.status("[cyan]Checking git-changed files…[/]", spinner="dots"):
             resolved = resolve_files_from_git(
@@ -931,9 +813,6 @@ def _run(
     else:
         # ── Build exclusion spec ─────────────────────────────────────────────
         gitignore_path = None if no_gitignore else (project_dir / ".gitignore")
-        used_gitignore = (
-            not no_gitignore and gitignore_path is not None and gitignore_path.is_file()
-        )
 
         # CLI --exclude/-e patterns plus any standing always_exclude patterns
         # from project config — both are additive, persistent behavior comes
@@ -953,10 +832,6 @@ def _run(
                 [normalize_pattern(p) for p in project_cfg.always_include]
             )
 
-        if used_gitignore:
-            console.print("[dim]↳ .gitignore patterns applied[/]")
-            console.print()
-
         # ── Resolve files ─────────────────────────────────────────────────────
         with console.status("[cyan]Scanning project files…[/]", spinner="dots"):
             resolved = resolve_files(
@@ -969,21 +844,24 @@ def _run(
                 ),
             )
 
-    # ── File scan summary + warnings ─────────────────────────────────────────
-    print_scan_summary(resolved, project_dir, verbose, git_mode=git_changes)
-    print_file_warnings(
-        resolved,
-        project_dir,
-        large_file_warn_bytes=int(project_cfg.limits.max_file_size_mb * 1024 * 1024),
-    )
+        # Snapshot the scan summary now — --prompt reassigns resolved.included
+        # below, and the merged "Scanned & Packed" line still needs to report
+        # the original, pre-selection counts.
+        scan_label, scan_detail = scan_label_and_detail(resolved, git_mode=False)
+
+    large_file_warn_bytes = int(project_cfg.limits.max_file_size_mb * 1024 * 1024)
 
     # ── Dry run ──────────────────────────────────────────────────────────────
     if dry_run:
         if prompt:
+            ok(scan_label, scan_detail)
+            print_file_warnings(
+                resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
+            )
             _enforce_ai_config(project_cfg.ai)
             diagnosis = diagnose_api_key()
             if diagnosis:
-                console.print(f"\n  [yellow]⚠[/]  {diagnosis}\n")
+                warn(diagnosis)
             api_key = get_api_key()
             if not api_key:
                 api_key = onboard_api_key()
@@ -998,22 +876,16 @@ def _run(
                 max_files=project_cfg.ai.max_files,
             )
         else:
-            console.print()
-            console.print(
-                Panel.fit(
-                    "[yellow]Dry run — no ZIP created.[/]\n"
-                    "[dim]Remove --dry-run to produce the archive.[/]",
-                    border_style="yellow",
-                    padding=(0, 2),
-                )
+            print_scan_summary(resolved, project_dir, verbose, git_mode=git_changes)
+            print_file_warnings(
+                resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
             )
+            info("Dry run — no ZIP created. Remove --dry-run to produce the archive.")
         return
 
     if not resolved.included:
-        console.print(
-            "\n[red]Nothing to package.[/] All files were excluded — "
-            "try [cyan]contextzip include PATH[/] or [cyan]-i PATH[/] to override."
-        )
+        err("Nothing to package — all files were excluded.")
+        info("Try contextzip include PATH or -i PATH to override.")
         return
 
     # ── AI-powered file selection (--prompt mode) ────────────────────────────
@@ -1023,7 +895,7 @@ def _run(
         _enforce_ai_config(project_cfg.ai)
         diagnosis = diagnose_api_key()
         if diagnosis:
-            console.print(f"\n  [yellow]⚠[/]  {diagnosis}\n")
+            warn(diagnosis)
         api_key = get_api_key()
         if not api_key:
             api_key = onboard_api_key()
@@ -1041,17 +913,13 @@ def _run(
         )
 
         if not selected_paths:
-            console.print(
-                "\n[red]AI selection returned no files.[/] "
-                "Try a more specific prompt, or run without [cyan]--prompt[/] "
-                "to package the full project."
-            )
+            err("AI selection returned no files.")
+            info("Try a more specific prompt, or run without --prompt to package the full project.")
             raise SystemExit(1)
 
         resolved.included = selected_paths
 
     # ── Create ZIP ───────────────────────────────────────────────────────────
-    console.print()
     output_path = Path(output).resolve() if output else None
 
     try:
@@ -1064,15 +932,30 @@ def _run(
             prompt_txt=prompt_txt,
         )
     except Exception as exc:
-        console.print(f"\n[red]Failed to create ZIP:[/] {exc}")
+        err(f"Failed to create ZIP: {exc}")
         raise SystemExit(1)
 
-    print_package_result(result)
+    print_scan_and_pack(scan_label, scan_detail, result)
+    print_file_warnings(
+        resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
+    )
     print_zip_write_warnings(result)
+    print_package_result(result)
+
+    # ── Report ───────────────────────────────────────────────────────────────
+    report_path = write_scan_report(
+        zip_path=result.zip_path,
+        project_dir=project_dir,
+        detection=detection,
+        resolved=resolved,
+        mode="git-changes" if git_changes else ("prompt" if prompt else "standard"),
+        ai_prompt=prompt,
+        ai_selected=resolved.included if prompt else None,
+        large_file_warn_bytes=large_file_warn_bytes,
+    )
+    print_report_hint(report_path)
 
     # ── Clipboard ────────────────────────────────────────────────────────────
     if not no_clipboard:
-        console.print()
-        with console.status("[cyan]Preparing clipboard…[/]", spinner="dots"):
-            cb = clipboard_handle(result.zip_path)
+        cb = clipboard_handle(result.zip_path)
         print_clipboard_result(cb)

@@ -547,8 +547,8 @@ def _workspace_output_path(
     except OSError as exc:
         # Graceful fallback: warn and use temp dir
         console.print(
-            f"\n  [yellow]⚠[/]  Could not create [cyan].contextzip/[/] workspace "
-            f"([dim]{exc}[/]) — falling back to temp directory.\n"
+            f"[yellow]![/] Could not create .contextzip/ workspace ({exc}) — "
+            "falling back to temp directory."
         )
         return Path(tempfile.gettempdir()) / filename
 

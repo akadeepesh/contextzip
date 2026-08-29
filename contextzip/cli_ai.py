@@ -13,9 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from rich.console import Console
-from rich.panel import Panel
 
-from contextzip.cli_display import print_ai_selection
+from contextzip.cli_display import print_ai_selection, err, warn, info
 
 console = Console()
 
@@ -80,7 +79,6 @@ def run_ai_selection(
     from contextzip.ai.selector import ai_select, USED_HEURISTIC
     from contextzip.ai.gemini import GeminiError
 
-    con.print()
     with con.status("[cyan]Asking Gemini to select relevant files…[/]", spinner="dots"):
         try:
             selected_paths, prompt_txt, method = ai_select(
@@ -93,20 +91,11 @@ def run_ai_selection(
                 prompt_template=prompt_template,
             )
         except GeminiError as exc:
-            con.print(
-                Panel.fit(
-                    f"[red]Gemini error:[/] {exc}",
-                    border_style="red",
-                    padding=(0, 2),
-                )
-            )
+            err(f"Gemini error: {exc}")
             raise SystemExit(1)
 
     if method == USED_HEURISTIC:
-        con.print(
-            "  [yellow]⚠[/]  [dim]Gemini rate limited — used keyword heuristic instead. "
-            "Results may be less precise. Try again in a moment for AI selection.[/]"
-        )
+        warn("Gemini rate limited — used keyword heuristic instead (less precise)")
 
     print_ai_selection(selected_paths, project_dir, prompt, con=con)
     return selected_paths, prompt_txt
@@ -134,7 +123,6 @@ def run_ai_selection_preview(
     from contextzip.ai.selector import ai_select, USED_HEURISTIC
     from contextzip.ai.gemini import GeminiError
 
-    con.print()
     with con.status("[cyan]Asking Gemini to select relevant files…[/]", spinner="dots"):
         try:
             selected_paths, _, method = ai_select(
@@ -146,28 +134,11 @@ def run_ai_selection_preview(
                 max_files=max_files,
             )
         except GeminiError as exc:
-            con.print(
-                Panel.fit(
-                    f"[red]Gemini error:[/] {exc}",
-                    border_style="red",
-                    padding=(0, 2),
-                )
-            )
+            err(f"Gemini error: {exc}")
             raise SystemExit(1)
 
     if method == USED_HEURISTIC:
-        con.print(
-            "  [yellow]⚠[/]  [dim]Gemini rate limited — used keyword heuristic instead. "
-            "Results may be less precise. Try again in a moment for AI selection.[/]"
-        )
+        warn("Gemini rate limited — used keyword heuristic instead (less precise)")
 
     print_ai_selection(selected_paths, project_dir, prompt, con=con)
-    con.print()
-    con.print(
-        Panel.fit(
-            "[yellow]Dry run — no ZIP created.[/]\n"
-            "[dim]Remove --dry-run to package these files.[/]",
-            border_style="yellow",
-            padding=(0, 2),
-        )
-    )
+    info("Dry run — no ZIP created. Remove --dry-run to package these files.")

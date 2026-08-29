@@ -14,9 +14,9 @@ import webbrowser
 
 import click
 from rich.console import Console
-from rich.panel import Panel
 
 from contextzip.config import save_api_key, config_path
+from contextzip.cli_display import ok, warn, info
 
 console = Console()
 
@@ -58,18 +58,8 @@ def onboard_api_key(*, con: Console = console) -> str | None:
     user declined or provided nothing.
     """
     con.print()
-    con.print(
-        Panel(
-            "  [bold]--prompt[/] requires a free Gemini API key.\n\n"
-            "  contextzip uses [bold cyan]Google AI Studio[/] — "
-            "no credit card needed.\n\n"
-            f"  [dim]Get your free key at:[/]\n"
-            f"  [bold cyan link={GEMINI_KEY_URL}]{GEMINI_KEY_URL}[/]",
-            title="[bold yellow]Gemini API Key Required[/]",
-            border_style="yellow",
-            padding=(0, 2),
-        )
-    )
+    warn("--prompt requires a free Gemini API key (Google AI Studio, no card needed)")
+    info(f"Get one at: {GEMINI_KEY_URL}")
     con.print()
 
     open_browser = click.confirm(
@@ -78,12 +68,8 @@ def onboard_api_key(*, con: Console = console) -> str | None:
     )
     if open_browser:
         open_browser_silent(GEMINI_KEY_URL)
-        con.print("  [dim]Browser opened. Generate a key, then come back here.[/]")
+        info("Browser opened. Generate a key, then come back here.")
 
-    con.print()
-    con.print("  [dim]─────────────────────────────────────────────[/]")
-    con.print("  Once you have your key, paste it below and press [bold]Enter[/].")
-    con.print("  [dim]─────────────────────────────────────────────[/]")
     con.print()
     key = click.prompt(
         "  Paste your API key",
@@ -92,33 +78,25 @@ def onboard_api_key(*, con: Console = console) -> str | None:
     ).strip()
 
     if not key:
-        con.print("\n  [red]No key provided. Exiting.[/]")
+        con.print()
+        info("No key provided — exiting.")
         return None
 
     # Basic sanity check — Gemini keys start with "AIza"
     if not key.startswith("AIza"):
-        con.print(
-            "\n  [yellow]⚠[/]  That doesn't look like a Gemini key "
-            "(expected it to start with [cyan]AIza[/]).\n"
-            "  [dim]Double-check you copied the full key from AI Studio.[/]"
-        )
+        con.print()
+        warn("That doesn't look like a Gemini key (expected it to start with AIza)")
         if not click.confirm("\n  Save it anyway?", default=False):
             return None
 
+    con.print()
     try:
         save_api_key(key)
-        con.print(
-            f"\n  [green]✓[/]  Key saved to "
-            f"[dim]{config_path()}[/]\n"
-            f"  [dim]You won't be asked again. "
-            f"Run [cyan]contextzip config --reset-key[/] to change it.[/]"
-        )
+        ok("Key saved", str(config_path()))
+        info("You won't be asked again. Run contextzip config --reset-key to change it.")
     except OSError as exc:
-        con.print(
-            f"\n  [yellow]⚠[/]  Could not save key to disk ([dim]{exc}[/]).\n"
-            f"  [dim]Set [cyan]GEMINI_API_KEY[/] as an environment variable "
-            f"to avoid this prompt next time.[/]"
-        )
+        warn(f"Could not save key to disk ({exc})")
+        info("Set GEMINI_API_KEY as an environment variable to avoid this prompt next time.")
 
     con.print()
     return key

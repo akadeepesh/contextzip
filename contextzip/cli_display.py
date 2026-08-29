@@ -1,27 +1,58 @@
 """
-cli_display.py — Rich rendering helpers for contextzip's CLI output.
+cli_display.py — minimal, one-line-per-step terminal output for contextzip.
 
-All functions receive data objects and a Console instance (or use the
-module-level console) and return nothing — they are pure display logic
-with no business side-effects.
+Design: every command prints a short, scannable log — one line per step,
+a checkmark, a dim detail. No boxed panels for routine runs; even the
+final "saved to" line is just another line. The only thing that visually
+differs from a plain checkmark line is a warning (`!`) or an error
+(`✗`), which is exactly the point: quiet by default, and something
+actually stands out when it matters.
 
-Imported by cli.py; nothing here imports from cli.py (no circular deps).
+Full detail that used to be printed here (excluded-directory
+breakdowns, per-file listings) is now written to a report file by
+report.py and only echoed inline when --verbose is passed.
+
+Imported by cli.py and watcher.py; nothing here imports from either
+(no circular deps).
 """
 
 from __future__ import annotations
 
-from collections import Counter
 from pathlib import Path
 
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich import box
 
-from contextzip.filters import summarise_exclusions, LARGE_FILE_WARN_BYTES
 from contextzip.clipboard import Tier
 
 console = Console()
+
+
+# ---------------------------------------------------------------------------
+# Core log primitives — every command builds its output from these three.
+# ---------------------------------------------------------------------------
+
+
+def ok(text: str, detail: str | None = None, *, con: Console = console) -> None:
+    """A completed step: green check, plain text, optional dim detail."""
+    line = f"[green]✓[/] {text}"
+    if detail:
+        line += f"  [dim]· {detail}[/]"
+    con.print(line)
+
+
+def warn(text: str, *, con: Console = console) -> None:
+    """A non-fatal issue worth a glance."""
+    con.print(f"[yellow]![/] {text}")
+
+
+def err(text: str, *, con: Console = console) -> None:
+    """A fatal problem — command is about to exit non-zero."""
+    con.print(f"[red]✗[/] {text}")
+
+
+def info(text: str, *, con: Console = console) -> None:
+    """A quiet, dim aside — not a step, just context."""
+    con.print(f"  [dim]{text}[/]")
 
 
 # ---------------------------------------------------------------------------
@@ -30,44 +61,20 @@ console = Console()
 
 
 def print_detection(detection, *, con: Console = console) -> None:
-    """Render the ecosystem detection panel."""
+    """One line: what was detected and how confident contextzip is."""
     if detection.is_unknown:
-        ecosystem_line = "[yellow]Unknown[/] — applying base rules only"
-    else:
-        colours = {
-            "Next.js": "bright_blue",
-            "Node.js": "green",
-            "Python": "yellow",
-            "Django": "green",
-            "FastAPI": "cyan",
-            "Rust": "red",
-            "Go": "cyan",
-            "Ruby": "red",
-        }
-        parts = []
-        for n in detection.ecosystems:
-            colour = colours.get(n, "white")
-            src = detection.sources.get(n)
-            if src and src != ".":
-                parts.append(f"[{colour}]{n}[/] [dim]({src}/)[/]")
-            else:
-                parts.append(f"[{colour}]{n}[/]")
-        ecosystem_line = " [dim]+[/] ".join(parts)
+        ok("Detected", "unknown ecosystem, base rules only", con=con)
+        return
 
-    conf_colour = {"high": "green", "medium": "yellow", "low": "dim"}.get(
-        detection.confidence, "dim"
-    )
-    con.print(
-        Panel(
-            f"  [dim]Ecosystem :[/]   {ecosystem_line}\n"
-            f"  [dim]Confidence:[/]   [{conf_colour}]{detection.confidence}[/]\n"
-            f"  [dim]Rules     :[/]   [dim]{', '.join(detection.rule_modules)}[/]",
-            title="[bold]Detection[/]",
-            border_style="blue",
-            padding=(0, 1),
-        )
-    )
-    con.print()
+    parts = []
+    for name in detection.ecosystems:
+        src = detection.sources.get(name)
+        if src and src != ".":
+            parts.append(f"{name} ({src}/)")
+        else:
+            parts.append(name)
+    ecosystem_str = " + ".join(parts)
+    ok(f"Detected {ecosystem_str}", f"{detection.confidence} confidence", con=con)
 
 
 # ---------------------------------------------------------------------------
@@ -75,47 +82,56 @@ def print_detection(detection, *, con: Console = console) -> None:
 # ---------------------------------------------------------------------------
 
 
-def print_git_summary(
-    changes, project_dir: Path, verbose: bool, *, con: Console = console
-) -> None:
-    """Render a panel summarising the git-changed file counts."""
-    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
-    table.add_column(style="dim")
-    table.add_column()
-    table.add_row("Staged", f"[green]{len(changes.staged)}[/]")
-    table.add_row("Unstaged", f"[yellow]{len(changes.unstaged)}[/]")
-    table.add_row("Untracked", f"[cyan]{len(changes.untracked)}[/]")
+def print_git_deleted_and_submodules(changes, *, con: Console = console) -> None:
+    """Any deleted files or submodules git reported — shown regardless of packaging outcome."""
     if changes.deleted:
-        table.add_row("Deleted (skipped)", f"[dim]{len(changes.deleted)}[/]")
+        info(f"{len(changes.deleted)} deleted file(s) skipped", con=con)
     if changes.submodules:
-        table.add_row("Submodules (skipped)", f"[dim]{len(changes.submodules)}[/]")
-    table.add_row("To be included", f"[bold green]{len(changes.files)}[/]")
+        info(f"{len(changes.submodules)} submodule(s) skipped", con=con)
 
-    con.print(
-        Panel(
-            table,
-            title="[bold]Git Changes[/]",
-            border_style="magenta",
-            padding=(0, 1),
-        )
-    )
-    con.print()
 
-    if verbose and changes.files:
-        con.print("[bold]Git-changed files:[/]")
-        for category, paths, colour in (
-            ("Staged", changes.staged, "green"),
-            ("Unstaged", changes.unstaged, "yellow"),
-            ("Untracked", changes.untracked, "cyan"),
-        ):
-            for rel in paths:
-                con.print(f"  [{colour}]✓[/] [dim]{rel}[/]  [dim]({category})[/]")
-        con.print()
+def git_scan_label_and_detail(changes) -> tuple[str, str | None]:
+    """Build the (label, detail) pair used by print_scan_and_pack for git-changes mode."""
+    bits = []
+    if changes.staged:
+        bits.append(f"{len(changes.staged)} staged")
+    if changes.unstaged:
+        bits.append(f"{len(changes.unstaged)} unstaged")
+    if changes.untracked:
+        bits.append(f"{len(changes.untracked)} untracked")
+    detail = ", ".join(bits) if bits else None
+    return f"Found {len(changes.files)} changed files", detail
+
+
+def print_git_verbose_files(changes, *, con: Console = console) -> None:
+    """Per-file listing for -v — kept separate from the summary line."""
+    for category, paths, colour in (
+        ("staged", changes.staged, "green"),
+        ("unstaged", changes.unstaged, "yellow"),
+        ("untracked", changes.untracked, "cyan"),
+    ):
+        for rel in paths:
+            con.print(f"  [{colour}]·[/] [dim]{rel}[/] [dim]({category})[/]")
 
 
 # ---------------------------------------------------------------------------
 # File scan summary
 # ---------------------------------------------------------------------------
+
+
+def scan_label_and_detail(resolved, git_mode: bool = False) -> tuple[str, str | None]:
+    """Build the (label, detail) pair used by print_scan_and_pack for the standard scan."""
+    total = len(resolved.included) + len(resolved.excluded)
+    included_size = sum(p.stat().st_size for p in resolved.included if p.exists())
+
+    if git_mode:
+        return f"Checked {len(resolved.included)} files", human_size(included_size)
+
+    detail = (
+        f"{len(resolved.included)} included ({human_size(included_size)}), "
+        f"{len(resolved.excluded)} excluded"
+    )
+    return f"Scanned {total + len(resolved.skipped)} files", detail
 
 
 def print_scan_summary(
@@ -126,43 +142,18 @@ def print_scan_summary(
     git_mode: bool = False,
     con: Console = console,
 ) -> None:
-    """Render file scan counts and, when verbose, the full file list."""
-    total = len(resolved.included) + len(resolved.excluded)
-    included_size = sum(p.stat().st_size for p in resolved.included if p.exists())
+    """Scan-only line, used when no packaging happens (dry runs)."""
+    label, detail = scan_label_and_detail(resolved, git_mode=git_mode)
+    ok(label, detail, con=con)
 
-    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
-    table.add_column(style="dim")
-    table.add_column()
-
-    if not git_mode:
-        table.add_row("Files scanned", str(total + len(resolved.skipped)))
-    table.add_row(
-        "To be included",
-        f"[green]{len(resolved.included)}[/]  [dim]({human_size(included_size)})[/]",
-    )
-    if not git_mode:
-        table.add_row("Excluded", f"[red]{len(resolved.excluded)}[/]")
-    if resolved.skipped:
-        table.add_row("Skipped", f"[yellow]{len(resolved.skipped)}[/]")
-    con.print(table)
+    if resolved.skipped and not verbose:
+        info(f"{len(resolved.skipped)} file(s) skipped — see report", con=con)
 
     if verbose and resolved.included:
-        con.print()
-        con.print("[bold]Included files:[/]")
-        for p in resolved.included:
+        for p in sorted(resolved.included):
             size_str = human_size(p.stat().st_size) if p.exists() else "?"
             rel = p.relative_to(project_dir).as_posix()
-            con.print(f"  [green]✓[/] {rel}  [dim]{size_str}[/]")
-
-    if not git_mode and resolved.excluded:
-        con.print()
-        buckets = summarise_exclusions(resolved.excluded, project_dir)
-        con.print("[bold]Top excluded directories / files:[/]")
-        for label, count in list(buckets.items())[:8]:
-            con.print(
-                f"  [red]✗[/] [dim]{label}[/]  "
-                f"[dim]({count} file{'s' if count != 1 else ''})[/]"
-            )
+            con.print(f"  [green]·[/] {rel}  [dim]{size_str}[/]")
 
 
 # ---------------------------------------------------------------------------
@@ -174,54 +165,32 @@ def print_file_warnings(
     resolved,
     project_dir: Path,
     *,
-    large_file_warn_bytes: int = LARGE_FILE_WARN_BYTES,
+    large_file_warn_bytes: int = 1024 * 1024,
     con: Console = console,
 ) -> None:
-    """Render large-file, binary-file, and skipped-file warnings.
-
-    *large_file_warn_bytes* only affects the displayed threshold text —
-    typically a project's `limits.max_file_size_mb` preference — the actual
-    filtering already happened in resolve_files()/resolve_files_from_git().
-    """
+    """One line per warning category — no file listings inline (see report)."""
     if resolved.large_files:
-        con.print()
-        con.print(
-            f"  [yellow]⚠[/]  [bold]{len(resolved.large_files)} large file"
-            f"{'s' if len(resolved.large_files) != 1 else ''}[/] "
-            f"[dim](≥ {human_size(large_file_warn_bytes)}) will be included:[/]"
-        )
-        for p, size in resolved.large_files[:5]:
-            rel = p.relative_to(project_dir).as_posix()
-            con.print(f"    [yellow]·[/] [dim]{rel}[/]  [yellow]{human_size(size)}[/]")
-        if len(resolved.large_files) > 5:
-            con.print(f"    [dim]… and {len(resolved.large_files) - 5} more[/]")
-        con.print(
-            "  [dim]  Use [cyan]-e PATTERN[/] or [cyan]contextzip exclude PATTERN[/] "
-            "to drop them if unneeded.[/]"
+        n = len(resolved.large_files)
+        warn(
+            f"{n} large file{'s' if n != 1 else ''} "
+            f"(≥ {human_size(large_file_warn_bytes)}) will be included",
+            con=con,
         )
 
     if resolved.binary_files:
-        con.print()
-        con.print(
-            f"  [yellow]⚠[/]  [bold]{len(resolved.binary_files)} binary file"
-            f"{'s' if len(resolved.binary_files) != 1 else ''}[/] "
-            f"[dim]detected — AI tools may not read them:[/]"
+        n = len(resolved.binary_files)
+        warn(
+            f"{n} binary file{'s' if n != 1 else ''} detected — "
+            "AI tools may not read them",
+            con=con,
         )
-        for p in resolved.binary_files[:3]:
-            rel = p.relative_to(project_dir).as_posix()
-            con.print(f"    [yellow]·[/] [dim]{rel}[/]")
-        if len(resolved.binary_files) > 3:
-            con.print(f"    [dim]… and {len(resolved.binary_files) - 3} more[/]")
 
     if resolved.skipped:
-        con.print()
-        con.print(
-            f"  [red]⚠[/]  [bold]{len(resolved.skipped)} file"
-            f"{'s' if len(resolved.skipped) != 1 else ''}[/] "
-            f"[dim]skipped (unreadable or dangling symlink):[/]"
+        n = len(resolved.skipped)
+        warn(
+            f"{n} file{'s' if n != 1 else ''} skipped (unreadable or dangling symlink)",
+            con=con,
         )
-        for p, reason in resolved.skipped[:3]:
-            con.print(f"    [red]·[/] [dim]{p.name}[/] — {reason}")
 
 
 # ---------------------------------------------------------------------------
@@ -230,46 +199,49 @@ def print_file_warnings(
 
 
 def print_package_result(result, *, con: Console = console) -> None:
-    """Render the ZIP creation summary panel."""
-    ratio_colour = "green" if result.compression_ratio >= 0.3 else "yellow"
+    """Where the ZIP landed. (Scan + pack counts are shown by print_scan_and_pack.)"""
+    ok("Saved to", str(result.zip_path), con=con)
+
+
+def print_scan_and_pack(
+    label: str,
+    scan_detail: str | None,
+    result,
+    *,
+    con: Console = console,
+) -> None:
+    """
+    One combined line covering both the scan and the packaging outcome,
+    e.g. "Scanned 1518 files & Packed 42 files · 42 included (394 KB),
+    1476 excluded, 394 KB → 126 KB, ↓68% smaller".
+    """
     size_detail = (
-        "[dim](ZIP overhead on tiny project)[/]"
+        "zip overhead on tiny project"
         if result.grew
-        else f"[{ratio_colour}](↓ {result.compression_pct} smaller)[/]"
+        else f"↓{result.compression_pct} smaller"
     )
-
-    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
-    table.add_column(style="dim", min_width=18)
-    table.add_column()
-    table.add_row("Files packed", f"[green]{result.file_count}[/]")
-    table.add_row("Original size", human_size(result.uncompressed_bytes))
-    table.add_row(
-        "Compressed size",
-        f"[bold]{human_size(result.compressed_bytes)}[/]  {size_detail}",
+    pack_detail = (
+        f"{human_size(result.uncompressed_bytes)} → "
+        f"{human_size(result.compressed_bytes)}, {size_detail}"
     )
-    table.add_row("Saved to", f"[cyan]{result.zip_path}[/]")
-
-    con.print(
-        Panel(
-            table,
-            title="[bold green]✓ ZIP created[/]",
-            border_style="green",
-            padding=(0, 1),
-        )
-    )
+    detail = f"{scan_detail}, {pack_detail}" if scan_detail else pack_detail
+    ok(f"{label} & Packed {result.file_count} files", detail, con=con)
 
 
 def print_zip_write_warnings(result, *, con: Console = console) -> None:
-    """Render warnings for files that could not be written into the ZIP."""
     if result.skipped_in_zip:
-        con.print()
-        con.print(
-            f"  [red]⚠[/]  [bold]{len(result.skipped_in_zip)} file"
-            f"{'s' if len(result.skipped_in_zip) != 1 else ''}[/] "
-            f"[dim]could not be written to ZIP:[/]"
+        n = len(result.skipped_in_zip)
+        warn(
+            f"{n} file{'s' if n != 1 else ''} could not be written to the ZIP — "
+            "see report",
+            con=con,
         )
-        for p, reason in result.skipped_in_zip[:3]:
-            con.print(f"    [red]·[/] [dim]{p.name}[/] — {reason}")
+
+
+def print_report_hint(report_path, *, con: Console = console) -> None:
+    """Dim pointer to the full report, printed once at the end of a run."""
+    if report_path:
+        info(f"Full report: {report_path}", con=con)
 
 
 # ---------------------------------------------------------------------------
@@ -282,35 +254,22 @@ def print_ai_selection(
     project_dir: Path,
     prompt: str,
     *,
+    verbose: bool = False,
     con: Console = console,
 ) -> None:
-    """Render the panel showing which files Gemini selected."""
-    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
-    table.add_column(style="cyan")
-    table.add_column(style="dim")
+    """One line: how many files Gemini picked and for what task."""
+    n = len(selected_paths)
+    ok(f'Gemini selected {n} file{"s" if n != 1 else ""}', f'for "{prompt}"', con=con)
+    info("prompt.txt will be included in the ZIP", con=con)
 
-    for p in selected_paths:
-        try:
-            rel = p.relative_to(project_dir).as_posix()
-            size = human_size(p.stat().st_size)
-        except (ValueError, OSError):
-            rel = str(p)
-            size = "?"
-        table.add_row(rel, size)
-
-    con.print(
-        Panel(
-            table,
-            title=f'[bold cyan]AI Selected — [dim]"{prompt}"[/][/]',
-            border_style="cyan",
-            padding=(0, 1),
-        )
-    )
-    con.print(
-        f"  [dim]↳ {len(selected_paths)} file"
-        f"{'s' if len(selected_paths) != 1 else ''} selected by Gemini "
-        f"· prompt.txt will be included in the ZIP[/]"
-    )
+    if verbose:
+        for p in sorted(selected_paths):
+            try:
+                rel = p.relative_to(project_dir).as_posix()
+                size = human_size(p.stat().st_size)
+            except (ValueError, OSError):
+                rel, size = str(p), "?"
+            con.print(f"  [cyan]·[/] {rel}  [dim]{size}[/]")
 
 
 # ---------------------------------------------------------------------------
@@ -319,21 +278,13 @@ def print_ai_selection(
 
 
 def print_clipboard_result(cb, *, con: Console = console) -> None:
-    """Render the clipboard / folder-open result."""
-    tier_style = {
-        Tier.FILE_ON_CLIPBOARD: ("green", "✓ Ready to paste"),
-        Tier.FOLDER_OPENED: ("yellow", "✓ Folder opened"),
-        Tier.PATH_ONLY: ("dim", "↳ Manual copy needed"),
-    }
-    border, title = tier_style.get(cb.tier, ("dim", "Clipboard"))
-    con.print(
-        Panel.fit(
-            cb.message,
-            title=f"[bold {border}]{title}[/]",
-            border_style=border,
-            padding=(0, 2),
-        )
-    )
+    """One line reflecting whichever clipboard tier fired — folder-opened is silent."""
+    if cb.tier == Tier.FILE_ON_CLIPBOARD:
+        ok("Ready to paste", con=con)
+    elif cb.tier == Tier.FOLDER_OPENED:
+        pass  # opening the folder is a convenience, not worth a log line
+    else:
+        info(cb.message, con=con)
 
 
 # ---------------------------------------------------------------------------
@@ -356,55 +307,49 @@ def print_apply_plan(
     verbose: bool = False,
     con: Console = console,
 ) -> None:
-    """Render the apply-zip plan: which zip/manifest were used, and a status breakdown."""
-    con.print(f"  [dim]Zip     :[/]  [cyan]{plan.zip_path}[/]")
+    """A handful of one-liners: source zip, manifest, and a status breakdown."""
+    ok("Resolved", str(plan.zip_path), con=con)
+
     if plan.has_manifest:
-        con.print(f"  [dim]Manifest:[/]  [cyan]{plan.manifest_path}[/]")
+        ok("Diffed against manifest", str(plan.manifest_path), con=con)
     else:
-        con.print(
-            "  [dim]Manifest:[/]  [yellow]none found[/] "
-            "[dim](every existing path will be treated as untracked)[/]"
-        )
+        warn("No manifest found — every existing path is treated as untracked", con=con)
+
     if plan.wrapper_note:
-        con.print(f"  [dim]Note    :[/]  [cyan]{plan.wrapper_note}[/]")
-    con.print()
+        info(plan.wrapper_note, con=con)
 
     if plan.structure_warning:
-        con.print(
-            Panel(
-                f"[bold yellow]{plan.structure_warning}[/]",
-                title="[bold yellow]⚠ Structure mismatch[/]",
-                border_style="yellow",
-                padding=(0, 1),
-            )
-        )
-        con.print()
+        warn(plan.structure_warning, con=con)
+
+    from collections import Counter
 
     counts = Counter(e.status.value for e in plan.entries)
-    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
-    table.add_column(style="dim")
-    table.add_column()
-    table.add_row("New", f"[green]{counts.get('new', 0)}[/]")
-    table.add_row("Modified", f"[cyan]{counts.get('modified', 0)}[/]")
-    table.add_row("Unchanged", f"[dim]{counts.get('unchanged', 0)}[/]")
-    if counts.get("drifted", 0):
-        table.add_row("Drifted (locally changed)", f"[yellow]{counts['drifted']}[/]")
-    if counts.get("untracked", 0):
-        table.add_row("Untracked (no baseline)", f"[yellow]{counts['untracked']}[/]")
-
-    con.print(
-        Panel(table, title="[bold]Apply Plan[/]", border_style="blue", padding=(0, 1))
+    parts = []
+    if counts.get("new"):
+        parts.append(f"{counts['new']} new")
+    if counts.get("modified"):
+        parts.append(f"{counts['modified']} modified")
+    if counts.get("unchanged"):
+        parts.append(f"{counts['unchanged']} unchanged")
+    ok(
+        f"Classified {sum(counts.values())} files",
+        ", ".join(parts) or None,
+        con=con,
     )
-    con.print()
+
+    if counts.get("drifted") or counts.get("untracked"):
+        risky_parts = []
+        if counts.get("drifted"):
+            risky_parts.append(f"{counts['drifted']} drifted")
+        if counts.get("untracked"):
+            risky_parts.append(f"{counts['untracked']} untracked")
+        warn(", ".join(risky_parts) + " — needs a closer look", con=con)
 
     if verbose:
-        con.print("[bold]All files:[/]")
         for e in plan.entries:
             colour, sym = _APPLY_STATUS_STYLE[e.status.value]
             con.print(f"  [{colour}]{sym}[/] {e.rel_path}  [dim]({e.status.value})[/]")
-        con.print()
     elif plan.risky_entries:
-        con.print("[bold]Needs a closer look:[/]")
         for e in plan.risky_entries[:10]:
             colour, sym = _APPLY_STATUS_STYLE[e.status.value]
             reason = (
@@ -414,30 +359,15 @@ def print_apply_plan(
             )
             con.print(f"  [{colour}]{sym}[/] {e.rel_path}  [dim]— {reason}[/]")
         if len(plan.risky_entries) > 10:
-            con.print(f"  [dim]… and {len(plan.risky_entries) - 10} more[/]")
-        con.print()
+            info(f"… and {len(plan.risky_entries) - 10} more — see report", con=con)
 
 
 def print_apply_result(result, *, con: Console = console) -> None:
-    """Render the apply-zip result: what was written, backed up, and archived."""
-    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
-    table.add_column(style="dim", min_width=16)
-    table.add_column()
-    table.add_row("Files written", f"[green]{len(result.written)}[/]")
-    table.add_row(
-        "Backup",
-        f"[cyan]{result.backup_dir}[/]" if result.backup_dir else "[dim]none needed[/]",
-    )
-    table.add_row("Zip archived to", f"[dim]{result.applied_zip_path}[/]")
-
-    con.print(
-        Panel(
-            table,
-            title="[bold green]✓ Applied[/]",
-            border_style="green",
-            padding=(0, 1),
-        )
-    )
+    """Two or three lines: what was written, backed up, and archived."""
+    ok(f"Applied {len(result.written)} files", con=con)
+    if result.backup_dir:
+        ok("Backed up to", str(result.backup_dir), con=con)
+    ok("Archived zip to", str(result.applied_zip_path), con=con)
 
 
 # ---------------------------------------------------------------------------

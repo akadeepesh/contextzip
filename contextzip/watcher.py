@@ -40,9 +40,9 @@ from collections import deque
 from pathlib import Path
 
 from rich.console import Console
-from rich.panel import Panel
 
 from contextzip.error_parser import process_buffer
+from contextzip.cli_display import ok, warn, err, info
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -111,29 +111,14 @@ def run_watch(
             # Don't create a new process group — let Ctrl+C propagate naturally
         )
     except FileNotFoundError:
-        console.print(
-            Panel.fit(
-                f"[red]Command not found:[/] [bold]{command[0]}[/]\n"
-                f"[dim]Make sure it's installed and on your PATH.[/]",
-                border_style="red",
-                padding=(0, 2),
-            )
-        )
+        err(f"Command not found: {command[0]}")
+        info("Make sure it's installed and on your PATH.")
         return 1
     except PermissionError:
-        console.print(
-            Panel.fit(
-                f"[red]Permission denied:[/] cannot execute [bold]{command[0]}[/]",
-                border_style="red",
-                padding=(0, 2),
-            )
-        )
+        err(f"Permission denied: cannot execute {command[0]}")
         return 1
 
-    console.print(
-        f"[dim]\\[contextzip][/] watching [bold]{' '.join(command)}[/] "
-        f"[dim]· Ctrl+C to stop[/]"
-    )
+    ok(f"Watching {' '.join(command)}", "Ctrl+C to stop")
     console.print()
 
     # ── Reader threads ───────────────────────────────────────────────────────
@@ -397,13 +382,7 @@ def _show_error_prompt(console: Console) -> bool:
     """
     console.print()
     console.print(
-        Panel(
-            "  [bold yellow]contextzip detected an error[/]\n\n"
-            "  Press [bold green]\\[D][/] to package debug context   "
-            "[bold dim]\\[S][/] to skip",
-            border_style="yellow",
-            padding=(0, 2),
-        )
+        "[bold yellow]\\[D][/] package debug context   [dim]\\[S][/] skip"
     )
     key = _read_single_key()
     console.print()
@@ -412,18 +391,13 @@ def _show_error_prompt(console: Console) -> bool:
 
 def _show_exit_prompt(console: Console, packaged_count: int) -> bool:
     """
-    Render the session-end panel after Ctrl+C.
+    Render the session-end prompt after Ctrl+C.
     Returns True if user chose D.
     """
+    info("Session ended — no errors were auto-detected.", con=console)
     console.print(
-        Panel(
-            "  [bold]contextzip · session ended[/]\n\n"
-            "  No errors were auto-detected this session.\n\n"
-            "  Press [bold green]\\[D][/] to package the full session output   "
-            "[bold dim]\\[S][/] to exit",
-            border_style="cyan",
-            padding=(0, 2),
-        )
+        "[bold green]\\[D][/] package the full session output   "
+        "[dim]\\[S][/] skip"
     )
     key = _read_single_key()
     console.print()
@@ -433,14 +407,7 @@ def _show_exit_prompt(console: Console, packaged_count: int) -> bool:
 def _show_exit_summary(console: Console, packaged_count: int) -> None:
     """Show a brief summary when exiting after already packaging errors."""
     noun = "package" if packaged_count == 1 else "packages"
-    console.print(
-        Panel.fit(
-            f"  [green]✓[/]  [bold]{packaged_count} debug {noun}[/] saved to "
-            f"[cyan].contextzip/[/] this session.",
-            border_style="green",
-            padding=(0, 2),
-        )
-    )
+    ok(f"{packaged_count} debug {noun} saved to .contextzip/ this session", con=console)
 
 
 # ---------------------------------------------------------------------------
@@ -554,9 +521,10 @@ def _package_debug_context(
             )
 
             if result is None:
-                console.print(
-                    "[yellow]  ⚠[/]  [dim]No recognisable error block found in buffer. "
-                    "Try again or use Ctrl+C → D for full session capture.[/]"
+                warn(
+                    "No recognisable error block found in buffer. "
+                    "Try again or use Ctrl+C → D for full session capture.",
+                    con=console,
                 )
                 return False
 
@@ -574,25 +542,18 @@ def _package_debug_context(
     if zip_path is None:
         return False
 
-    # Success banner
+    # Success line(s)
     rel = (
         zip_path.relative_to(project_dir)
         if zip_path.is_relative_to(project_dir)
         else zip_path
     )
-    console.print(
-        Panel.fit(
-            f"[green]✓[/]  debug context saved → [cyan]{rel}[/]"
-            + (
-                f"\n[dim]   {len(referenced_paths)} source file"
-                f"{'s' if len(referenced_paths) != 1 else ''} included[/]"
-                if referenced_paths
-                else ""
-            ),
-            border_style="green",
-            padding=(0, 2),
-        )
+    detail = (
+        f"{len(referenced_paths)} source file{'s' if len(referenced_paths) != 1 else ''} included"
+        if referenced_paths
+        else None
     )
+    ok(f"Debug context saved to {rel}", detail, con=console)
     console.print()
     return True
 
@@ -620,7 +581,7 @@ def _write_debug_zip(
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        console.print(f"[red]  ✗[/]  Could not create workspace: {exc}")
+        err(f"Could not create workspace: {exc}", con=console)
         return None
 
     if is_git_repo:
@@ -656,7 +617,7 @@ def _write_debug_zip(
                 zf.writestr("source-files.zip", inner_buf.getvalue())
 
     except OSError as exc:
-        console.print(f"[red]  ✗[/]  Failed to write debug-context.zip: {exc}")
+        err(f"Failed to write debug-context.zip: {exc}", con=console)
         return None
 
     return zip_path

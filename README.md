@@ -1,3 +1,5 @@
+<img width="1536" height="1024" alt="cz" src="https://github.com/user-attachments/assets/a930b49c-34a0-447b-8f3a-1909eae977c8" />
+
 # contextzip
 
 > Package exactly the right parts of your codebase and paste it into any AI tool — in one command.

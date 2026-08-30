@@ -10,7 +10,9 @@ Phase 5 changes:
 Phase 6 changes:
   - Introduces .contextzip/ workspace directory at the git root (or CWD fallback)
   - Auto-creates .contextzip/ and registers it in .gitignore when inside a git repo
-  - Deterministic output names: codebase.zip (default) or changes.zip (--git-changes)
+  - Deterministic output names: codebase.zip (default), changes.zip
+    (--git-changes), or vibe.zip (--prompt) — see Phase 9 below for the
+    per-mode subfolder each now lives in.
   - --output flag bypasses workspace logic entirely (user owns the path)
 
 Phase 7 changes:
@@ -32,6 +34,17 @@ Phase 8 changes:
     against. Keeping it out of the archive means it's never uploaded and
     never visible to whatever AI tool the ZIP is pasted into — nothing
     for a model (or a teammate) to notice or ask about.
+
+Phase 9 changes:
+  - .contextzip/output/ is no longer a single flat folder shared by every
+    run mode. Each mode now gets its own subfolder — output/codebase/,
+    output/git-changes/, output/prompt/ (and watcher.py's own
+    output/watch/) — named after the flag that produced it, so it's
+    obvious at a glance which zip came from `contextzip`,
+    `contextzip --git-changes`, or `contextzip --prompt` without having
+    to remember which run you just did. See `output_subdir_for_mode` /
+    `zip_filename_for_mode`, which are the single source of truth other
+    modules (watcher.py, cleanup.py) build on so the mapping never drifts.
 """
 
 from __future__ import annotations
@@ -57,6 +70,48 @@ from contextzip.filters import ResolveResult
 
 # Subdirectory of the workspace where generated ZIPs are written.
 _OUTPUT_DIRNAME = "output"
+
+# Per-mode output subfolder + zip filename. "standard" is the plain
+# `contextzip` run with no --git-changes / --prompt. Unknown modes (there
+# shouldn't be any — this is the exhaustive list of run modes the CLI
+# produces) fall back to "standard" rather than raising, so a caller that
+# forgets to pass a mode still gets a sane, working path.
+_MODE_DIRNAMES: dict[str, str] = {
+    "standard": "codebase",
+    "git-changes": "git-changes",
+    "prompt": "prompt",
+    "watch": "watch",
+}
+_MODE_ZIP_FILENAMES: dict[str, str] = {
+    "standard": "codebase.zip",
+    "git-changes": "changes.zip",
+    "prompt": "vibe.zip",
+}
+_DEFAULT_MODE = "standard"
+
+# Every mode that produces a zip+manifest+report set via create_zip /
+# create_zip_silent (excludes "watch", which writes its own debug-context.zip
+# directly — see watcher.py). Used by cleanup.py to enumerate mode folders
+# without hardcoding the list a second time.
+ZIP_MODES: tuple[str, ...] = ("standard", "git-changes", "prompt")
+
+
+def output_subdir_for_mode(workspace: Path, mode: str) -> Path:
+    """
+    The .contextzip/output/<mode-folder>/ directory for *mode*.
+
+    *mode* is one of "standard", "git-changes", "prompt", or "watch".
+    Unrecognized values fall back to the "standard" folder rather than
+    raising, so this never becomes a hard crash if a new mode is added
+    upstream before this mapping is updated.
+    """
+    dirname = _MODE_DIRNAMES.get(mode, _MODE_DIRNAMES[_DEFAULT_MODE])
+    return workspace / _OUTPUT_DIRNAME / dirname
+
+
+def zip_filename_for_mode(mode: str) -> str:
+    """The deterministic zip filename written for *mode* (see module docstring)."""
+    return _MODE_ZIP_FILENAMES.get(mode, _MODE_ZIP_FILENAMES[_DEFAULT_MODE])
 
 # Contents of .contextzip/.gitignore — ignore everything in the workspace
 # except the team-shareable project config and this file itself.
@@ -115,7 +170,7 @@ def create_zip_silent(
     resolve_result: ResolveResult,
     project_dir: Path,
     output_path: Path | None,
-    git_changes: bool = False,
+    mode: str = _DEFAULT_MODE,
     prompt_txt: str | None = None,
 ) -> PackageResult:
     """
@@ -125,11 +180,15 @@ def create_zip_silent(
     Identical to :func:`create_zip` except it produces no Rich output —
     safe to call in scripts, background threads, or anywhere a TTY isn't
     available.
+
+    *mode* selects which .contextzip/output/<mode>/ subfolder and
+    deterministic filename to use — see `output_subdir_for_mode` /
+    `zip_filename_for_mode`. Ignored when *output_path* is given.
     """
     if output_path is not None:
         zip_path = output_path
     else:
-        zip_path = _workspace_output_path_silent(project_dir, git_changes)
+        zip_path = _workspace_output_path_silent(project_dir, mode)
 
     zip_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -190,7 +249,7 @@ def create_zip(
     project_dir: Path,
     output_path: Path | None,
     console: Console,
-    git_changes: bool = False,
+    mode: str = _DEFAULT_MODE,
     prompt_txt: str | None = None,
 ) -> PackageResult:
     """
@@ -199,9 +258,11 @@ def create_zip(
     If *output_path* is given (via --output) it is used as-is and the
     .contextzip/ workspace logic is skipped entirely.
 
-    Otherwise the archive is written to the .contextzip/ workspace
-    directory (created automatically) at the git root, or the CWD if
-    no git repository is detected.
+    Otherwise the archive is written to .contextzip/output/<mode>/ inside
+    the workspace (created automatically) at the git root, or the CWD if
+    no git repository is detected. *mode* is one of "standard",
+    "git-changes", or "prompt" — see `output_subdir_for_mode` /
+    `zip_filename_for_mode` for the folder/filename each maps to.
 
     If *prompt_txt* is provided (set when --prompt is used), a ``prompt.txt``
     file is written as the first entry in the ZIP. Any AI tool that receives
@@ -214,7 +275,7 @@ def create_zip(
         # User specified --output: honour it exactly, no workspace logic.
         zip_path = output_path
     else:
-        zip_path = _workspace_output_path(project_dir, git_changes, console)
+        zip_path = _workspace_output_path(project_dir, mode, console)
 
     zip_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -494,7 +555,7 @@ def _workspace_dir(project_dir: Path) -> tuple[Path, bool]:
 
 def _workspace_output_path_silent(
     project_dir: Path,
-    git_changes: bool,
+    mode: str,
 ) -> Path:
     """
     Determine the output ZIP path inside the .contextzip/ workspace,
@@ -503,8 +564,8 @@ def _workspace_output_path_silent(
     Falls back to the system temp directory if the workspace cannot be created.
     """
     workspace, is_git_repo = _workspace_dir(project_dir)
-    output_dir = workspace / _OUTPUT_DIRNAME
-    filename = "changes.zip" if git_changes else "codebase.zip"
+    output_dir = output_subdir_for_mode(workspace, mode)
+    filename = zip_filename_for_mode(mode)
 
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -525,7 +586,7 @@ def _workspace_output_path_silent(
 
 def _workspace_output_path(
     project_dir: Path,
-    git_changes: bool,
+    mode: str,
     console: Console,
 ) -> Path:
     """
@@ -538,8 +599,8 @@ def _workspace_output_path(
       be created (e.g. read-only filesystem), printing a warning.
     """
     workspace, is_git_repo = _workspace_dir(project_dir)
-    output_dir = workspace / _OUTPUT_DIRNAME
-    filename = "changes.zip" if git_changes else "codebase.zip"
+    output_dir = output_subdir_for_mode(workspace, mode)
+    filename = zip_filename_for_mode(mode)
 
     # Attempt to create the workspace's output directory
     try:

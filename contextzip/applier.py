@@ -291,10 +291,12 @@ def find_latest_manifest(
     Resolve which manifest to diff against.
 
     An explicit path always wins (if it exists). Otherwise picks the most
-    recently modified *.manifest.json under .contextzip/output/ — in the
-    normal one-round-trip-at-a-time flow, that's the zip you most recently
-    generated, which is almost always the right baseline. Returns None if
-    nothing is found (apply-zip still works, just more conservatively).
+    recently modified *.manifest.json anywhere under .contextzip/output/
+    — including its per-mode subfolders (output/codebase/, output/git-changes/,
+    output/prompt/) — since in the normal one-round-trip-at-a-time flow,
+    that's the zip you most recently generated regardless of which mode
+    produced it, which is almost always the right baseline. Returns None
+    if nothing is found (apply-zip still works, just more conservatively).
     """
     if explicit_manifest is not None:
         path = Path(explicit_manifest).expanduser().resolve()
@@ -304,7 +306,7 @@ def find_latest_manifest(
     if not out_dir.is_dir():
         return None
 
-    candidates = [p for p in out_dir.glob(f"*{_MANIFEST_SUFFIX}") if p.is_file()]
+    candidates = [p for p in out_dir.rglob(f"*{_MANIFEST_SUFFIX}") if p.is_file()]
     if not candidates:
         return None
     return max(candidates, key=lambda p: p.stat().st_mtime)

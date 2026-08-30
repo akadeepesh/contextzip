@@ -700,3 +700,61 @@ This project uses [Semantic Versioning](https://semver.org/).
 - Removed an unused `GitChanges` import in `api.py`.
 - Clarified the `.gitignore` comment describing what lives under
   `.contextzip/` and confirming the Gemini API key is never stored there.
+
+## [0.4.1] — 2026-08-30
+
+### Added
+- **Per-mode output folders.** `.contextzip/output/` now splits by run
+  mode instead of one flat folder: `output/codebase/` (plain
+  `contextzip`), `output/git-changes/` (`--git-changes`),
+  `output/prompt/` (`--prompt`, filename `vibe.zip`), and
+  `output/watch/` (`debug-context.zip`). The folder name matches the
+  flag that produced it, so it's unambiguous which zip is which
+  without having to remember which command you last ran.
+- **Automatic workspace cleanup.** After every successful command
+  (main run and `apply-zip`), `.contextzip/` is pruned automatically:
+  old zip/manifest/report sets per mode folder, old `backups/`
+  folders, and old archived zips in `inbox/applied/` are all deleted
+  down to the most recent one — no confirmation, no separate command.
+  New project settings: `cleanup.enabled` (default `true`) and
+  `cleanup.keep_recent` (default `1`).
+- **`limits.redact_secrets` is now enforced.** Previously persisted in
+  config and editable in the config UI but silently ignored by
+  packaging (flagged as a known limitation in 0.4.0). Now, text files
+  already going into the archive are scanned for secret-shaped values
+  — AWS/Google/GitHub/Slack/Stripe/Anthropic/OpenAI keys, JWTs,
+  private-key blocks, and a conservative generic
+  `key`/`secret`/`token`/`password` assignment pattern — and matched
+  values are replaced with `[REDACTED]` before writing. Only scans
+  files already known to be text and within `limits.max_file_size_mb`;
+  binary and oversized files are never touched. Redactions are
+  surfaced in a terminal warning and itemized in the `.report.txt`
+  file, never applied silently.
+- **`.report.txt` files.** Every packaging run (and `apply-zip` run)
+  writes a full plain-text report alongside its ZIP —
+  `codebase.report.txt` / `codebase.apply-report.txt` — containing
+  everything that used to fill the terminal: the excluded-directory
+  breakdown, the complete included-file list, per-file warnings, and
+  (when applicable) which files had secrets redacted.
+
+### Changed
+- **Terminal output redesigned.** Every command now prints a compact,
+  one-line-per-step log (`✓` / `!` / `✗`) instead of boxed Rich panels
+  and tables — matching the register of tools like `pnpm`, `vite`, and
+  `ruff`. A full-width terminal is no longer needed to read a run.
+- The "Scanned" and "Packed" steps are now combined into a single
+  line, e.g. `Scanned 1518 files & Packed 42 files · 42 included
+  (394 KB), 1476 excluded, 394 KB → 126 KB, ↓68% smaller`.
+- Removed the `contextzip vX.X.X` / project-path banner from every
+  command — output now starts directly at the first real step.
+- `apply-zip`'s manifest auto-detection now searches recursively
+  across the new per-mode output subfolders, so it still finds the
+  right manifest under the new layout.
+- Full file listings and excluded-directory breakdowns moved out of
+  default terminal output — shown under `-v`/`--verbose`, or in the
+  full report file.
+
+### Removed
+- `.gitignore patterns applied` is no longer printed (no signal, dead
+  weight).
+- Opening the output folder no longer prints a confirmation line.

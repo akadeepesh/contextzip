@@ -32,6 +32,10 @@ Currently supports:
       "webui": {
         "auto_open": true,
         "port": null
+      },
+      "cleanup": {
+        "enabled": true,
+        "keep_recent": 1
       }
     }
 
@@ -93,6 +97,27 @@ built-in default for the newer preference fields.
                      one; useful behind strict local-port firewall rules.
                      null means "pick a random free port" (the default).
 
+  cleanup
+      Automatic housekeeping for `.contextzip/`, which otherwise only
+      grows over time (a zip+manifest+report set per run, a timestamped
+      folder under backups/ per risky apply-zip). See cleanup.py — after
+      every successful contextzip command, the workspace is pruned down
+      to only the most recent `keep_recent` item(s) per category, no
+      confirmation, no separate command needed. This is deliberately
+      brutal rather than cautious: every zip is trivially reproducible
+      by re-running contextzip, so there's little reason to let old ones
+      pile up.
+        enabled       — if true (default), auto-cleanup runs after every
+                        successful command. Set to false to keep
+                        everything contextzip has ever generated.
+        keep_recent   — how many most-recent item(s) are kept per
+                        category before the rest are deleted: zip+manifest
+                        +report sets per mode folder (output/codebase/,
+                        output/git-changes/, output/prompt/), timestamped
+                        folders under backups/, and archived zips under
+                        inbox/applied/. Default 1 — keep only the latest
+                        of each, delete everything older immediately.
+
 The schema is intentionally a flat, easily-extended dict so future
 preferences can be added without another migration.
 
@@ -128,6 +153,9 @@ _DEFAULT_APPLIED_ZIP_RETENTION = 1
 _DEFAULT_WEBUI_AUTO_OPEN = True
 _DEFAULT_WEBUI_PORT = None
 
+_DEFAULT_CLEANUP_ENABLED = True
+_DEFAULT_CLEANUP_KEEP_RECENT = 1
+
 
 @dataclass
 class AIConfig:
@@ -150,6 +178,12 @@ class WebUIConfig:
 
 
 @dataclass
+class CleanupConfig:
+    enabled: bool = _DEFAULT_CLEANUP_ENABLED
+    keep_recent: int = _DEFAULT_CLEANUP_KEEP_RECENT
+
+
+@dataclass
 class ProjectConfig:
     workspace_location: str | None = None
     scan_depth: int | None = None
@@ -159,6 +193,7 @@ class ProjectConfig:
     limits: LimitsConfig = field(default_factory=LimitsConfig)
     applied_zip_retention: int = _DEFAULT_APPLIED_ZIP_RETENTION
     webui: WebUIConfig = field(default_factory=WebUIConfig)
+    cleanup: CleanupConfig = field(default_factory=CleanupConfig)
 
     # Diagnostics — not part of the schema, set by load_project_config so
     # callers (the CLI) can decide whether to surface a deprecation notice.
@@ -254,6 +289,7 @@ def _parse_config_dict(data: dict) -> ProjectConfig:
     ai_config = _parse_ai_config(data.get("ai"))
     limits_config = _parse_limits_config(data.get("limits"))
     webui_config = _parse_webui_config(data.get("webui"))
+    cleanup_config = _parse_cleanup_config(data.get("cleanup"))
 
     applied_zip_retention = data.get("applied_zip_retention", _DEFAULT_APPLIED_ZIP_RETENTION)
     if (
@@ -272,6 +308,7 @@ def _parse_config_dict(data: dict) -> ProjectConfig:
         limits=limits_config,
         applied_zip_retention=applied_zip_retention,
         webui=webui_config,
+        cleanup=cleanup_config,
     )
 
 
@@ -352,6 +389,28 @@ def _parse_webui_config(value: object) -> WebUIConfig:
         port = _DEFAULT_WEBUI_PORT
 
     return WebUIConfig(auto_open=auto_open, port=port)
+
+
+def _parse_cleanup_config(value: object) -> CleanupConfig:
+    if not isinstance(value, dict):
+        return CleanupConfig()
+
+    enabled = value.get("enabled", _DEFAULT_CLEANUP_ENABLED)
+    if not isinstance(enabled, bool):
+        enabled = _DEFAULT_CLEANUP_ENABLED
+
+    keep_recent = value.get("keep_recent", _DEFAULT_CLEANUP_KEEP_RECENT)
+    if (
+        not isinstance(keep_recent, int)
+        or isinstance(keep_recent, bool)
+        or keep_recent < 0
+    ):
+        keep_recent = _DEFAULT_CLEANUP_KEEP_RECENT
+
+    return CleanupConfig(
+        enabled=enabled,
+        keep_recent=keep_recent,
+    )
 
 
 def is_known_ai_provider(provider: str) -> bool:

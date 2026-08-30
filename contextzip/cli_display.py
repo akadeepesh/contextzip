@@ -371,8 +371,33 @@ def print_apply_result(result, *, con: Console = console) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Cleanup
+# ---------------------------------------------------------------------------
+
+
+def print_auto_cleanup(result, *, con: Console = console) -> None:
+    """
+    One quiet, dim line after an automatic cleanup pass — only shown when
+    something was actually removed, so a workspace with nothing stale
+    produces zero extra output. Failures (rare — a locked file, etc.) get
+    a short warning; they never interrupt or roll back the command that
+    was actually run.
+    """
+    if result.removed:
+        console_line = f"[dim]🧹 Auto-cleaned {len(result.removed)} old file(s) from .contextzip/ · freed {human_size(result.freed_bytes)}[/]"
+        con.print(console_line)
+
+    if result.failed:
+        n = len(result.failed)
+        warn(f"{n} old file{'s' if n != 1 else ''} in .contextzip/ couldn't be auto-cleaned", con=con)
+        for path, reason in result.failed[:5]:
+            con.print(f"  [yellow]![/] {path}  [dim]{reason}[/]")
+
+
+# ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------
+
 
 
 def human_size(n: int) -> str:

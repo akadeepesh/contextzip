@@ -566,17 +566,21 @@ def _write_debug_zip(
     console: Console,
 ) -> Path | None:
     """
-    Write debug-context.zip to the .contextzip/output/ workspace.
+    Write debug-context.zip to the .contextzip/output/watch/ workspace.
 
     Structure (flat):
       prompt.txt
       terminal-error.txt
       source-files.zip    (inner zip with referenced source files)
     """
-    from contextzip.packager import _workspace_dir, _ensure_workspace_gitignore
+    from contextzip.packager import (
+        _workspace_dir,
+        _ensure_workspace_gitignore,
+        output_subdir_for_mode,
+    )
 
     workspace, is_git_repo = _workspace_dir(project_dir)
-    output_dir = workspace / "output"
+    output_dir = output_subdir_for_mode(workspace, "watch")
 
     try:
         output_dir.mkdir(parents=True, exist_ok=True)

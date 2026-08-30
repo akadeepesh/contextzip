@@ -54,6 +54,7 @@ from contextzip.cli_display import (
     print_clipboard_result,
     print_apply_plan,
     print_apply_result,
+    print_auto_cleanup,
 )
 from contextzip.report import write_scan_report, write_apply_report
 from contextzip.applier import (
@@ -71,6 +72,7 @@ from contextzip.cli_ai import (
     run_ai_selection_preview,
 )
 from contextzip.cli_onboard import onboard_api_key
+from contextzip import cleanup as cleanup_mod
 
 console = Console()
 
@@ -434,6 +436,9 @@ def cmd_apply_zip(
     report_path = write_apply_report(project_dir=project_dir, plan=plan, result=result)
     print_report_hint(report_path)
 
+    # ── Auto-cleanup ─────────────────────────────────────────────────────────
+    _auto_cleanup(project_dir, project_cfg)
+
 
 # ---------------------------------------------------------------------------
 # Subcommand: watch
@@ -461,7 +466,7 @@ def cmd_watch(command: tuple[str, ...]) -> None:
 
         [D] package debug context   [S] skip
 
-      Pressing D immediately writes .contextzip/output/debug-context.zip containing:
+      Pressing D immediately writes .contextzip/output/watch/debug-context.zip containing:
         · prompt.txt          auto-generated task description
         · terminal-error.txt  the cleaned error output
         · source-files.zip    source files referenced in the stack trace
@@ -634,7 +639,7 @@ def cmd_config(
     if key:
         masked = key[:8] + "…" + key[-4:] if len(key) > 12 else "****"
         source = "environment variable" if from_env else str(config_path())
-        ok(f"Gemini API key configured", f"{masked} · {source}")
+        ok("Gemini API key configured", f"{masked} · {source}")
     else:
         warn("No Gemini API key configured")
         info('Run contextzip --prompt "your task" to set one up.')
@@ -652,7 +657,9 @@ def cmd_config(
 
     project_cfg = load_project_config(cwd)
     if has_legacy_project_config(cwd):
-        warn("Using the deprecated .contextzip.json — move it to .contextzip/config.json")
+        warn(
+            "Using the deprecated .contextzip.json — move it to .contextzip/config.json"
+        )
     else:
         always_include = ", ".join(project_cfg.always_include) or "none"
         always_exclude = ", ".join(project_cfg.always_exclude) or "none"
@@ -663,7 +670,14 @@ def cmd_config(
         ok(f"Project config: {project_config_path(cwd)}{cfg_note}")
         info(f"always_include: {always_include}")
         info(f"always_exclude: {always_exclude}")
-        info(f"ai: enabled={ai.enabled} provider={ai.provider} max_files={ai.max_files}")
+        info(
+            f"ai: enabled={ai.enabled} provider={ai.provider} max_files={ai.max_files}"
+        )
+        cleanup_cfg = project_cfg.cleanup
+        info(
+            f"cleanup: enabled={cleanup_cfg.enabled} "
+            f"keep_recent={cleanup_cfg.keep_recent}"
+        )
 
     console.print()
 
@@ -687,7 +701,9 @@ def _enforce_ai_config(ai_cfg) -> None:
 
     if not is_known_ai_provider(ai_cfg.provider):
         err(f"Unsupported AI provider: {ai_cfg.provider}")
-        info('Only "gemini" is currently supported — update ai.provider in .contextzip/config.json.')
+        info(
+            'Only "gemini" is currently supported — update ai.provider in .contextzip/config.json.'
+        )
         raise SystemExit(1)
 
 
@@ -743,6 +759,41 @@ def _maybe_offer_config_ui(
     return launch_config_ui(project_dir, detection, con=console)
 
 
+def _auto_cleanup(project_dir: Path, project_cfg) -> None:
+    """
+    Automatically, silently prune the .contextzip/ workspace after a
+    successful command — no confirmation, no dry-run, no separate command
+    to remember. Every zip is trivially reproducible by re-running
+    contextzip, so this is deliberately brutal rather than cautious: it
+    keeps only the `cleanup.keep_recent` most recent zip/manifest/report
+    set per mode folder, the most recent `cleanup.keep_recent` backup
+    folder(s), and the most recent `cleanup.keep_recent` archived
+    applied-zip(s) — everything else is deleted immediately, every run.
+
+    Gated on `cleanup.enabled` (default True) — set to False in
+    .contextzip/config.json to turn this off entirely.
+
+    Scanning + deleting only ever touches .contextzip/ metadata (a
+    handful of small files), never the project itself, so this stays
+    fast even on large projects — it does not rescan or re-read any
+    project source file.
+    """
+    if not project_cfg.cleanup.enabled:
+        return
+    try:
+        plan = cleanup_mod.scan(
+            project_dir,
+            keep_recent=project_cfg.cleanup.keep_recent,
+            applied_zip_retention=project_cfg.applied_zip_retention,
+        )
+        if plan.is_empty:
+            return
+        result = cleanup_mod.execute(plan)
+    except OSError:
+        return
+    print_auto_cleanup(result)
+
+
 def _run(
     *,
     extra_exclude: list[str] | None,
@@ -766,7 +817,9 @@ def _run(
     # ── Project config (.contextzip/config.json) ────────────────────────────
     project_cfg = load_project_config(project_dir)
     if has_legacy_project_config(project_dir):
-        warn("Found the deprecated .contextzip.json — move it to .contextzip/config.json")
+        warn(
+            "Found the deprecated .contextzip.json — move it to .contextzip/config.json"
+        )
 
     # ── Detection ────────────────────────────────────────────────────────────
     with console.status("[cyan]Detecting project ecosystem…[/]", spinner="dots"):
@@ -818,9 +871,7 @@ def _run(
         # from project config — both are additive, persistent behavior comes
         # from config.json so it doesn't need to be re-typed every run.
         normalized_exclude = [normalize_pattern(p) for p in extra_exclude or []]
-        normalized_exclude += [
-            normalize_pattern(p) for p in project_cfg.always_exclude
-        ]
+        normalized_exclude += [normalize_pattern(p) for p in project_cfg.always_exclude]
 
         with console.status("[cyan]Building exclusion rules…[/]", spinner="dots"):
             spec = build_spec(
@@ -914,13 +965,16 @@ def _run(
 
         if not selected_paths:
             err("AI selection returned no files.")
-            info("Try a more specific prompt, or run without --prompt to package the full project.")
+            info(
+                "Try a more specific prompt, or run without --prompt to package the full project."
+            )
             raise SystemExit(1)
 
         resolved.included = selected_paths
 
     # ── Create ZIP ───────────────────────────────────────────────────────────
     output_path = Path(output).resolve() if output else None
+    run_mode = "git-changes" if git_changes else ("prompt" if prompt else "standard")
 
     try:
         result = create_zip(
@@ -928,7 +982,7 @@ def _run(
             project_dir=project_dir,
             output_path=output_path,
             console=console,
-            git_changes=git_changes,
+            mode=run_mode,
             prompt_txt=prompt_txt,
         )
     except Exception as exc:
@@ -948,7 +1002,7 @@ def _run(
         project_dir=project_dir,
         detection=detection,
         resolved=resolved,
-        mode="git-changes" if git_changes else ("prompt" if prompt else "standard"),
+        mode=run_mode,
         ai_prompt=prompt,
         ai_selected=resolved.included if prompt else None,
         large_file_warn_bytes=large_file_warn_bytes,
@@ -959,3 +1013,6 @@ def _run(
     if not no_clipboard:
         cb = clipboard_handle(result.zip_path)
         print_clipboard_result(cb)
+
+    # ── Auto-cleanup ─────────────────────────────────────────────────────────
+    _auto_cleanup(project_dir, project_cfg)

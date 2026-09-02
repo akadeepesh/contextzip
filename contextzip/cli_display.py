@@ -238,6 +238,23 @@ def print_zip_write_warnings(result, *, con: Console = console) -> None:
         )
 
 
+def print_redaction_summary(result, *, con: Console = console) -> None:
+    """
+    A one-line heads-up when limits.redact_secrets caught something —
+    same "surface it, don't hide it" treatment as large-file warnings.
+    Silent when nothing was redacted, including when the setting is off.
+    """
+    if not result.redacted:
+        return
+    n = len(result.redacted)
+    total_hits = sum(len(names) for _, names in result.redacted)
+    warn(
+        f"Redacted {total_hits} secret-shaped value(s) in {n} file{'s' if n != 1 else ''} "
+        "before zipping — see report",
+        con=con,
+    )
+
+
 def print_report_hint(report_path, *, con: Console = console) -> None:
     """Dim pointer to the full report, printed once at the end of a run."""
     if report_path:

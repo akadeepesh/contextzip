@@ -33,6 +33,7 @@ def write_scan_report(
     ai_prompt: str | None = None,
     ai_selected: list[Path] | None = None,
     large_file_warn_bytes: int,
+    redacted: list[tuple[Path, list[str]]] | None = None,
 ) -> Path:
     """
     Write the full scan/package report next to *zip_path*.
@@ -109,6 +110,12 @@ def write_scan_report(
         for p in resolved.binary_files:
             rel = p.relative_to(project_dir).as_posix()
             w(f"  {rel}")
+        w("")
+
+    if redacted:
+        w("Redacted secrets (limits.redact_secrets)")
+        for rel, names in redacted:
+            w(f"  {rel.as_posix():<60} {', '.join(names)}")
         w("")
 
     if resolved.skipped:

@@ -20,11 +20,12 @@ Phase 7 changes:
     instead of directly in .contextzip/, leaving room for config.json
     alongside them.
   - Ignoring is now handled by a self-contained .contextzip/.gitignore
-    (ignore everything except config.json) instead of a blanket
-    ".contextzip/" entry in the project's top-level .gitignore — this keeps
-    config.json trackable/shareable while output/ stays untracked, and it
-    keeps working even when the workspace is relocated outside the default
-    git-root anchor (see project_config.py / _resolve_workspace_location).
+    (ignore everything, no exceptions) instead of a blanket ".contextzip/"
+    entry in the project's top-level .gitignore — this keeps working even
+    when the workspace is relocated outside the default git-root anchor
+    (see project_config.py / _resolve_workspace_location). config.json is
+    local by default like everything else in the workspace; sharing it
+    with a team is a deliberate, manual `git add -f`, never automatic.
 
 Phase 8 changes:
   - Every ZIP now gets a sidecar manifest written next to it (e.g.
@@ -45,6 +46,15 @@ Phase 9 changes:
     to remember which run you just did. See `output_subdir_for_mode` /
     `zip_filename_for_mode`, which are the single source of truth other
     modules (watcher.py, cleanup.py) build on so the mapping never drifts.
+
+Phase 10 changes:
+  - Implements `limits.redact_secrets`, previously persisted by config.py /
+    the config UI but never actually enforced (flagged as a known
+    limitation as of 0.4.0). Text files that are already going into the
+    archive get scanned for secret-shaped values (API keys, tokens,
+    private-key blocks, etc. — see redact.py) and the matched values are
+    replaced with "[REDACTED]" before writing. Binary and oversized files
+    are never scanned — see `_should_scan_for_secrets`.
 """
 
 from __future__ import annotations
@@ -67,6 +77,7 @@ from rich.progress import (
 )
 
 from contextzip.filters import ResolveResult
+from contextzip.redact import redact_secrets
 
 # Subdirectory of the workspace where generated ZIPs are written.
 _OUTPUT_DIRNAME = "output"
@@ -113,22 +124,25 @@ def zip_filename_for_mode(mode: str) -> str:
     """The deterministic zip filename written for *mode* (see module docstring)."""
     return _MODE_ZIP_FILENAMES.get(mode, _MODE_ZIP_FILENAMES[_DEFAULT_MODE])
 
-# Contents of .contextzip/.gitignore — ignore everything in the workspace
-# except the team-shareable project config and this file itself.
+# Contents of .contextzip/.gitignore — ignore absolutely everything in the
+# workspace, no exceptions. .contextzip/ is a local, per-machine scratch
+# space; nothing in it is ever pushed by default. Anyone who genuinely
+# wants to share something from it (e.g. config.json, for team-wide
+# settings) can still do so explicitly with `git add -f`, but contextzip
+# itself never carves out an exception — see project_config.py.
 _WORKSPACE_GITIGNORE_CONTENTS = (
     "# contextzip workspace\n"
-    "# Everything here is a local, per-machine artifact except config.json,\n"
-    "# which holds project-level contextzip preferences meant to be shared\n"
-    "# with your team via Git.\n"
+    "# Everything here is a local, per-machine artifact. Nothing in this\n"
+    "# directory is ever pushed by default. To share something from it\n"
+    "# (e.g. config.json) with your team anyway, use `git add -f`.\n"
     "*\n"
-    "!.gitignore\n"
-    "!config.json\n"
 )
 
 # A previous version of contextzip added this block to the project's
 # top-level .gitignore. Now that .contextzip/.gitignore handles ignoring
-# on its own (and does so in a way that keeps config.json trackable), we
-# clean up that older entry the first time we touch a project — see
+# on its own (and works correctly regardless of where the workspace is
+# relocated), we clean up that older entry the first time we touch a
+# project — see
 # _migrate_legacy_root_gitignore_entry.
 _LEGACY_GITIGNORE_BLOCK = "# contextzip workspace\n.contextzip/\n"
 
@@ -145,6 +159,10 @@ class PackageResult:
     uncompressed_bytes: int
     compressed_bytes: int
     skipped_in_zip: list[tuple[Path, str]] = field(default_factory=list)
+    # Files where at least one secret-shaped value was redacted before
+    # writing — (path relative to project root, pattern names matched).
+    # Always empty unless limits.redact_secrets is enabled.
+    redacted: list[tuple[Path, list[str]]] = field(default_factory=list)
 
     @property
     def compression_ratio(self) -> float:
@@ -162,6 +180,49 @@ class PackageResult:
 
 
 # ---------------------------------------------------------------------------
+# Shared per-file write logic (redaction happens here, in exactly one place)
+# ---------------------------------------------------------------------------
+
+
+def _write_member(
+    zf: zipfile.ZipFile,
+    abs_path: Path,
+    rel: Path,
+    redact_enabled: bool,
+    binary_paths: frozenset[Path],
+    large_paths: frozenset[Path],
+) -> list[str]:
+    """
+    Write one file into *zf*.
+
+    When *redact_enabled* is True and *abs_path* isn't already known to be
+    binary or oversized (per resolve_files()'s existing classification —
+    never re-detected here), reads it as UTF-8 text and redacts any
+    secret-shaped values before writing. Binary/oversized files, or text
+    that fails to decode as UTF-8, are written unmodified via the same
+    fast zf.write() path used when redaction is off entirely.
+
+    Returns the list of pattern names redacted (empty if none matched, or
+    if this file wasn't eligible for scanning). May raise OSError, exactly
+    as the old plain zf.write() call did — callers already handle that.
+    """
+    if not redact_enabled or abs_path in binary_paths or abs_path in large_paths:
+        zf.write(abs_path, arcname=rel.as_posix())
+        return []
+
+    original_bytes = abs_path.read_bytes()
+    try:
+        text = original_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        zf.writestr(rel.as_posix(), original_bytes)
+        return []
+
+    redacted_text, matched = redact_secrets(text)
+    zf.writestr(rel.as_posix(), redacted_text.encode("utf-8") if matched else original_bytes)
+    return matched
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -172,6 +233,7 @@ def create_zip_silent(
     output_path: Path | None,
     mode: str = _DEFAULT_MODE,
     prompt_txt: str | None = None,
+    redact_secrets_enabled: bool = False,
 ) -> PackageResult:
     """
     Write the included files from *resolve_result* into a ZIP archive
@@ -184,6 +246,9 @@ def create_zip_silent(
     *mode* selects which .contextzip/output/<mode>/ subfolder and
     deterministic filename to use — see `output_subdir_for_mode` /
     `zip_filename_for_mode`. Ignored when *output_path* is given.
+
+    *redact_secrets_enabled* mirrors the project's `limits.redact_secrets`
+    setting — see redact.py.
     """
     if output_path is not None:
         zip_path = output_path
@@ -193,7 +258,10 @@ def create_zip_silent(
     zip_path.parent.mkdir(parents=True, exist_ok=True)
 
     included: list[Path] = resolve_result.included
+    binary_paths = frozenset(resolve_result.binary_files)
+    large_paths = frozenset(p for p, _ in resolve_result.large_files)
     skipped_in_zip: list[tuple[Path, str]] = []
+    redacted: list[tuple[Path, list[str]]] = []
     uncompressed = 0
     file_count = 0
 
@@ -223,7 +291,11 @@ def create_zip_silent(
                 continue
 
             try:
-                zf.write(abs_path, arcname=rel.as_posix())
+                matched = _write_member(
+                    zf, abs_path, rel, redact_secrets_enabled, binary_paths, large_paths
+                )
+                if matched:
+                    redacted.append((rel, matched))
                 uncompressed += file_size
                 file_count += 1
             except PermissionError:
@@ -241,6 +313,7 @@ def create_zip_silent(
         uncompressed_bytes=uncompressed,
         compressed_bytes=compressed,
         skipped_in_zip=skipped_in_zip,
+        redacted=redacted,
     )
 
 
@@ -251,6 +324,7 @@ def create_zip(
     console: Console,
     mode: str = _DEFAULT_MODE,
     prompt_txt: str | None = None,
+    redact_secrets_enabled: bool = False,
 ) -> PackageResult:
     """
     Write the included files from *resolve_result* into a ZIP archive.
@@ -268,6 +342,11 @@ def create_zip(
     file is written as the first entry in the ZIP. Any AI tool that receives
     the ZIP will immediately see the task description and selected file list.
 
+    *redact_secrets_enabled* mirrors the project's `limits.redact_secrets`
+    setting — see redact.py. Only ever scans files already known (via
+    *resolve_result*) to be text and within `limits.max_file_size_mb`;
+    binary/oversized files are always written unmodified.
+
     Returns a :class:`PackageResult` with compression stats and any
     files that had to be skipped during writing (e.g. permission denied).
     """
@@ -280,7 +359,10 @@ def create_zip(
     zip_path.parent.mkdir(parents=True, exist_ok=True)
 
     included: list[Path] = resolve_result.included
+    binary_paths = frozenset(resolve_result.binary_files)
+    large_paths = frozenset(p for p, _ in resolve_result.large_files)
     skipped_in_zip: list[tuple[Path, str]] = []
+    redacted: list[tuple[Path, list[str]]] = []
     uncompressed = 0
     file_count = 0
 
@@ -325,7 +407,11 @@ def create_zip(
                     continue
 
                 try:
-                    zf.write(abs_path, arcname=rel.as_posix())
+                    matched = _write_member(
+                        zf, abs_path, rel, redact_secrets_enabled, binary_paths, large_paths
+                    )
+                    if matched:
+                        redacted.append((rel, matched))
                     uncompressed += file_size
                     file_count += 1
                 except PermissionError:
@@ -345,6 +431,7 @@ def create_zip(
         uncompressed_bytes=uncompressed,
         compressed_bytes=compressed,
         skipped_in_zip=skipped_in_zip,
+        redacted=redacted,
     )
 
 
@@ -406,20 +493,20 @@ def _find_git_root(start: Path) -> Path | None:
 def _ensure_workspace_gitignore(workspace: Path) -> None:
     """
     Ensure <workspace>/.gitignore exists with the standard contents that
-    ignore everything in the workspace except config.json (and the
-    .gitignore file itself).
+    ignore the entire workspace, no exceptions — .contextzip/ is a local,
+    per-machine scratch space and nothing in it is tracked by default,
+    including config.json and this .gitignore file itself.
 
     This is self-contained: it works no matter where *workspace* ends up
     living (git-root default, cwd, or a custom relocated path), since a
     nested .gitignore applies to its own directory regardless of where
     that directory sits in the tree — unlike a single blanket entry in a
     distant top-level .gitignore, which can't be relied on to reach a
-    relocated workspace and (if it ignores the whole directory rather than
-    its contents) would prevent config.json from ever being trackable.
+    relocated workspace.
 
     Idempotent — leaves an existing, already-correct file untouched, and
     only rewrites files that don't yet match (e.g. hand-edited or from an
-    older contextzip version).
+    older contextzip version that carved out an exception for config.json).
     """
     gitignore_path = workspace / ".gitignore"
 
@@ -441,11 +528,14 @@ def _migrate_legacy_root_gitignore_entry(git_root: Path) -> None:
     .gitignore, if present.
 
     That blanket directory-level ignore predates .contextzip/.gitignore and
-    would otherwise stop config.json from ever becoming trackable (git does
-    not descend into an ignored directory to apply nested un-ignore rules).
-    Only ever removes the exact block contextzip itself wrote — never
-    touches unrelated .gitignore content, and is a no-op if the block isn't
-    present (e.g. it was already removed, or never added).
+    is redundant now that the nested .gitignore ignores the whole workspace
+    on its own — leaving the old root-level entry around is harmless but
+    unnecessary clutter, and it would have stopped git from ever descending
+    into .contextzip/ to notice a force-added file (`git add -f`) if the
+    entry ignores the directory itself rather than its contents. Only ever
+    removes the exact block contextzip itself wrote — never touches
+    unrelated .gitignore content, and is a no-op if the block isn't present
+    (e.g. it was already removed, or never added).
     """
     gitignore_path = git_root / ".gitignore"
     if not gitignore_path.is_file():
@@ -490,9 +580,10 @@ def _resolve_workspace_location(project_dir: Path) -> tuple[str, str]:
 
     Precedence, highest wins:
       1. CONTEXTZIP_WORKSPACE_LOCATION env var
-      2. Project config (.contextzip/config.json at git root — team-shared,
-         committed; falls back to the deprecated .contextzip.json if that's
-         all a project has)
+      2. Project config (.contextzip/config.json at git root — local by
+         default like the rest of the workspace, force-added with
+         `git add -f` if a team wants to share it; falls back to the
+         deprecated .contextzip.json if that's all a project has)
       3. Personal config (~/.config/contextzip/config.json — per-machine)
       4. Built-in default: "git-root"
 

@@ -1,15 +1,17 @@
 """
-project_config.py — Project-level, team-shareable contextzip settings.
+project_config.py — Project-level contextzip settings.
 
 Loaded from `.contextzip/config.json`, anchored at the project's git root
 (or the project directory itself outside a git repo) — the same anchor
 `.contextzip/` itself resolves to by default. Unlike config.py's personal,
 per-machine store (~/.config/contextzip/config.json, holds API keys, never
-committed), this file is meant to be committed to the repo so every
-contributor gets the same project defaults automatically — no per-machine
-setup required. `.contextzip/` is gitignored by default (see packager.py's
-_ensure_workspace_gitignore), but config.json is deliberately carved out of
-that ignore rule so it stays trackable.
+committed), this file holds settings a whole team could plausibly want to
+share — but contextzip never presumes that on your behalf. `.contextzip/`
+is gitignored in full by default (see packager.py's
+_ensure_workspace_gitignore), config.json included; a team that wants to
+share these settings has to explicitly `git add -f .contextzip/config.json`
+to commit it. This is a deliberate design choice, not an oversight — see
+"Never presumes what belongs in git" below.
 
 Currently supports:
 
@@ -78,11 +80,20 @@ built-in default for the newer preference fields.
                             "large" before packaging (still included,
                             just surfaced) instead of the fixed 1 MB
                             default. Fractional values are allowed.
-        redact_secrets   — reserved for a future best-effort scrub of
-                            secret-shaped values (API keys, tokens) inside
-                            otherwise-included files, on top of the
-                            always-excluded credential file patterns.
-                            Currently persisted but not yet enforced.
+        redact_secrets   — when true, files that are already going into the
+                            archive are scanned for secret-shaped values
+                            (API keys, tokens, private-key blocks — see
+                            redact.py) and matched values are replaced
+                            with "[REDACTED]" before writing. This is a
+                            second line of defense on top of, not a
+                            replacement for, the always-excluded whole-file
+                            credential patterns (§5-equivalent baseline in
+                            packager.py) — those still keep obviously-secret
+                            files out entirely regardless of this setting.
+                            Only ever scans files already known to be text
+                            and within max_file_size_mb; binary and
+                            oversized files are never scanned. Off by
+                            default.
 
   applied_zip_retention
       How many past `apply-zip` archives to keep in

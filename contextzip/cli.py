@@ -55,6 +55,7 @@ from contextzip.cli_display import (
     print_apply_plan,
     print_apply_result,
     print_auto_cleanup,
+    print_redaction_summary,
 )
 from contextzip.report import write_scan_report, write_apply_report
 from contextzip.applier import (
@@ -673,6 +674,11 @@ def cmd_config(
         info(
             f"ai: enabled={ai.enabled} provider={ai.provider} max_files={ai.max_files}"
         )
+        limits = project_cfg.limits
+        info(
+            f"limits: max_file_size_mb={limits.max_file_size_mb} "
+            f"redact_secrets={limits.redact_secrets}"
+        )
         cleanup_cfg = project_cfg.cleanup
         info(
             f"cleanup: enabled={cleanup_cfg.enabled} "
@@ -984,6 +990,7 @@ def _run(
             console=console,
             mode=run_mode,
             prompt_txt=prompt_txt,
+            redact_secrets_enabled=project_cfg.limits.redact_secrets,
         )
     except Exception as exc:
         err(f"Failed to create ZIP: {exc}")
@@ -994,6 +1001,7 @@ def _run(
         resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
     )
     print_zip_write_warnings(result)
+    print_redaction_summary(result)
     print_package_result(result)
 
     # ── Report ───────────────────────────────────────────────────────────────
@@ -1006,6 +1014,7 @@ def _run(
         ai_prompt=prompt,
         ai_selected=resolved.included if prompt else None,
         large_file_warn_bytes=large_file_warn_bytes,
+        redacted=result.redacted,
     )
     print_report_hint(report_path)
 

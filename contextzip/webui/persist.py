@@ -3,8 +3,8 @@ webui/persist.py — Writes the local config UI's choices to
 .contextzip/config.json.
 
 Reuses packager._ensure_workspace_gitignore so a UI-driven save produces
-exactly the same on-disk workspace layout (config.json trackable,
-output/ ignored) that a normal contextzip run would create.
+exactly the same on-disk workspace layout (entire .contextzip/ ignored,
+config.json included) that a normal contextzip run would create.
 """
 
 from __future__ import annotations

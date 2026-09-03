@@ -758,3 +758,28 @@ This project uses [Semantic Versioning](https://semver.org/).
 - `.gitignore patterns applied` is no longer printed (no signal, dead
   weight).
 - Opening the output folder no longer prints a confirmation line.
+
+
+## [0.4.2] — 2026-08-31
+
+### Added
+- **`limits.redact_secrets` is now enforced.** Previously persisted in
+  config and editable in the config UI but silently ignored by
+  packaging (flagged as a known limitation in 0.4.0). Now, text files
+  already going into the archive are scanned for secret-shaped values
+  — AWS/Google/GitHub/Slack/Stripe/Anthropic/OpenAI keys, JWTs,
+  private-key blocks, and a conservative generic
+  `key`/`secret`/`token`/`password` assignment pattern — and matched
+  values are replaced with `[REDACTED]` before writing. Only scans
+  files already known to be text and within `limits.max_file_size_mb`;
+  binary and oversized files are never touched. Surfaced in a terminal
+  warning and itemized in the `.report.txt` file, never applied
+  silently.
+
+### Changed
+- **`.contextzip/` is now fully local by default, no exceptions.**
+  `config.json` was previously carved out of the workspace's
+  `.gitignore` so it stayed trackable automatically. It's now ignored
+  like everything else in the workspace — nothing under `.contextzip/`
+  is ever pushed unless you explicitly opt in with
+  `git add -f .contextzip/config.json`.

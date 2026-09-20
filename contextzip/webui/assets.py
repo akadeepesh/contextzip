@@ -1148,6 +1148,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
       document.getElementById("overlay").classList.add("show");
       setTimeout(function () {
         api("/api/shutdown", { method: "GET" }).catch(function () {});
+        // Try to close the tab automatically and hop back to the terminal.
+        // Browsers only allow script-initiated close on windows/tabs that
+        // were opened by a script, or ones whose entire session history is
+        // just this one page — which this config-UI tab always is, since
+        // it's a single page with no navigation. If the browser still
+        // blocks it (some do, regardless), window.close() is a silent
+        // no-op and the overlay's "you can close this tab" text — already
+        // on screen — is the fallback the user follows manually.
+        setTimeout(function () {
+          try { window.close(); } catch (e) { /* ignored — fallback is the overlay text */ }
+        }, 300);
       }, 900);
     }).catch(function () {
       btn.disabled = false;

@@ -654,53 +654,6 @@ This project uses [Semantic Versioning](https://semver.org/).
   packaging. Flagging this explicitly so it isn't relied on before the
   enforcement lands.
 
-## [0.3.9] - 2026-08-26
-
-### Security
-
-- Config file permissions (`~/.config/contextzip/config.json`) are now
-  locked to `0600` on **every** write, not just on creation. Previously a
-  pre-existing config file from an older install (or one created under a
-  permissive umask) could stay group/world-readable indefinitely — the
-  file can hold a Gemini API key in plaintext, so this closes a real local
-  exposure on shared machines.
-- The local config UI (`contextzip config --ui`) now compares the request
-  token with `hmac.compare_digest` instead of `==`, removing a
-  timing-based side channel on the single-use session token.
-- Substantially expanded the list of secret/credential files that are
-  always excluded from packaged zips, regardless of framework:
-  SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`),
-  keystores (`.jks`, `.keystore`, `.p12`, `.pkcs12`, `.ppk`),
-  CLI/package-manager credential files (`.npmrc`, `.netrc`, `.pypirc`,
-  `.pgpass`, `.dockercfg`, Docker `config.json`), cloud provider
-  credentials (`.aws/credentials`, `.aws/config`, `*serviceaccount*.json`,
-  `kubeconfig`), and Terraform state (`*.tfstate*`, `.terraform/`), which
-  routinely contains plaintext secrets even for "just infra" resources.
-
-### Fixed
-
-- `apply-zip` now detects when every entry in an AI-returned zip is
-  nested under one incidental top-level folder — the shape produced by
-  `zip -r out.zip myfolder` or GitHub's "Download ZIP" — and strips it
-  automatically when doing so clearly improves the match against the
-  project's manifest, so files land at their real project-relative paths
-  instead of recreating a wrapper folder.
-- `apply-zip` now warns before applying a zip whose structure barely
-  matches the project at all (under 10% of paths found in the manifest,
-  even after wrapper stripping), instead of silently treating every file
-  as brand new.
-
-### Changed
-
-- `.contextzip/inbox/applied/` now keeps only the most recently applied
-  zip instead of accumulating one per session.
-
-### Internal
-
-- Removed an unused `GitChanges` import in `api.py`.
-- Clarified the `.gitignore` comment describing what lives under
-  `.contextzip/` and confirming the Gemini API key is never stored there.
-
 ## [0.4.1] — 2026-08-30
 
 ### Added
@@ -783,3 +736,30 @@ This project uses [Semantic Versioning](https://semver.org/).
   like everything else in the workspace — nothing under `.contextzip/`
   is ever pushed unless you explicitly opt in with
   `git add -f .contextzip/config.json`.
+
+## [0.4.3] — 2026-09-20
+
+### Added
+- **`contextzip update` / `cz update`** — checks PyPI for a newer release
+  and updates in place, so you no longer have to remember
+  `pip install --upgrade contextzip` after every one of your own
+  releases. Detects whether this install came from pip, pipx, or
+  `uv tool` and re-invokes the matching one against the *currently
+  running* interpreter — never a possibly-different `pip` off PATH.
+  `--check` reports the current/latest version without installing;
+  `--yes` skips the confirmation prompt.
+
+### Fixed
+- **`apply-zip` no longer dumps a nested copy of the project when the
+  returned zip wraps everything in a folder named after the project
+  itself** (e.g. `project/`, or a folder matching the package's own
+  name). The wrapper-stripping logic added in an earlier release had a
+  guard that skipped stripping whenever a real folder with that name
+  already existed in the project — which is exactly what happens when
+  an AI tool names the wrapper after the project. Now, whenever a
+  manifest is available, the decision is made by comparing how well
+  paths actually match the manifest with vs. without stripping, not by
+  guessing from what's on disk.
+- **`contextzip config --ui` now closes its browser tab automatically
+  after a successful save** and hands control back to the terminal,
+  instead of only telling you to close it yourself.

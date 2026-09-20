@@ -417,6 +417,31 @@ def _match_rate(names: list[str], manifest_files: dict) -> float:
 # ---------------------------------------------------------------------------
 
 
+def _top_level_dir_match_rate(names: list[str], project_dir: Path) -> float:
+    """
+    Fraction of *names*' unique top-level path segments that exist as a
+    real file or directory directly under *project_dir* right now.
+
+    Used as a fallback signal for wrapper-stripping when the manifest
+    can't settle it — e.g. the freshest manifest on disk is a narrow,
+    git-diff-scoped one (`.contextzip/output/git-changes/...`) that only
+    ever listed a handful of touched files, so a zip full of brand-new
+    files matches it at ~0% whether or not the wrapper is stripped. The
+    manifest is silent either way, but the project's actual top-level
+    layout — `app/`, `components/`, `lib/`, and so on — usually isn't:
+    a genuine wrapper's contents line up with it once stripped, while
+    the raw, unstripped paths (starting with the wrapper's own name)
+    essentially never do.
+    """
+    if not names:
+        return 0.0
+    tops = {n.split("/", 1)[0] for n in names}
+    if not tops:
+        return 0.0
+    existing = sum(1 for t in tops if t and (project_dir / t).exists())
+    return existing / len(tops)
+
+
 def build_plan(
     zip_path: Path,
     project_dir: Path,
@@ -447,6 +472,9 @@ def build_plan(
     wrapper_note: str | None = None
     candidate = _detect_common_wrapper(raw_names)
     if candidate:
+        stripped_names = [n[len(candidate) + 1:] for n in raw_names]
+        candidate_is_real_dir = (project_dir / candidate).is_dir()
+
         if manifest_files:
             # Decide using the manifest — actual ground truth about what
             # paths this project has — rather than whether a directory of
@@ -465,7 +493,6 @@ def build_plan(
             # better *unstripped*, since those paths are already in the
             # manifest as-is.
             unstripped_rate = _match_rate(raw_names, manifest_files)
-            stripped_names = [n[len(candidate) + 1:] for n in raw_names]
             stripped_rate = _match_rate(stripped_names, manifest_files)
             # Only strip when it clearly helps — meaningfully better match
             # against paths we know this project actually has, not just a
@@ -478,18 +505,53 @@ def build_plan(
                     f"project manifest after stripping vs {unstripped_rate:.0%} "
                     "before."
                 )
-        elif not (project_dir / candidate).is_dir():
+            elif stripped_rate == unstripped_rate and not candidate_is_real_dir:
+                # The manifest didn't help decide either way — most often
+                # because the manifest in use is scoped to a small subset
+                # of the project (e.g. a git-diff manifest from
+                # output/git-changes/, which only ever tracked the files
+                # touched in one change) rather than the whole tree, so a
+                # zip of brand-new files matches it at 0% regardless of
+                # stripping. Fall back to checking whether the paths line
+                # up with the project's real, current top-level layout
+                # instead of giving up and leaving the wrapper in place.
+                dir_unstripped_rate = _top_level_dir_match_rate(raw_names, project_dir)
+                dir_stripped_rate = _top_level_dir_match_rate(stripped_names, project_dir)
+                if dir_stripped_rate > dir_unstripped_rate and dir_stripped_rate >= 0.5:
+                    strip_prefix = candidate
+                    wrapper_note = (
+                        f"Removed wrapping folder '{candidate}/' present in "
+                        "every zip entry — the project manifest in use didn't "
+                        "cover enough of these paths to tell either way "
+                        "(likely scoped to a specific change rather than the "
+                        "whole project), but "
+                        f"{dir_stripped_rate:.0%} of the stripped paths' "
+                        "top-level folders match this project's real layout "
+                        f"vs {dir_unstripped_rate:.0%} before — double-check "
+                        "the result before trusting it."
+                    )
+        elif not candidate_is_real_dir:
             # No manifest to confirm against, so this is a softer call —
             # still strip (matches how `tar` and GitHub's own zip downloads
             # behave) as long as the project doesn't already have a real
             # folder of that name, but say so plainly since it's not
-            # manifest-verified.
+            # manifest-verified. Where the on-disk layout backs it up, say
+            # that too rather than leaving the caveat maximally vague.
             strip_prefix = candidate
-            wrapper_note = (
-                f"Removed wrapping folder '{candidate}/' present in every zip "
-                "entry (no manifest available to confirm — double-check the "
-                "result before trusting it)."
-            )
+            dir_stripped_rate = _top_level_dir_match_rate(stripped_names, project_dir)
+            if dir_stripped_rate >= 0.5:
+                wrapper_note = (
+                    f"Removed wrapping folder '{candidate}/' present in every "
+                    f"zip entry — {dir_stripped_rate:.0%} of the stripped "
+                    "paths' top-level folders match this project's real "
+                    "layout (no manifest available to confirm further)."
+                )
+            else:
+                wrapper_note = (
+                    f"Removed wrapping folder '{candidate}/' present in every zip "
+                    "entry (no manifest available to confirm — double-check the "
+                    "result before trusting it)."
+                )
 
     extraction_dir = Path(tempfile.mkdtemp(prefix="contextzip-apply-"))
     _safe_extract(zip_path, extraction_dir, strip_prefix=strip_prefix)
@@ -538,16 +600,31 @@ def build_plan(
         known = sum(1 for e in entries if e.rel_path in manifest_files)
         rate = known / len(entries)
         if rate < 0.1:
-            structure_warning = (
-                f"Only {known} of {len(entries)} files in this zip match paths "
-                "from the project manifest, even after checking for a wrapping "
-                "folder. That usually means the zip's internal structure "
-                "doesn't line up with this project — the wrong zip, or one "
-                "built with an unexpected layout. Applying it as-is will "
-                "likely create a pile of unrelated new files rather than "
-                "update the ones you meant to change. Double-check the zip "
-                "before proceeding."
-            )
+            if strip_prefix and "top-level folders match" in (wrapper_note or ""):
+                # The wrapper was already resolved via the on-disk layout
+                # fallback above, so don't re-cast that as if the wrapper
+                # check itself came up empty — it didn't, the manifest just
+                # doesn't happen to cover these particular files.
+                structure_warning = (
+                    f"Only {known} of {len(entries)} files in this zip match "
+                    "paths from the project manifest. The wrapper folder was "
+                    "still resolved using the project's real directory "
+                    "layout (see above), but none of these exact files were "
+                    "in the manifest, so this may be new work the manifest "
+                    "predates rather than a mismatch — worth a quick look "
+                    "before applying."
+                )
+            else:
+                structure_warning = (
+                    f"Only {known} of {len(entries)} files in this zip match paths "
+                    "from the project manifest, even after checking for a wrapping "
+                    "folder. That usually means the zip's internal structure "
+                    "doesn't line up with this project — the wrong zip, or one "
+                    "built with an unexpected layout. Applying it as-is will "
+                    "likely create a pile of unrelated new files rather than "
+                    "update the ones you meant to change. Double-check the zip "
+                    "before proceeding."
+                )
 
     return ApplyPlan(
         zip_path=zip_path,

@@ -446,8 +446,24 @@ def build_plan(
     strip_prefix: str | None = None
     wrapper_note: str | None = None
     candidate = _detect_common_wrapper(raw_names)
-    if candidate and not (project_dir / candidate).is_dir():
+    if candidate:
         if manifest_files:
+            # Decide using the manifest — actual ground truth about what
+            # paths this project has — rather than whether a directory of
+            # that name merely happens to exist on disk. That on-disk check
+            # used to gate this whole branch, which backfired on the most
+            # common real case: an AI tool wraps the whole project in a
+            # folder named after the project itself (e.g. "contextzip/"),
+            # and the project's own top-level package/dir happens to share
+            # that exact name — so the wrapper looked "legitimate" and was
+            # never stripped, dumping a nested copy of the project instead
+            # of updating the real files. Comparing manifest match-rates
+            # with vs without stripping gets both cases right: a genuine
+            # wrapper matches far better once stripped, while a zip whose
+            # top-level folder is an intentional part of the project (e.g.
+            # updates confined to an existing "docs/" folder) matches
+            # better *unstripped*, since those paths are already in the
+            # manifest as-is.
             unstripped_rate = _match_rate(raw_names, manifest_files)
             stripped_names = [n[len(candidate) + 1:] for n in raw_names]
             stripped_rate = _match_rate(stripped_names, manifest_files)
@@ -462,10 +478,12 @@ def build_plan(
                     f"project manifest after stripping vs {unstripped_rate:.0%} "
                     "before."
                 )
-        else:
+        elif not (project_dir / candidate).is_dir():
             # No manifest to confirm against, so this is a softer call —
             # still strip (matches how `tar` and GitHub's own zip downloads
-            # behave), but say so plainly since it's not manifest-verified.
+            # behave) as long as the project doesn't already have a real
+            # folder of that name, but say so plainly since it's not
+            # manifest-verified.
             strip_prefix = candidate
             wrapper_note = (
                 f"Removed wrapping folder '{candidate}/' present in every zip "

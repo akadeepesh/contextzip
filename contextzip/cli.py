@@ -74,6 +74,7 @@ from contextzip.cli_ai import (
 )
 from contextzip.cli_onboard import onboard_api_key
 from contextzip import cleanup as cleanup_mod
+from contextzip import updater as updater_mod
 
 console = Console()
 
@@ -685,6 +686,90 @@ def cmd_config(
             f"keep_recent={cleanup_cfg.keep_recent}"
         )
 
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: update
+# ---------------------------------------------------------------------------
+
+
+@main.command("update")
+@click.option(
+    "--check",
+    "check_only",
+    is_flag=True,
+    default=False,
+    help="Only check for a newer version — don't install anything.",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    default=False,
+    help="Skip the confirmation prompt and update immediately if available.",
+)
+def cmd_update(check_only: bool, yes: bool) -> None:
+    """
+    Check PyPI for a newer contextzip release and update in place.
+
+    \b
+    EXAMPLES
+      contextzip update              # check, then confirm before updating
+      contextzip update --yes        # update immediately if one is available
+      contextzip update --check      # only report the current/latest version
+      cz update                      # same command, short alias
+
+    \b
+    HOW IT WORKS
+      contextzip cuts frequent releases, so this beats remembering
+      `pip install --upgrade contextzip` by hand. It detects whether this
+      install came from pip, pipx, or uv tool and re-invokes the matching
+      one, upgrading the same interpreter that's currently running —
+      never a possibly-different "pip" found on PATH.
+    """
+    console.print()
+    with console.status("[cyan]Checking for updates…[/]", spinner="dots"):
+        check = updater_mod.check_latest_version()
+
+    if check.latest is None:
+        err(f"Could not check for updates: {check.error}")
+        info(f"You're on {check.current}. Try again later, or update manually:")
+        info("  pip install --upgrade contextzip")
+        console.print()
+        raise SystemExit(1)
+
+    if not check.update_available:
+        ok(f"You're up to date — contextzip {check.current}")
+        console.print()
+        return
+
+    info(f"Update available: {check.current} → {check.latest}")
+
+    if check_only:
+        info("Run contextzip update to install it.")
+        console.print()
+        return
+
+    if not yes:
+        proceed = click.confirm(f"  Update to {check.latest} now?", default=True)
+        if not proceed:
+            info("Not updating.")
+            console.print()
+            return
+
+    with console.status(f"[cyan]Updating to {check.latest}…[/]", spinner="dots"):
+        result = updater_mod.run_update()
+
+    console.print()
+    if result.ok:
+        ok(f"Updated to contextzip {check.latest}", f"via {result.method}")
+        info("Restart any running contextzip/watch sessions to pick it up.")
+    else:
+        err(f"Update via {result.method} failed")
+        if result.output:
+            console.print(f"[dim]{result.output}[/]")
+        info("You can also update manually: pip install --upgrade contextzip")
     console.print()
 
 

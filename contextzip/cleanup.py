@@ -2,21 +2,16 @@
 cleanup.py — Automatic workspace housekeeping for contextzip.
 
 .contextzip/ accumulates disposable artifacts over time: a zip+manifest+report
-set every run, a timestamped backup folder every risky `apply-zip`, and (until
-pruned) old archived applied-zips. None of it is precious — every zip is
-trivially reproducible by just re-running contextzip, and a backup only
-matters until the apply that made it is confirmed good. So cleanup here is
-deliberately brutal rather than cautious: it runs automatically after every
-successful command (see `_auto_cleanup` in cli.py), with no prompt and no
-separate command to remember, and keeps only the most recent
-`cleanup.keep_recent` item(s) in each category — everything else is deleted
-immediately, every time.
+set every run, and (until pruned) old archived applied-zips and loose apply
+reports. None of it is precious — every zip is trivially reproducible by just
+re-running contextzip. So cleanup here is deliberately brutal rather than
+cautious: it runs automatically after every successful command (see
+`_auto_cleanup` in cli.py), with no prompt and no separate command to
+remember, and keeps only the most recent `cleanup.keep_recent` item(s) in
+each category — everything else is deleted immediately, every time.
 
-The heavier caution used elsewhere in contextzip (backing up before overwrite
-in apply-zip, never inferring deletions) is reserved for the project's own
-files, where losing something can mean losing real work. Nothing here ever
-touches the project — only disposable metadata under .contextzip/ that costs
-nothing to regenerate.
+Nothing here ever touches the project — only disposable metadata under
+.contextzip/ that costs nothing to regenerate.
 
 Never touched, under any settings:
   - .contextzip/config.json (project preferences)
@@ -28,7 +23,6 @@ Never touched, under any settings:
 Kept only-the-most-recent-N, everything older deleted immediately:
   - zip/manifest/report sets under .contextzip/output/<mode>/, per mode
     folder
-  - timestamped folders under .contextzip/backups/
   - archived zips under .contextzip/inbox/applied/ (this is also governed
     by `applied_zip_retention`, already enforced on every apply-zip run —
     scanning it here too just catches the case where zips piled up before
@@ -39,6 +33,12 @@ Kept only-the-most-recent-N, everything older deleted immediately:
     lifecycle (a zip gets archived into applied/ or left where the user
     put it; its report always lands in inbox/ itself), so nothing else
     here would ever catch them piling up run after run
+
+Removed outright, no matter how recent:
+  - .contextzip/backups/ in its entirety. apply-zip no longer creates
+    per-run backups there at all — this only ever catches a leftover
+    folder from a project that used an older contextzip version, and it's
+    dead weight the moment that version is gone.
 
 Scanning only ever touches .contextzip/ directory listings and file mtimes —
 no hashing, no reading file contents — so this stays fast even called on
@@ -53,7 +53,7 @@ from pathlib import Path
 
 
 _OUTPUT_DIRNAME = "output"
-_BACKUPS_DIRNAME = "backups"
+_LEGACY_BACKUPS_DIRNAME = "backups"
 _INBOX_DIRNAME = "inbox"
 _APPLIED_DIRNAME = "applied"
 
@@ -66,7 +66,7 @@ _APPLIED_DIRNAME = "applied"
 @dataclass
 class CleanupItem:
     path: Path
-    kind: str  # "zip-set" | "backup" | "applied-zip"
+    kind: str  # "zip-set" | "applied-zip" | "apply-report" | "legacy-backups"
     size_bytes: int
 
 
@@ -166,14 +166,14 @@ def scan(
             for f in _zip_set_files(zp):
                 items.append(CleanupItem(path=f, kind="zip-set", size_bytes=_size_of(f)))
 
-    # ── backups/<timestamp>/ ─────────────────────────────────────────────
-    backups_root = workspace / _BACKUPS_DIRNAME
+    # ── backups/ — the feature that created these is gone entirely; wipe
+    #    the whole folder outright rather than pruning it, so upgrading
+    #    from an older contextzip version doesn't leave it behind forever ──
+    backups_root = workspace / _LEGACY_BACKUPS_DIRNAME
     if backups_root.is_dir():
-        backups = _newest_first([p for p in backups_root.iterdir() if p.is_dir()])
-        for backup_dir in backups[keep:]:
-            items.append(
-                CleanupItem(path=backup_dir, kind="backup", size_bytes=_size_of(backup_dir))
-            )
+        items.append(
+            CleanupItem(path=backups_root, kind="legacy-backups", size_bytes=_size_of(backups_root))
+        )
 
     # ── inbox/applied/ ───────────────────────────────────────────────────
     applied_root = workspace / _INBOX_DIRNAME / _APPLIED_DIRNAME

@@ -175,7 +175,6 @@ def write_apply_report(
     if result is not None:
         w("Result")
         w(f"  written : {len(result.written)}")
-        w(f"  backup  : {result.backup_dir or 'none needed'}")
         w(f"  archived: {result.applied_zip_path}")
         w("")
 

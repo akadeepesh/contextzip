@@ -354,8 +354,6 @@ def apply_zip(
     classify every file as new, modified, unchanged, or one with no safe
     baseline (locally edited since zipping, or never part of the original
     manifest). Only adds and modifies files — nothing is ever deleted.
-    Every overwritten file is backed up first, under
-    ``.contextzip/backups/<timestamp>/``.
 
     Unlike the CLI, this applies immediately and does not prompt — check
     ``contextzip.applier.build_plan()`` yourself first if you want to
@@ -375,8 +373,7 @@ def apply_zip(
     Returns
     -------
     ApplyResult
-        ``written`` (list of relative paths written), ``backup_dir``
-        (``Path`` or ``None`` if nothing needed backing up), and
+        ``written`` (list of relative paths written) and
         ``applied_zip_path`` (where the consumed zip ended up).
 
     Raises
@@ -393,8 +390,6 @@ def apply_zip(
 
         result = apply_zip()  # picks up .contextzip/inbox/*.zip
         print(f"Wrote {len(result.written)} files")
-        if result.backup_dir:
-            print(f"Backup at {result.backup_dir}")
     """
     from contextzip.applier import (
         ApplyError,

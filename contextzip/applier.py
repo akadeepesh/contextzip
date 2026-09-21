@@ -48,7 +48,6 @@ from pathlib import Path
 _MANIFEST_SUFFIX = ".manifest.json"
 _INBOX_DIRNAME = "inbox"
 _APPLIED_DIRNAME = "applied"
-_BACKUPS_DIRNAME = "backups"
 _OUTPUT_DIRNAME = "output"  # must match packager._OUTPUT_DIRNAME
 
 # Files contextzip itself writes into outgoing ZIPs that should never be
@@ -146,7 +145,6 @@ class ApplyPlan:
 @dataclass
 class ApplyResult:
     written: list[str]
-    backup_dir: Path | None
     applied_zip_path: Path
 
 
@@ -647,29 +645,6 @@ def discard_plan(plan: ApplyPlan) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _backup_entries(
-    entries: list[ApplyEntry], project_dir: Path, workspace_root: Path
-) -> Path | None:
-    """
-    Copy the current, pre-apply version of every existing file about to be
-    touched into .contextzip/backups/<timestamp>/, preserving relative
-    paths. Files that don't exist yet locally (new files) have nothing to
-    back up. Returns the backup directory, or None if nothing needed one.
-    """
-    to_backup = [e for e in entries if (project_dir / e.rel_path).is_file()]
-    if not to_backup:
-        return None
-
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    backup_dir = workspace_root / _BACKUPS_DIRNAME / stamp
-    for entry in to_backup:
-        src = project_dir / entry.rel_path
-        dst = backup_dir / entry.rel_path
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-    return backup_dir
-
-
 def _move_zip_to_applied(
     zip_path: Path, project_dir: Path, workspace_root: Path, retain: int = 1
 ) -> Path:
@@ -716,9 +691,14 @@ def execute_plan(plan: ApplyPlan, project_dir: Path, retain: int = 1) -> ApplyRe
     """
     Write every non-unchanged entry from *plan* into the project.
 
-    Backs up whatever's about to be overwritten first. Assumes the caller
-    has already decided to proceed — dry-run and confirmation prompts are
-    handled upstream (see cli.py's `apply-zip` command).
+    Assumes the caller has already decided to proceed — dry-run and
+    confirmation prompts are handled upstream (see cli.py's `apply-zip`
+    command). Files are overwritten directly, with no backup taken first:
+    `build_plan`'s manifest diff and the confirmation prompt it drives
+    (see `ApplyPlan.is_risky`) are the safety net here, and the zip you
+    just applied is itself always recoverable — it's archived to
+    `.contextzip/inbox/applied/` (or left wherever you pointed at it)
+    rather than deleted.
 
     *retain* caps how many applied zips are kept in
     .contextzip/inbox/applied/ — typically a project's
@@ -726,8 +706,6 @@ def execute_plan(plan: ApplyPlan, project_dir: Path, retain: int = 1) -> ApplyRe
     """
     workspace_root = _workspace_dir(project_dir)
     to_write = plan.writable_entries
-
-    backup_dir = _backup_entries(to_write, project_dir, workspace_root)
 
     written: list[str] = []
     for entry in to_write:
@@ -741,6 +719,4 @@ def execute_plan(plan: ApplyPlan, project_dir: Path, retain: int = 1) -> ApplyRe
     )
     shutil.rmtree(plan.extraction_dir, ignore_errors=True)
 
-    return ApplyResult(
-        written=written, backup_dir=backup_dir, applied_zip_path=applied_zip_path
-    )
+    return ApplyResult(written=written, applied_zip_path=applied_zip_path)

@@ -382,8 +382,7 @@ def cmd_apply_zip(
       every file as new, modified, unchanged, or one needing a closer look
       (edited locally since zipping, or with no baseline at all) before
       writing anything. Only adds and modifies files — nothing is ever
-      deleted. Every overwritten file is backed up first, under
-      .contextzip/backups/<timestamp>/.
+      deleted.
     """
     project_dir = Path(os.getcwd()).resolve()
     project_cfg = load_project_config(project_dir)
@@ -857,9 +856,11 @@ def _auto_cleanup(project_dir: Path, project_cfg) -> None:
     to remember. Every zip is trivially reproducible by re-running
     contextzip, so this is deliberately brutal rather than cautious: it
     keeps only the `cleanup.keep_recent` most recent zip/manifest/report
-    set per mode folder, the most recent `cleanup.keep_recent` backup
-    folder(s), and the most recent `cleanup.keep_recent` archived
-    applied-zip(s) — everything else is deleted immediately, every run.
+    set per mode folder, the most recent `cleanup.keep_recent` archived
+    applied-zip(s), and the most recent `cleanup.keep_recent` loose
+    apply-report(s) in inbox/ — everything else is deleted immediately,
+    every run. Also wipes .contextzip/backups/ outright if a leftover one
+    still exists from an older contextzip version.
 
     Gated on `cleanup.enabled` (default True) — set to False in
     .contextzip/config.json to turn this off entirely.

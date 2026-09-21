@@ -380,10 +380,8 @@ def print_apply_plan(
 
 
 def print_apply_result(result, *, con: Console = console) -> None:
-    """Two or three lines: what was written, backed up, and archived."""
+    """Two lines: what was written and archived."""
     ok(f"Applied {len(result.written)} files", con=con)
-    if result.backup_dir:
-        ok("Backed up to", str(result.backup_dir), con=con)
     ok("Archived zip to", str(result.applied_zip_path), con=con)
 
 

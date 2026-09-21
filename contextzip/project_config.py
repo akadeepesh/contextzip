@@ -110,24 +110,25 @@ built-in default for the newer preference fields.
 
   cleanup
       Automatic housekeeping for `.contextzip/`, which otherwise only
-      grows over time (a zip+manifest+report set per run, a timestamped
-      folder under backups/ per risky apply-zip). See cleanup.py — after
-      every successful contextzip command, the workspace is pruned down
-      to only the most recent `keep_recent` item(s) per category, no
-      confirmation, no separate command needed. This is deliberately
-      brutal rather than cautious: every zip is trivially reproducible
-      by re-running contextzip, so there's little reason to let old ones
-      pile up.
+      grows over time (a zip+manifest+report set per run, archived zips
+      under inbox/applied/, loose apply-report.txt files in inbox/). See
+      cleanup.py — after every successful contextzip command, the
+      workspace is pruned down to only the most recent `keep_recent`
+      item(s) per category, no confirmation, no separate command needed.
+      This is deliberately brutal rather than cautious: every zip is
+      trivially reproducible by re-running contextzip, so there's little
+      reason to let old ones pile up.
         enabled       — if true (default), auto-cleanup runs after every
                         successful command. Set to false to keep
                         everything contextzip has ever generated.
         keep_recent   — how many most-recent item(s) are kept per
                         category before the rest are deleted: zip+manifest
                         +report sets per mode folder (output/codebase/,
-                        output/git-changes/, output/prompt/), timestamped
-                        folders under backups/, and archived zips under
-                        inbox/applied/. Default 1 — keep only the latest
-                        of each, delete everything older immediately.
+                        output/git-changes/, output/prompt/), archived
+                        zips under inbox/applied/, and loose
+                        apply-report.txt files in inbox/. Default 1 —
+                        keep only the latest of each, delete everything
+                        older immediately.
 
 The schema is intentionally a flat, easily-extended dict so future
 preferences can be added without another migration.

@@ -49,6 +49,85 @@ _MANIFEST_SUFFIX = ".manifest.json"
 _INBOX_DIRNAME = "inbox"
 _APPLIED_DIRNAME = "applied"
 _OUTPUT_DIRNAME = "output"  # must match packager._OUTPUT_DIRNAME
+_INBOX_README_NAME = "README.txt"
+
+_INBOX_README_CONTENTS = """\
+Drop your zip here which you want to apply.
+============================================
+
+This folder is contextzip's inbox — the one place `apply-zip` looks for
+a zip to bring back into your project.
+
+HOW TO USE IT
+  1. Take the zip your AI tool (Claude, ChatGPT, etc.) gave you back,
+     after you sent it a codebase package contextzip made for you.
+  2. Drop that zip file directly into this folder — no need to rename
+     it or unzip it first.
+  3. Run:  contextzip apply-zip     (short alias:  cz apply-zip)
+  4. contextzip finds it automatically, compares every file inside it
+     against your project's manifest, and shows you exactly what's
+     new, modified, or unchanged before writing anything to disk.
+
+WHAT HAPPENS TO THE ZIP AFTERWARDS
+  Once applied, contextzip moves it into inbox/applied/ instead of
+  deleting it, so there's always a record of exactly what was applied
+  and when. Old entries there are pruned automatically over time — see
+  the `cleanup` and `applied_zip_retention` settings in
+  .contextzip/config.json if you'd like to keep more of them.
+
+A FEW THINGS WORTH KNOWING
+  - Only .zip files placed directly in this folder are picked up —
+    not ones inside a subfolder.
+  - If more than one zip ends up here at once, contextzip will ask you
+    to say which one: contextzip apply-zip <name>.zip
+  - You can also point apply-zip at a zip anywhere else on disk instead
+    of using this folder: contextzip apply-zip /path/to/file.zip
+  - This whole .contextzip/ folder is local to your machine and is
+    never committed to git (see .contextzip/.gitignore) — nothing here
+    leaves your computer unless you explicitly share it yourself.
+  - This file is just documentation — it's fine to edit it, and it
+    won't affect anything if you do. If it ever goes missing, though,
+    contextzip will put a fresh copy back the next time it touches this
+    folder; it never touches an actual pending zip, only this file.
+
+Full docs: https://contextzip.vercel.app/apply-zip
+"""
+
+
+def ensure_inbox_scaffolding(workspace: Path) -> None:
+    """
+    Make sure <workspace>/inbox/ exists, with its README.txt explaining
+    what the folder is for.
+
+    Called at the same moment the rest of the .contextzip/ workspace gets
+    set up (see packager.py's `_workspace_output_path[_silent]`), so the
+    inbox is ready and self-explanatory from the very first run — rather
+    than a bare, unexplained folder someone only discovers by reading the
+    docs, or worse, one that doesn't exist yet the first time `apply-zip`
+    goes looking for it.
+
+    Idempotent, same rule as the workspace .gitignore (see
+    `_ensure_workspace_gitignore` in packager.py): leaves an
+    already-correct README.txt untouched, and (re)writes it whenever it's
+    missing or doesn't match, so it stays reliable documentation rather
+    than something that quietly rots or disappears. Never touches
+    anything else already in the inbox — pending zips, `applied/`, past
+    reports.
+    """
+    inbox = workspace / _INBOX_DIRNAME
+    inbox.mkdir(parents=True, exist_ok=True)
+
+    readme_path = inbox / _INBOX_README_NAME
+    if readme_path.is_file():
+        try:
+            if readme_path.read_text(encoding="utf-8", errors="replace") == _INBOX_README_CONTENTS:
+                return
+        except OSError:
+            return
+    try:
+        readme_path.write_text(_INBOX_README_CONTENTS, encoding="utf-8")
+    except OSError:
+        pass
 
 # Files contextzip itself writes into outgoing ZIPs that should never be
 # written back into the project even if an AI tool echoes them back.
@@ -264,10 +343,17 @@ def find_zip_to_apply(
 
     inbox = inbox_dir(project_dir)
     if not inbox.is_dir():
+        # Normally created alongside the rest of .contextzip/ the first
+        # time any contextzip command runs (see
+        # ensure_inbox_scaffolding), so this only fires if apply-zip is
+        # somehow the very first command run in a project. Create it now
+        # rather than just describing where it should be — so the folder
+        # (and its README) are actually there for the person to drop a
+        # zip into right after reading this message.
+        ensure_inbox_scaffolding(_workspace_dir(project_dir))
         raise NoZipFoundError(
-            f"No zip found. Drop the AI-returned zip into {inbox} "
-            "(created the first time you run contextzip), or pass a path "
-            "directly: contextzip apply-zip <path>"
+            f"No zip found. Drop the AI-returned zip into {inbox}, "
+            "or pass a path directly: contextzip apply-zip <path>"
         )
 
     candidates = sorted(p for p in inbox.glob("*.zip") if p.is_file())

@@ -663,6 +663,15 @@ def _workspace_output_path_silent(
     except OSError:
         return Path(tempfile.gettempdir()) / filename
 
+    # Lazy import: applier.py resolves the workspace dir via this module,
+    # so importing it at module load time would be circular.
+    from contextzip.applier import ensure_inbox_scaffolding
+
+    try:
+        ensure_inbox_scaffolding(workspace)
+    except OSError:
+        pass
+
     if is_git_repo:
         try:
             _ensure_workspace_gitignore(workspace)
@@ -703,6 +712,15 @@ def _workspace_output_path(
             "falling back to temp directory."
         )
         return Path(tempfile.gettempdir()) / filename
+
+    # Lazy import: applier.py resolves the workspace dir via this module,
+    # so importing it at module load time would be circular.
+    from contextzip.applier import ensure_inbox_scaffolding
+
+    try:
+        ensure_inbox_scaffolding(workspace)
+    except OSError:
+        pass
 
     # Handle .gitignore only when we're inside a git repo and the workspace
     # actually lives inside it (a custom absolute path outside the repo has

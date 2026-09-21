@@ -16,6 +16,7 @@ from pathlib import Path
 
 from contextzip.filters import summarise_exclusions
 from contextzip.cli_display import human_size
+from contextzip.applier import inbox_dir
 
 
 def report_path_for(zip_path: Path) -> Path:
@@ -140,8 +141,21 @@ def write_apply_report(
     result=None,
 ) -> Path | None:
     """
-    Write the full apply-zip report (every file + status) next to the
-    zip that was applied. Returns the report path, or None on failure.
+    Write the full apply-zip report (every file + status) into
+    .contextzip/inbox/ — always there, regardless of where the zip that
+    was applied actually lives. Returns the report path, or None on
+    failure.
+
+    `apply-zip <path>` accepts an explicit path anywhere on disk (not
+    just the inbox), and that path is meant to be left alone afterwards
+    rather than moved — see `archive_applied_zip`. The report used to
+    follow the same "leave it where the zip is" rule, which meant
+    pointing apply-zip at a zip sitting in the project root (or anywhere
+    else outside .contextzip/inbox/) dropped a stray
+    `<name>.apply-report.txt` right there, cluttering the repo as an
+    untracked file. The report itself doesn't need to travel with the
+    zip the way an archived copy would, so it always goes to the one
+    place these reports are expected to live.
     """
     lines: list[str] = []
     w = lines.append
@@ -165,7 +179,7 @@ def write_apply_report(
         w(f"  archived: {result.applied_zip_path}")
         w("")
 
-    report_path = plan.zip_path.with_name(plan.zip_path.stem + ".apply-report.txt")
+    report_path = inbox_dir(project_dir) / (plan.zip_path.stem + ".apply-report.txt")
     try:
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

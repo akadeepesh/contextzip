@@ -58,7 +58,7 @@ Full function reference: [contextzip.vercel.app/cli#python-api](https://contextz
 - [Packaging & detection](https://contextzip.vercel.app/features) — frameworks, exclusion rules, safety
 - [AI-powered file selection](https://contextzip.vercel.app/ai-selection) — `--prompt`, Gemini setup
 - [Terminal error watcher](https://contextzip.vercel.app/watch) — `contextzip watch`
-- [Applying changes back](https://contextzip.vercel.app/apply-zip) — `apply-zip`, backups, safety
+- [Applying changes back](https://contextzip.vercel.app/apply-zip) — `apply-zip`, manifest diffing, safety
 - [Configuration](https://contextzip.vercel.app/configuration) — personal & project config, visual config UI
 - [CLI & Python API reference](https://contextzip.vercel.app/cli)
 

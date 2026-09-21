@@ -33,6 +33,12 @@ Kept only-the-most-recent-N, everything older deleted immediately:
     by `applied_zip_retention`, already enforced on every apply-zip run —
     scanning it here too just catches the case where zips piled up before
     that setting existed, or the setting was since lowered)
+  - loose `*.apply-report.txt` files sitting directly in .contextzip/inbox/
+    (as opposed to inbox/applied/) — these are written next to wherever
+    apply-zip resolved its zip from, decoupled from the zip's own
+    lifecycle (a zip gets archived into applied/ or left where the user
+    put it; its report always lands in inbox/ itself), so nothing else
+    here would ever catch them piling up run after run
 
 Scanning only ever touches .contextzip/ directory listings and file mtimes —
 no hashing, no reading file contents — so this stays fast even called on
@@ -176,6 +182,19 @@ def scan(
         retain = max(1, applied_zip_retention)
         for zp in applied_zips[retain:]:
             items.append(CleanupItem(path=zp, kind="applied-zip", size_bytes=_size_of(zp)))
+
+    # ── inbox/*.apply-report.txt ─────────────────────────────────────────
+    # Loose report files written directly in the inbox root (see
+    # report.py's write_apply_report) — decoupled from any single zip's
+    # own path, so nothing above ever catches these. Every apply-zip run
+    # writes one, so left alone they'd accumulate forever.
+    inbox_root = workspace / _INBOX_DIRNAME
+    if inbox_root.is_dir():
+        reports = _newest_first(
+            [p for p in inbox_root.glob("*.apply-report.txt") if p.is_file()]
+        )
+        for rp in reports[keep:]:
+            items.append(CleanupItem(path=rp, kind="apply-report", size_bytes=_size_of(rp)))
 
     return CleanupPlan(workspace=workspace, items=items)
 

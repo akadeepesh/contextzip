@@ -763,3 +763,64 @@ This project uses [Semantic Versioning](https://semver.org/).
 - **`contextzip config --ui` now closes its browser tab automatically
   after a successful save** and hands control back to the terminal,
   instead of only telling you to close it yourself.
+
+
+## [0.4.4] — 2026-09-21
+
+### Added
+- **`contextzip update` / `cz update`** — checks PyPI for a newer release
+  and updates in place, so you no longer have to remember
+  `pip install --upgrade contextzip` after every one of your own
+  releases. Detects whether this install came from pip, pipx, or
+  `uv tool` and re-invokes the matching one against the *currently
+  running* interpreter — never a possibly-different `pip` off PATH.
+  `--check` reports the current/latest version without installing;
+  `--yes` skips the confirmation prompt.
+- **`.contextzip/inbox/README.txt`** is now created automatically the
+  moment the `.contextzip/` workspace is first set up (and self-heals if
+  it's ever missing) — a plain-language explainer of what the inbox is
+  for, how to drop a zip into it, and what happens afterward, so the
+  folder isn't a silent, unexplained thing you have to already know
+  about.
+
+### Fixed
+- **`apply-zip` no longer dumps a nested copy of the project** when the
+  returned zip wraps everything in a folder named after the project
+  itself (e.g. `project/`, or a folder matching the package's own name).
+  The wrapper-stripping logic had a guard that skipped stripping
+  whenever a real folder with that name already existed in the
+  project — exactly what happens when an AI tool names the wrapper
+  after the project. The decision is now made by comparing manifest
+  match-rate with vs. without stripping instead of guessing from what's
+  on disk.
+- **`apply-zip` no longer leaves a zip's wrapper folder in place when the
+  freshest manifest is scoped to a small subset of the project**
+  (most commonly `.contextzip/output/git-changes/changes.manifest.json`,
+  which only ever tracked files touched in one prior git-diff run). A
+  zip of otherwise-legitimate new files matched that manifest at 0%
+  whether or not the wrapper was stripped, so the fix above's
+  manifest-comparison saw a tie and played it safe by leaving the
+  wrapper in place. It now falls back to comparing the zip's top-level
+  folders against the project's actual current directory layout
+  (`app/`, `components/`, `lib/`, etc.) whenever the manifest signal
+  ties, and strips confidently when that layout lines up.
+- **`apply-zip <path>` no longer drops its `.apply-report.txt` next to
+  wherever the zip happens to be** (e.g. the project root) when given an
+  explicit path outside `.contextzip/inbox/`. The report now always
+  writes to `.contextzip/inbox/`, matching where it's always shown up
+  when a zip is auto-detected from there. The zip itself is still left
+  in place, unmoved, when given an explicit path.
+- **Auto-cleanup now actually removes old `*.apply-report.txt` files
+  sitting loose in `.contextzip/inbox/`** instead of leaving every one
+  ever written to pile up indefinitely. Keeps only the most recent
+  `cleanup.keep_recent` (default 1), same rule as everything else it
+  prunes.
+
+### Removed
+- **The per-apply backup mechanism (`.contextzip/backups/<timestamp>/`)
+  is gone entirely.** `apply-zip` no longer copies overwritten files
+  there before writing; the manifest-diff confirmation prompt and the
+  fact that the applied zip is always archived (not deleted) remain the
+  safety net. Auto-cleanup now also wipes any leftover
+  `.contextzip/backups/` folder outright on projects upgrading from an
+  older contextzip version, rather than just pruning it down over time.

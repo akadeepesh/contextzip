@@ -824,3 +824,47 @@ This project uses [Semantic Versioning](https://semver.org/).
   safety net. Auto-cleanup now also wipes any leftover
   `.contextzip/backups/` folder outright on projects upgrading from an
   older contextzip version, rather than just pruning it down over time.
+
+
+
+## [0.4.5] — 2026-09-27
+
+### Fixed
+- **`--git-changes` was silently ignoring `.contextzip/config.json`.**
+  `_run()` only built the exclude/force-include rules from
+  `always_include`/`always_exclude` — and folded in the current run's
+  `--include`/`--exclude` — inside the standard-scan branch.
+  `resolve_files_from_git()` had no parameters to receive any of that, so
+  `--git-changes` packaged exactly what `git status` reported, no more and
+  no less, regardless of what the config or the flags for that run said.
+  A project could have `*.snap` in `always_exclude` and still see it land
+  in every `--git-changes` zip. `resolve_files_from_git()` now accepts
+  `extra_exclude`, `include_only`, and `force_include` and applies them
+  with the same precedence `resolve_files()` already used — force-include
+  first, then the safety floor plus excludes, then include-only — so both
+  modes resolve a project's files identically.
+- **`contextzip watch` could package a file straight out of
+  `always_exclude`** if a stack trace happened to name it — the debug-zip
+  path built its file list from `extract_paths()` alone, with no
+  awareness that a project had already asked for that file to be left out
+  everywhere else. `process_buffer()` now filters extracted paths through
+  the project's `always_exclude`/`always_include` before they reach
+  `prompt.txt` or `source-files.zip`.
+- **The Python API (`get_files()`, `get_git_changes()`) never read
+  `.contextzip/config.json` at all** — library callers got only the
+  built-in rules plus whatever `include`/`exclude` they passed in
+  explicitly, even on a project with a committed config the CLI already
+  honored. Both functions now load project config by default and apply
+  `always_include`/`always_exclude`/`limits.max_file_size_mb` the same way
+  the CLI does. This is a behavior change for existing callers relying on
+  the old, config-blind result — pass the new `use_project_config=False`
+  to keep it.
+
+### Changed
+- **Empty-result messages now read "Nothing to compress in this one"**
+  instead of "Nothing to package" — shown both when `--git-changes` finds
+  a clean working tree and when a standard scan excludes every file.
+- **Unknown-ecosystem detection now points you to request your language.**
+  When contextzip can't identify a project's stack, the detection line is
+  followed by `Don't see your language? Add it here: <link>` instead of
+  leaving that one line as the only output.

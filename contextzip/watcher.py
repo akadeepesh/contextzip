@@ -513,11 +513,19 @@ def _package_debug_context(
             )
             referenced_paths: list[Path] = []
         else:
+            # Honour the project's manual include/exclude choices — a file
+            # the user put in always_exclude must not leak into the debug
+            # zip just because a stack trace happened to mention it.
+            from contextzip.project_config import load_project_config
+
+            project_cfg = load_project_config(project_dir)
             result = process_buffer(
                 raw_buffer=raw_text,
                 project_dir=project_dir,
                 ecosystems=ecosystems,
                 ecosystem_display=ecosystem_display,
+                always_exclude=project_cfg.always_exclude,
+                always_include=project_cfg.always_include,
             )
 
             if result is None:

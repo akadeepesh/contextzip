@@ -43,12 +43,15 @@ from contextzip.applier import ApplyResult
 from contextzip.detector import DetectionResult, detect
 from contextzip.filters import (
     ResolveResult,
+    build_force_include_spec,
     build_spec,
+    normalize_pattern,
     resolve_files,
     resolve_files_from_git,
 )
 from contextzip.git import GitError, GitErrorKind, get_changed_files
 from contextzip.packager import PackageResult, create_zip_silent
+from contextzip.project_config import load_project_config
 
 
 # ---------------------------------------------------------------------------
@@ -139,19 +142,27 @@ class ZipNotFoundError(ContextzipError):
 
 def get_git_changes(
     path: str | Path | None = None,
+    *,
+    use_project_config: bool = True,
 ) -> FileCollection:
     """
     Return the files that git reports as modified, added, or untracked.
 
     The git root is found automatically by walking up from *path* (or the
     current working directory). Files are filtered through contextzip's base
-    safety rules so secrets, binaries, and similar files are always excluded.
+    safety rules so secrets, binaries, and similar files are always excluded,
+    and through the project's ``.contextzip/config.json``
+    (``always_include`` / ``always_exclude`` / ``limits``) — the same as the
+    CLI's ``--git-changes``.
 
     Parameters
     ----------
     path:
         Directory to start from. Defaults to ``Path.cwd()``. The actual
         git root may be a parent of this directory.
+    use_project_config:
+        Apply the project's ``.contextzip/config.json``. Defaults to
+        ``True``; pass ``False`` to use only the built-in rules.
 
     Returns
     -------
@@ -192,9 +203,12 @@ def get_git_changes(
     if git_result.is_empty:
         return FileCollection(project_dir=project_dir)
 
+    cfg = load_project_config(project_dir) if use_project_config else None
+
     resolved = resolve_files_from_git(
         git_files=git_result.files,
         project_dir=project_dir,
+        **_config_kwargs(cfg),
     )
 
     detection = detect(project_dir)
@@ -212,6 +226,7 @@ def get_files(
     include: list[str] | None = None,
     exclude: list[str] | None = None,
     use_gitignore: bool = True,
+    use_project_config: bool = True,
 ) -> FileCollection:
     """
     Return all project files after applying contextzip's standard exclusion rules.
@@ -229,6 +244,11 @@ def get_files(
     use_gitignore:
         Whether to apply the project's ``.gitignore`` file.
         Defaults to ``True``.
+    use_project_config:
+        Apply the project's ``.contextzip/config.json`` (``always_include``,
+        ``always_exclude``, ``limits``), the same as the CLI. Defaults to
+        ``True``; pass ``False`` to use only the built-in rules and the
+        arguments above.
 
     Returns
     -------
@@ -256,9 +276,12 @@ def get_files(
 
     gitignore_path = (project_dir / ".gitignore") if use_gitignore else None
 
+    cfg = load_project_config(project_dir) if use_project_config else None
+    cfg_kwargs = _config_kwargs(cfg, extra_exclude=exclude)
+
     spec = build_spec(
         rule_modules=detection.rule_modules,
-        extra_exclude=exclude or None,
+        extra_exclude=cfg_kwargs["extra_exclude"],
         gitignore_path=gitignore_path,
     )
 
@@ -266,6 +289,8 @@ def get_files(
         project_dir=project_dir,
         spec=spec,
         include_only=include or None,
+        force_include=cfg_kwargs["force_include"],
+        large_file_warn_bytes=cfg_kwargs["large_file_warn_bytes"],
     )
 
     return _resolve_result_to_collection(resolved, project_dir, detection)
@@ -445,6 +470,31 @@ def detect_ecosystem(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _config_kwargs(cfg, extra_exclude: list[str] | None = None) -> dict:
+    """
+    Translate a ProjectConfig (or None) into the shared filter inputs:
+    extra_exclude (caller patterns + always_exclude), force_include
+    (always_include) and large_file_warn_bytes (limits.max_file_size_mb).
+    """
+    from contextzip.filters import LARGE_FILE_WARN_BYTES
+
+    patterns = [normalize_pattern(p) for p in extra_exclude or []]
+    if cfg is None:
+        return {
+            "extra_exclude": patterns or None,
+            "force_include": None,
+            "large_file_warn_bytes": LARGE_FILE_WARN_BYTES,
+        }
+    patterns += [normalize_pattern(p) for p in cfg.always_exclude]
+    return {
+        "extra_exclude": patterns or None,
+        "force_include": build_force_include_spec(
+            [normalize_pattern(p) for p in cfg.always_include]
+        ),
+        "large_file_warn_bytes": int(cfg.limits.max_file_size_mb * 1024 * 1024),
+    }
 
 
 def _resolve_dir(path: str | Path | None) -> Path:

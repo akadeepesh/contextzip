@@ -299,13 +299,16 @@ def print_ai_selection(
 
 
 def print_clipboard_result(cb, *, con: Console = console) -> None:
-    """One line reflecting whichever clipboard tier fired — folder-opened is silent."""
+    """One line when the ZIP is on the clipboard; otherwise say why it isn't."""
     if cb.tier == Tier.FILE_ON_CLIPBOARD:
         ok("Ready to paste", con=con)
-    elif cb.tier == Tier.FOLDER_OPENED:
-        pass  # opening the folder is a convenience, not worth a log line
+        return
+    if cb.tier == Tier.FOLDER_OPENED:
+        warn("Couldn't copy the ZIP to the clipboard — opened its folder instead", con=con)
     else:
         info(cb.message, con=con)
+    if cb.hint:
+        info(cb.hint, con=con)
 
 
 # ---------------------------------------------------------------------------

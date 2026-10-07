@@ -868,3 +868,56 @@ This project uses [Semantic Versioning](https://semver.org/).
   When contextzip can't identify a project's stack, the detection line is
   followed by `Don't see your language? Add it here: <link>` instead of
   leaving that one line as the only output.
+
+
+## [0.4.6] — 2026-10-07
+
+### Fixed
+- **The ZIP was never actually copied to the clipboard on Windows or
+  Linux.** On Windows there was no clipboard step at all: contextzip
+  opened Explorer and left you to copy the file yourself. On Linux it
+  wrote the ZIP's raw bytes to the clipboard as `application/zip`, which
+  browsers ignore on paste, and only when `xclip` happened to be
+  installed. Both platforms now put a real *file reference* on the
+  clipboard, the same thing Ctrl+C on a file does, so you can paste the
+  ZIP straight into Claude, ChatGPT or any other upload box.
+  - **Windows:** sets `CF_HDROP` directly through the Win32 API (plus
+    "Preferred DropEffect" so Explorer pastes a copy), then reads it back
+    to confirm. If that fails it falls back to PowerShell
+    `Set-Clipboard -LiteralPath`, and only then to opening Explorer.
+  - **Linux:** sets `text/uri-list`, the target browsers read when you
+    paste a file. Order of attempts: `wl-copy` (only if already installed,
+    on Wayland), a new built-in X11 clipboard owner, then `xclip` (only if
+    already installed). Every attempt is read back before contextzip
+    reports success.
+- **A failed clipboard copy was silent.** When contextzip fell back to
+  opening the folder it printed nothing, so you couldn't tell the copy had
+  failed. It now says so and, when it knows, how to fix it.
+- **Explorer fallback lost the selection on paths with spaces or commas.**
+  `explorer /select,` is now passed as one correctly quoted command line.
+- `xclip` / `wl-copy` are run with their output discarded rather than
+  captured, so they can no longer block the CLI.
+
+### Added
+- **Built-in X11 clipboard owner — nothing to install on Linux.**
+  `pip install contextzip` is now enough: contextzip speaks the small part
+  of the X11 protocol needed to own the clipboard itself (standard library
+  only, no new dependency). It offers `text/uri-list`,
+  `x-special/gnome-copied-files` and `application/x-kde-cutselection`, so
+  browsers and GNOME/KDE file managers can all paste the file. A tiny
+  background process holds the clipboard and exits on its own as soon as
+  something else is copied.
+
+### Changed
+- Headless and SSH Linux sessions (no display) now print the ZIP's path
+  instead of trying to launch `xdg-open`.
+- `ClipboardResult` has a new optional `hint` field explaining why a copy
+  fell back and how to fix it.
+- macOS: quotes and backslashes in the ZIP's path are now escaped in the
+  Finder script. Behaviour is otherwise unchanged.
+
+### Known limitations
+- Pasting on Wayland-native browsers relies on XWayland passing the
+  clipboard through, which GNOME and KDE do. A Wayland-only setup without
+  XWayland needs `wl-clipboard` (`wl-copy`) installed; otherwise contextzip
+  opens the folder and tells you what to install.

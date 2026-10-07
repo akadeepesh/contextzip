@@ -15,36 +15,9 @@ from pathlib import Path
 from rich.console import Console
 
 from contextzip.cli_display import print_ai_selection, err, warn, info
+from contextzip.filters import normalize_pattern  # noqa: F401  (re-exported for cli.py)
 
 console = Console()
-
-
-# ---------------------------------------------------------------------------
-# Pattern normalisation
-# ---------------------------------------------------------------------------
-
-
-def normalize_pattern(p: str) -> str:
-    """
-    Canonicalise a user-supplied exclusion pattern.
-
-    Rules applied in order:
-      1. Strip a leading ``./`` or ``.\\`` so that ``./CHANGELOG.md``
-         and ``CHANGELOG.md`` are treated identically.
-      2. Replace every backslash with a forward slash for cross-platform
-         consistency (Windows paths entered on the CLI).
-      3. Collapse ``folder/*`` → ``folder/`` so that gitignore-style
-         directory globs work as expected.
-    """
-    # 1. Strip leading ./ or .\\
-    if p.startswith("./") or p.startswith(".\\"):
-        p = p[2:]
-    # 2. Normalise path separators
-    p = p.replace("\\", "/")
-    # 3. folder/* → folder/
-    if p.endswith("/*"):
-        p = p[:-1]
-    return p
 
 
 # ---------------------------------------------------------------------------

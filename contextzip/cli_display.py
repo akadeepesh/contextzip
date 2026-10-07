@@ -64,6 +64,10 @@ def print_detection(detection, *, con: Console = console) -> None:
     """One line: what was detected and how confident contextzip is."""
     if detection.is_unknown:
         ok("Detected", "unknown ecosystem, base rules only", con=con)
+        info(
+            "Don't see your language? Add it here: https://example.com",
+            con=con,
+        )
         return
 
     parts = []

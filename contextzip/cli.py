@@ -927,6 +927,18 @@ def _run(
         if saved:
             project_cfg = load_project_config(project_dir)
 
+    # ── Include/exclude inputs shared by every scan mode ─────────────────────
+    # CLI --exclude/-e patterns plus any standing always_exclude patterns from
+    # project config — both are additive, persistent behavior comes from
+    # config.json so it doesn't need to be re-typed every run. always_include
+    # is a standing negation. Built once here so standard and --git-changes
+    # runs honour project config identically.
+    normalized_exclude = [normalize_pattern(p) for p in extra_exclude or []]
+    normalized_exclude += [normalize_pattern(p) for p in project_cfg.always_exclude]
+    force_include = build_force_include_spec(
+        [normalize_pattern(p) for p in project_cfg.always_include]
+    )
+
     # ── Git-changes mode ─────────────────────────────────────────────────────
     if git_changes:
         with console.status("[cyan]Querying git for changed files…[/]", spinner="dots"):
@@ -939,7 +951,7 @@ def _run(
         print_git_deleted_and_submodules(git_result)
 
         if git_result.is_empty:
-            info("Nothing to package — working tree is clean.")
+            info("Nothing to compress in this one — working tree is clean.")
             return
 
         scan_label, scan_detail = git_scan_label_and_detail(git_result)
@@ -953,26 +965,20 @@ def _run(
                 large_file_warn_bytes=int(
                     project_cfg.limits.max_file_size_mb * 1024 * 1024
                 ),
+                extra_exclude=normalized_exclude if normalized_exclude else None,
+                include_only=include_only if include_only else None,
+                force_include=force_include,
             )
 
     else:
         # ── Build exclusion spec ─────────────────────────────────────────────
         gitignore_path = None if no_gitignore else (project_dir / ".gitignore")
 
-        # CLI --exclude/-e patterns plus any standing always_exclude patterns
-        # from project config — both are additive, persistent behavior comes
-        # from config.json so it doesn't need to be re-typed every run.
-        normalized_exclude = [normalize_pattern(p) for p in extra_exclude or []]
-        normalized_exclude += [normalize_pattern(p) for p in project_cfg.always_exclude]
-
         with console.status("[cyan]Building exclusion rules…[/]", spinner="dots"):
             spec = build_spec(
                 rule_modules=detection.rule_modules,
                 extra_exclude=normalized_exclude if normalized_exclude else None,
                 gitignore_path=gitignore_path,
-            )
-            force_include = build_force_include_spec(
-                [normalize_pattern(p) for p in project_cfg.always_include]
             )
 
         # ── Resolve files ─────────────────────────────────────────────────────
@@ -1027,7 +1033,7 @@ def _run(
         return
 
     if not resolved.included:
-        err("Nothing to package — all files were excluded.")
+        err("Nothing to compress in this one — all files were excluded.")
         info("Try contextzip include PATH or -i PATH to override.")
         return
 

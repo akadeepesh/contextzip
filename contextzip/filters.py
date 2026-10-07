@@ -12,14 +12,18 @@ Phase 5 hardening:
 Git mode:
   - resolve_files_from_git() accepts a GitChanges result and builds a
     ResolveResult from only the modified/added/untracked files reported
-    by git, while still running all size and binary checks.
+    by git, while still running all size and binary checks. It honours the
+    same extra-exclude / include-only / force-include inputs as
+    resolve_files(), so project config (always_include / always_exclude)
+    and CLI --include/--exclude behave identically with and without
+    --git-changes.
 
 Force-include (Phase 7):
   - build_force_include_spec() turns a project config's "always_include"
-    patterns into a PathSpec. resolve_files() accepts it as force_include
-    and, when a file (or one of its parent directories) matches, treats
-    the file as not excluded — a standing negation on top of auto-rules
-    and .gitignore. It does not apply in git-changes mode, and it does not
+    patterns into a PathSpec. resolve_files() and resolve_files_from_git()
+    accept it as force_include and, when a file (or one of its parent
+    directories) matches, treat the file as not excluded — a standing
+    negation on top of auto-rules, .gitignore and --exclude. It does not
     override an explicit --include/-i for the current run.
 """
 
@@ -104,6 +108,27 @@ class ResolveResult:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+def normalize_pattern(p: str) -> str:
+    """
+    Canonicalise a user-supplied exclusion/inclusion pattern (CLI flag or
+    project config entry).
+
+    Rules applied in order:
+      1. Strip a leading ``./`` or ``.\\`` so that ``./CHANGELOG.md``
+         and ``CHANGELOG.md`` are treated identically.
+      2. Replace every backslash with a forward slash for cross-platform
+         consistency (Windows paths entered on the CLI).
+      3. Collapse ``folder/*`` → ``folder/`` so that gitignore-style
+         directory globs work as expected.
+    """
+    if p.startswith("./") or p.startswith(".\\"):
+        p = p[2:]
+    p = p.replace("\\", "/")
+    if p.endswith("/*"):
+        p = p[:-1]
+    return p
 
 
 def build_spec(
@@ -368,6 +393,9 @@ def resolve_files_from_git(
     git_files: list[Path],
     project_dir: Path,
     large_file_warn_bytes: int = LARGE_FILE_WARN_BYTES,
+    extra_exclude: list[str] | None = None,
+    include_only: list[str] | None = None,
+    force_include: pathspec.PathSpec | None = None,
 ) -> ResolveResult:
     """
     Build a :class:`ResolveResult` from a pre-selected list of files reported
@@ -377,6 +405,16 @@ def resolve_files_from_git(
     the files — a git-tracked ``.env`` or secret key file must still be blocked.
     Size and binary checks are also performed so that the usual warnings appear
     in the CLI output.
+
+    Precedence mirrors :func:`resolve_files` exactly, so a project's config
+    behaves the same with and without ``--git-changes``:
+
+      1. *force_include* (config ``always_include``) — a match short-circuits
+         every exclusion check below, including the base safety floor.
+      2. Base safety floor + *extra_exclude* (CLI ``--exclude`` plus config
+         ``always_exclude``) — a match excludes the file.
+      3. *include_only* (CLI ``--include``) — the file must live under one of
+         these paths, even if it was force-included.
 
     Parameters
     ----------
@@ -388,10 +426,18 @@ def resolve_files_from_git(
     large_file_warn_bytes:
         Overrides the module default (1 MB) — typically a project's
         `limits.max_file_size_mb` preference (.contextzip/config.json).
+    extra_exclude:
+        Additional gitignore-style exclusion patterns, layered on top of the
+        base safety floor.
+    include_only:
+        If given, only files under these path prefixes are kept.
+    force_include:
+        Spec from :func:`build_force_include_spec`; matching files skip all
+        exclusion checks.
     """
     # Build the base spec once — this is our safety floor regardless of what
     # git reports as changed. It blocks .env, secrets, binaries, etc.
-    base_spec = build_spec(rule_modules=["base"])
+    base_spec = build_spec(rule_modules=["base"], extra_exclude=extra_exclude or None)
 
     result = ResolveResult()
 
@@ -417,9 +463,23 @@ def resolve_files_from_git(
             result.skipped.append((abs_path, "outside project tree"))
             continue
 
-        # ── Base safety floor — block secrets / binaries even if git-tracked ─
         rel_str = rel.as_posix()
-        if _any_parent_excluded(rel, base_spec) or base_spec.match_file(rel_str):
+
+        # ── force_include (config always_include) short-circuits exclusion ───
+        forced = force_include is not None and (
+            force_include.match_file(rel_str)
+            or _any_parent_excluded(rel, force_include)
+        )
+
+        # ── Base safety floor + extra excludes (CLI --exclude / always_exclude)
+        if not forced and (
+            _any_parent_excluded(rel, base_spec) or base_spec.match_file(rel_str)
+        ):
+            result.excluded.append(abs_path)
+            continue
+
+        # ── Apply --include filter (exact prefix, not substring) ─────────────
+        if include_only and not _matches_any_prefix(rel_str, include_only):
             result.excluded.append(abs_path)
             continue
 
@@ -441,6 +501,54 @@ def resolve_files_from_git(
         result.included.append(abs_path)
 
     return result
+
+
+def filter_paths_by_config(
+    paths: list[Path],
+    project_dir: Path,
+    always_exclude: list[str] | None = None,
+    always_include: list[str] | None = None,
+) -> list[Path]:
+    """
+    Drop any of *paths* matched by a project config's ``always_exclude``,
+    unless it's also matched by ``always_include`` (same precedence as
+    :func:`resolve_files`: force-include wins).
+
+    For callers that pick files by some other means than a directory scan
+    (e.g. ``contextzip watch`` collects files named in a stack trace) but
+    must still respect the user's manual include/exclude choices. Paths
+    outside *project_dir* are left untouched.
+    """
+    if not always_exclude:
+        return list(paths)
+
+    exclude_spec = build_spec(
+        rule_modules=[],
+        extra_exclude=[normalize_pattern(p) for p in always_exclude],
+    )
+    force_spec = build_force_include_spec(
+        [normalize_pattern(p) for p in always_include or []]
+    )
+
+    kept: list[Path] = []
+    for path in paths:
+        try:
+            rel = path.relative_to(project_dir)
+        except ValueError:
+            kept.append(path)
+            continue
+        rel_str = rel.as_posix()
+
+        forced = force_spec is not None and (
+            force_spec.match_file(rel_str) or _any_parent_excluded(rel, force_spec)
+        )
+        excluded = _any_parent_excluded(rel, exclude_spec) or exclude_spec.match_file(
+            rel_str
+        )
+        if excluded and not forced:
+            continue
+        kept.append(path)
+    return kept
 
 
 def summarise_exclusions(excluded: list[Path], project_dir: Path) -> dict[str, int]:

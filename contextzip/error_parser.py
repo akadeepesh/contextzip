@@ -22,6 +22,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from contextzip.filters import filter_paths_by_config
+
 # ---------------------------------------------------------------------------
 # ANSI escape code stripping
 # ---------------------------------------------------------------------------
@@ -453,6 +455,8 @@ def process_buffer(
     project_dir: Path,
     ecosystems: list[str],
     ecosystem_display: str,
+    always_exclude: list[str] | None = None,
+    always_include: list[str] | None = None,
 ) -> tuple[str, str, list[Path]] | None:
     """
     Run the full pipeline on *raw_buffer*.
@@ -472,6 +476,11 @@ def process_buffer(
         List of detected ecosystem names from DetectionResult.ecosystems.
     ecosystem_display:
         Human-readable display string, e.g. "Next.js + Node.js".
+    always_exclude / always_include:
+        A project config's standing patterns. Files named in the stack trace
+        that match always_exclude are left out of the referenced-file list
+        (and therefore out of source-files.zip and prompt.txt), unless they
+        also match always_include.
     """
     # 1. Strip ANSI
     clean_text = strip_ansi(raw_buffer)
@@ -493,6 +502,9 @@ def process_buffer(
 
     # 4. Extract file paths
     referenced_paths = extract_paths(error_block_raw, project_dir, ecosystems)
+    referenced_paths = filter_paths_by_config(
+        referenced_paths, project_dir, always_exclude, always_include
+    )
 
     # 5. Build prompt.txt
     prompt_txt = build_prompt_txt(

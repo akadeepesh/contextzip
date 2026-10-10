@@ -42,7 +42,7 @@ That's it — no flags required. contextzip detects your framework, excludes the
 | `contextzip watch -- npm run dev` | Auto-package debug context the moment an error appears |
 | `contextzip config --ui` | Set include/exclude rules visually in a local browser tab |
 
-Every command supports `--dry-run`, `--verbose`, `--include`, `--exclude`, and more — see the [full CLI reference](https://contextzip.vercel.app/cli).
+Every command supports `--dry-run`, `--verbose`, `--include`, `--exclude`, and more — see the [full CLI reference](https://contextzip.vercel.app/cli), or the offline version in [`docs/CLI.md`](docs/CLI.md).
 
 contextzip respects your `.gitignore`, detects Node.js, Next.js, Python, Django, FastAPI, Rust, Go, and Ruby (including in monorepos), and never packages secrets — SSH keys, cloud credentials, and Terraform state are always excluded. Details: [contextzip.vercel.app/features](https://contextzip.vercel.app/features).
 

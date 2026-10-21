@@ -19,7 +19,10 @@ Rules for what counts as overlapping, chosen to be safe for code:
   - Two insertions at the same point conflict (unless identical).
   - An insertion strictly inside a range the other side replaced conflicts.
   - Changes that merely touch (one ends on the line the other begins)
-    merge cleanly.
+    merge cleanly — unless one of them is a deletion. A deletion drops
+    base lines, so the other side keeping them is not something the
+    merge can honour on its own: both sides deleted or kept one of the
+    same lines, and that needs a decision rather than a guess.
 
 Works on lines with line endings removed; callers decide how to rejoin
 them (see applier.py, which keeps the local file's line-ending style).
@@ -70,15 +73,39 @@ def _hunks(base: list[str], other: list[str], side: str) -> list[_Hunk]:
     ]
 
 
+def _is_deletion(h: _Hunk) -> bool:
+    """True if *h* removes base lines without putting anything in their place."""
+    return h.start < h.end and not h.lines
+
+
+def _touches(other: _Hunk, deletion: _Hunk) -> bool:
+    """True if *other* sits directly against *deletion* without overlapping it."""
+    return other.start == deletion.end or other.end == deletion.start
+
+
 def _overlaps(a: _Hunk, b: _Hunk) -> bool:
     a_ins, b_ins = a.start == a.end, b.start == b.end
     if a_ins and b_ins:
         return a.start == b.start
-    if a_ins:
-        return b.start < a.start < b.end
-    if b_ins:
-        return a.start < b.start < a.end
-    return a.start < b.end and b.start < a.end
+    if a_ins or b_ins:
+        # An insertion conflicts with a range it lands strictly inside.
+        ins, rng = (a, b) if a_ins else (b, a)
+        if rng.start < ins.start < rng.end:
+            return True
+    elif a.start < b.end and b.start < a.end:
+        return True
+    # A deletion that merely touches the other side's change is still a
+    # conflict. The other side's change begins (or ends) where the deleted
+    # range begins (or ends), so the other side kept the deleted lines —
+    # keeping them and dropping them at the same time is not a merge, it is
+    # a guess. Two replacements that merely touch are different: neither
+    # side loses anything, so they still merge cleanly.
+    if a.side != b.side:
+        if _is_deletion(a) and _touches(b, a):
+            return True
+        if _is_deletion(b) and _touches(a, b):
+            return True
+    return False
 
 
 def _apply(base: list[str], start: int, end: int, hunks: list[_Hunk]) -> list[str]:

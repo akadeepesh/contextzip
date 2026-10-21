@@ -62,6 +62,53 @@ class Merge3Tests(unittest.TestCase):
         self.assertTrue(r.clean)
         self.assertEqual(r.lines, lines("A=real-a\nB=real-b\nC=new\n"))
 
+    # ── Deletions next to each other ────────────────────────────────────────
+    #
+    # A deletion removes base lines. When the other side's change merely
+    # touches that range, the other side kept the deleted lines — so the two
+    # changes cannot both be honoured and the merge has to ask, not guess.
+
+    def test_each_side_deleting_a_different_line_conflicts(self):
+        # We deleted "b", the AI deleted "a". Both kept the other's line.
+        r = merge3(lines("a\nb"), lines("a"), lines("b"))
+        self.assertFalse(r.clean, "two opposite deletions must not merge cleanly")
+        self.assertEqual(len(r.conflicts), 1)
+
+    def test_adjacent_deletions_conflict(self):
+        r = merge3(BASE, lines("a\nc\nd\ne\nf"), lines("a\nb\nd\ne\nf"))
+        self.assertFalse(r.clean, "adjacent deletions on both sides must conflict")
+        self.assertEqual(len(r.conflicts), 1)
+
+    def test_deletion_next_to_the_other_sides_replacement_conflicts(self):
+        # We deleted "b"; the AI replaced "c". The AI still has "b".
+        r = merge3(BASE, lines("a\nc\nd\ne\nf"), lines("a\nb\nD\ne\nf"))
+        self.assertFalse(r.clean, "a deletion next to a replacement must conflict")
+        self.assertEqual(len(r.conflicts), 1)
+
+    def test_deletion_next_to_the_other_sides_insertion_conflicts(self):
+        # We deleted "b"; the AI inserted a line before "b" and kept it.
+        r = merge3(BASE, lines("a\nc\nd\ne\nf"), lines("a\nX\nb\nc\nd\ne\nf"))
+        self.assertFalse(r.clean, "a deletion next to an insertion must conflict")
+        self.assertEqual(len(r.conflicts), 1)
+
+    def test_both_sides_deleting_the_same_line_stays_clean(self):
+        r = merge3(BASE, lines("a\nc\nd\ne\nf"), lines("a\nc\nd\ne\nf"))
+        self.assertTrue(r.clean)
+        self.assertEqual(r.lines, lines("a\nc\nd\ne\nf"))
+
+    def test_adjacent_replacements_still_merge_cleanly(self):
+        # Both sides replaced a different line: neither change is lost, so
+        # this keeps merging cleanly (see the module's overlap rules).
+        r = merge3(BASE, lines("a\nB\nc\nd\ne\nf"), lines("a\nb\nC\nd\ne\nf"))
+        self.assertTrue(r.clean)
+        self.assertEqual(r.lines, lines("a\nB\nC\nd\ne\nf"))
+
+    def test_deletion_far_from_the_other_sides_change_still_merges(self):
+        # We deleted "b", the AI replaced "e": far apart, nothing is lost.
+        r = merge3(BASE, lines("a\nc\nd\ne\nf"), lines("a\nb\nc\nd\nE\nf"))
+        self.assertTrue(r.clean)
+        self.assertEqual(r.lines, lines("a\nc\nd\nE\nf"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 - [`contextzip watch`](#contextzip-watch)
 - [`contextzip config`](#contextzip-config)
 - [`contextzip update`](#contextzip-update)
+- [`contextzip setup-path`](#contextzip-setup-path)
 - [Global flags](#global-flags)
 - [Where files go](#where-files-go)
 
@@ -30,6 +31,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 | `contextzip watch -- COMMAND` | Run a command and package debug context when an error appears |
 | `contextzip config …` | Gemini key, workspace location, visual include/exclude UI |
 | `contextzip update` | Check PyPI for a newer release and update in place |
+| `contextzip setup-path` | Put `cz` on your PATH when the terminal can't find it |
 
 ## Run flags
 
@@ -149,7 +151,7 @@ contextzip apply-zip --safe-only        # CI: only the safe changes
 | modified | Only the AI changed it | written |
 | merged | You both changed it in different places — three-way merged | written |
 | unchanged | Already matches, including "you already applied this" | skipped |
-| conflict | You both changed the same lines | needs your call |
+| conflict | You both changed the same or neighbouring lines | needs your call |
 | drifted | You changed it and it can't be merged (binary, or the original ZIP is gone) | needs your call |
 | deleted | You deleted it after zipping | needs your call |
 | untracked | Exists here but wasn't in the ZIP you sent | needs your call |
@@ -254,6 +256,24 @@ cz update                    # same thing, short alias
 ```
 
 It detects whether contextzip was installed with pip, pipx or uv tool and re-runs the matching one, upgrading the same interpreter that is currently running (never a different `pip` that happens to be first on your `PATH`). The manual equivalent is `pip install --upgrade contextzip`.
+
+## `contextzip setup-path`
+
+Put the `cz` and `contextzip` commands on your PATH. Use it when your terminal says `cz` is not recognized or not found after `pip install contextzip`. That happens when pip installs the commands into a folder that isn't on PATH, which is common with the Microsoft Store or install-manager Python on Windows and with `pip install --user`.
+
+```bash
+python -m contextzip setup-path [--yes]     # macOS / Linux: python3 -m …
+```
+
+| Flag | Short | Description |
+|---|---|---|
+| `--yes` | `-y` | Skip the confirmation prompt. |
+
+- **Windows:** appends the folder to your user PATH (`HKCU\Environment`), the same setting as the Environment Variables dialog. No admin rights needed. A Microsoft Store (MSIX) Python can't change it from its sandbox, so it prints a PowerShell command to paste instead.
+- **macOS / Linux:** appends one `export PATH=…` line (`fish_add_path` for fish) to `~/.zshrc`, `~/.bashrc` (`~/.bash_profile` on macOS), fish's `config.fish` or `~/.profile`.
+- **pipx / uv tool / virtualenv installs:** nothing to change; it tells you to run `pipx ensurepath` or `uv tool update-shell`, or to activate the environment.
+
+It never adds the folder twice. Open a new terminal afterwards. `python -m contextzip` works anywhere, and when you use it while `cz` isn't on PATH it prints a one-line tip pointing here.
 
 ## Global flags
 

@@ -36,6 +36,7 @@ When the AI sends changed files back, `contextzip apply-zip` writes them into yo
 ## Table of contents
 
 - [Installation](#installation)
+  - ["`cz` is not recognized"](#cz-is-not-recognized--command-not-found)
 - [Quick start](#quick-start)
 - [Features](#features)
   - [Smart packaging](#smart-packaging)
@@ -73,6 +74,20 @@ uv tool install contextzip
 This installs two commands that do the same thing: `contextzip` and the shorter `cz`.
 
 To update later, run `contextzip update`. It works out whether you installed with pip, pipx or uv and upgrades the right one.
+
+### "`cz` is not recognized" / "command not found"
+
+pip installed contextzip, but put the `cz` command in a folder your terminal doesn't search. This is common with Python from the Microsoft Store or the Python install manager on Windows, and with `pip install --user` on macOS and Linux. Look for pip's `WARNING: The scripts cz.exe and contextzip.exe are installed in '…' which is not on PATH.`
+
+Python itself always works, so run contextzip through it and let it fix PATH for you:
+
+```bash
+python -m contextzip setup-path     # macOS / Linux: python3 -m contextzip setup-path
+```
+
+On Windows this adds the folder to your user PATH (no admin needed). On macOS and Linux it adds one line to your shell's startup file. Open a new terminal and `cz` works. Until then, `python -m contextzip` does everything `cz` does.
+
+If you installed with pipx, run `pipx ensurepath`. With uv, run `uv tool update-shell`.
 
 ## Quick start
 
@@ -155,7 +170,7 @@ Every ZIP contextzip makes gets a **local snapshot** (a hash of each file, never
 | **New** / **Modified** | New file, or only the AI changed it | Written |
 | **Merged** | You both changed it, in different places | Written (three-way merge) |
 | **Unchanged** | Already matches — including changes you already applied | Skipped |
-| **Conflict** | You both changed the same lines | Needs your call |
+| **Conflict** | You both changed the same or neighbouring lines | Needs your call |
 | **Partial** | The AI returned a cut-down file (`// ... rest unchanged`) | Needs your call |
 | **Moved** | The AI moved or renamed it | Written at the new path; the old file is kept unless you say otherwise |
 | **Drifted** / **Deleted** / **Untracked** / **Ambiguous** / **Delete requested** | Can't be applied safely without you | Needs your call |

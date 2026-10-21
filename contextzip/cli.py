@@ -440,7 +440,7 @@ def cmd_apply_zip(
         new, modified        written
         merged               you both changed it in different places — merged
         unchanged            already matches — skipped
-        conflict             you both changed the same lines
+        conflict             you both changed the same or neighbouring lines
         drifted / deleted    you changed or deleted it and it can't be merged
         untracked            exists, but wasn't in the zip you sent
         partial              the AI returned a cut-down file ("... rest unchanged")
@@ -1018,6 +1018,96 @@ def _ago(seconds: float) -> str:
             n = seconds // size
             return f"{n} {unit}{'s' if n != 1 else ''} ago"
     return "just now"
+
+
+@main.command("setup-path")
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    default=False,
+    help="Skip the confirmation prompt.",
+)
+def cmd_setup_path(yes: bool) -> None:
+    """
+    Put the cz and contextzip commands on your PATH.
+
+    \b
+    If your terminal says "cz is not recognized" or "command not found",
+    pip installed the commands into a folder your PATH doesn't include —
+    common with the Microsoft Store Python and `pip install --user`.
+    Run this through Python, which always works:
+
+    \b
+      python -m contextzip setup-path      # macOS / Linux: python3 -m …
+
+    \b
+    Windows: the folder is added to your user PATH (no admin needed).
+    macOS / Linux: one line is added to your shell's startup file.
+    Open a new terminal afterwards.
+    """
+    from contextzip import pathsetup
+
+    console.print()
+    st = pathsetup.status()
+
+    if st.manager == "pipx":
+        info("contextzip was installed with pipx, which manages PATH itself. Run:")
+        console.print("    pipx ensurepath")
+        console.print()
+        return
+    if st.manager == "uv":
+        info("contextzip was installed with uv, which manages PATH itself. Run:")
+        console.print("    uv tool update-shell")
+        console.print()
+        return
+    if st.in_venv:
+        ok("contextzip is installed in a virtual environment")
+        info("cz is on PATH whenever that environment is activated.")
+        console.print()
+        return
+    if st.directory is None:
+        err("Couldn't find the folder pip installed cz into")
+        info("You can always run contextzip as: python -m contextzip")
+        console.print()
+        raise SystemExit(1)
+    if st.on_path:
+        ok("cz is already on your PATH", str(st.directory))
+        console.print()
+        return
+
+    info(f"cz is installed in {st.directory}")
+    info("That folder isn't on your PATH, so terminals can't find it.")
+
+    if os.name == "nt" and pathsetup.is_store_python():
+        # A Store-packaged Python can't change the real user PATH from its sandbox.
+        console.print()
+        info("This Python comes from the Microsoft Store, so it can't change PATH itself.")
+        info("Paste this into PowerShell, then open a new terminal:")
+        console.print()
+        console.print(pathsetup.powershell_command(st.directory), soft_wrap=True, highlight=False)
+        console.print()
+        return
+
+    target = pathsetup.target_label()
+    if not yes and not click.confirm(f"  Add it to {target}?", default=True):
+        info("Not changed. You can keep using: python -m contextzip")
+        console.print()
+        return
+
+    try:
+        changed = pathsetup.add_to_path(st.directory)
+    except OSError as exc:
+        err(f"Couldn't update {target}: {exc}")
+        console.print()
+        raise SystemExit(1)
+
+    if changed:
+        ok(f"Added to {target}", str(st.directory))
+    else:
+        ok(f"Already in {target}", str(st.directory))
+    info("Open a new terminal, then run cz.")
+    console.print()
 
 
 @main.command("update")

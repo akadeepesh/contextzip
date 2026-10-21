@@ -26,7 +26,7 @@ How a returned ZIP is read
     MODIFIED   only the AI changed it                            written
     MERGED     you both changed it, in different places          written (3-way merge)
     UNCHANGED  it already matches — nothing to do                skipped
-    CONFLICT   you both changed the same lines                   needs your call
+    CONFLICT   you both changed the same or neighbouring lines   needs your call
     DRIFTED    you changed it and it can't be merged
                (binary, or the original isn't available)         needs your call
     DELETED    you deleted it after zipping                      needs your call
@@ -217,7 +217,7 @@ STATUS_REASONS = {
     FileStatus.MODIFIED: "changed by the AI",
     FileStatus.MERGED: "your edits and the AI's merged cleanly",
     FileStatus.UNCHANGED: "already matches",
-    FileStatus.CONFLICT: "you and the AI changed the same lines",
+    FileStatus.CONFLICT: "you and the AI changed the same or neighbouring lines",
     FileStatus.DRIFTED: "you changed it since zipping and it can't be merged",
     FileStatus.DELETED: "you deleted it after zipping",
     FileStatus.UNTRACKED: "exists here but wasn't in the zip you sent",
@@ -1166,7 +1166,7 @@ def _classify(
         entry.status = FileStatus.CONFLICT
         entry.conflict_text = merged_text
         n = len(merged.conflicts)
-        entry.note = f"{n} place{'s' if n != 1 else ''} where you and the AI changed the same lines"
+        entry.note = f"{n} place{'s' if n != 1 else ''} where you and the AI changed the same or neighbouring lines"
         return entry
 
     if entry.redacted and _REDACTED in merged_text and merged_text.count(_REDACTED) > live_text.count(_REDACTED):

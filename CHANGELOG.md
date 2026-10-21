@@ -1079,3 +1079,37 @@ This project uses [Semantic Versioning](https://semver.org/).
   contains it, so the default exclusions are unchanged.
 - New in `contextzip.redact`: `is_sensitive_path()`, `is_env_file()`,
   `redact_env()` and `redact_sensitive_file()`.
+
+---
+
+## [0.5.1] — 2026-10-21
+
+### Added
+- **`python -m contextzip`** runs contextzip through Python itself, so it
+  works even when the `cz` command can't be found.
+- **`contextzip setup-path`** fixes "`cz` is not recognized" / "command not
+  found". This happens when pip installs the commands into a folder that
+  isn't on PATH, which is common with the Microsoft Store or install-manager
+  Python on Windows and with `pip install --user`. Run
+  `python -m contextzip setup-path`:
+  - **Windows:** it adds the folder to your user PATH. No admin rights
+    needed.
+  - **macOS / Linux:** it adds one line to your shell's startup file.
+  - **Microsoft Store (MSIX) Python:** it prints a PowerShell command to
+    paste, because the Store sandbox can't change PATH itself.
+  - **pipx, uv tool or a virtualenv:** it tells you the right command
+    instead.
+  - It never adds the folder twice.
+- When you run `python -m contextzip` while `cz` isn't on PATH, a one-line
+  tip points to `setup-path`.
+- The README, CLI.md and the website have a "`cz` is not recognized"
+  troubleshooting section.
+
+### Fixed
+- **Three-way merge no longer drops lines silently next to a deletion**
+  ([#15](https://github.com/akadeepesh/contextzip/pull/15), thanks
+  @JingHao-Leon). When one side deleted lines and the other side changed,
+  deleted or inserted right next to them, `apply-zip` reported "merged
+  cleanly" with lines missing. Those cases are now conflicts, like
+  `git merge-file`. Changes that are one or more lines apart still merge.
+- The conflict wording now says "the same or neighbouring lines", to match.

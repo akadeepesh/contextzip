@@ -6,7 +6,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/contextzip?color=blue)](https://pypi.org/project/contextzip/)
 [![Python](https://img.shields.io/pypi/pyversions/contextzip)](https://pypi.org/project/contextzip/)
-[![Downloads](https://static.pepy.tech/badge/contextzip/month)](https://pepy.tech/project/contextzip)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/contextzip?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/contextzip)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/akadeepesh/contextzip/blob/main/LICENSE)
 
 [Documentation](https://www.contextzipcli.com) ·

@@ -5,11 +5,14 @@
 **Package exactly the right parts of your codebase for any AI tool, in one command.**
 
 [![PyPI](https://img.shields.io/pypi/v/contextzip?color=blue)](https://pypi.org/project/contextzip/)
+[![npm](https://img.shields.io/npm/v/@contextzip/cli?color=blue&label=npm)](https://www.npmjs.com/package/@contextzip/cli)
+[![VS Code](https://img.shields.io/visual-studio-marketplace/v/contextzip.contextzip?label=VS%20Code&color=blue)](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip)
 [![Python](https://img.shields.io/pypi/pyversions/contextzip)](https://pypi.org/project/contextzip/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/contextzip?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/contextzip)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/akadeepesh/contextzip/blob/main/LICENSE)
 
-[Documentation](https://www.contextzipcli.com) ·
+[Website](https://www.contextzipcli.com) ·
+[Documentation](https://www.contextzipcli.com/docs/getting-started) ·
 [CLI reference](https://github.com/akadeepesh/contextzip/blob/main/CLI.md) ·
 [Changelog](https://github.com/akadeepesh/contextzip/blob/main/CHANGELOG.md) ·
 [Report a bug](https://github.com/akadeepesh/contextzip/issues/new/choose)
@@ -20,9 +23,7 @@ https://github.com/user-attachments/assets/91913ad6-6161-430d-9075-b0fa76498021
 
 <div align="center">
 
-[![Watch the 72-second walkthrough: cz, then cz apply-zip](https://i.ytimg.com/vi/9FnYfyB3qd8/maxresdefault.jpg)](https://youtu.be/9FnYfyB3qd8)
-
-**[Watch the 72-second walkthrough on YouTube](https://youtu.be/9FnYfyB3qd8)**: package a project with `cz`, paste it into Claude, and write the reply back with `cz apply-zip`.
+**[▶ Watch the 72-second walkthrough on YouTube](https://youtu.be/9FnYfyB3qd8)**: package a project with `cz`, paste it into Claude, and write the reply back with `cz apply-zip`.
 
 </div>
 
@@ -41,6 +42,8 @@ contextzip does all of that for you. Run it from your project root and it:
 
 When the AI sends changed files back, `contextzip apply-zip` writes them into your project safely, and warns you before touching anything you've edited since.
 
+It works where you do: in the terminal, on a GitHub, GitLab or Bitbucket link without cloning, [in your browser](https://www.contextzipcli.com) with nothing to install, in [VS Code](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip), and for AI agents over MCP.
+
 ## Table of contents
 
 - [Installation](#installation)
@@ -50,6 +53,9 @@ When the AI sends changed files back, `contextzip apply-zip` writes them into yo
   - [Smart packaging](#smart-packaging)
   - [Package only what changed](#package-only-what-changed)
   - [Package a GitHub, GitLab or Bitbucket repo](#package-a-github-gitlab-or-bitbucket-repo)
+  - [In your browser](#in-your-browser)
+  - [VS Code extension](#vs-code-extension)
+  - [MCP server for AI agents](#mcp-server-for-ai-agents)
   - [AI-powered file selection](#ai-powered-file-selection)
   - [Applying AI changes back](#applying-ai-changes-back)
   - [Terminal error watcher](#terminal-error-watcher)
@@ -91,11 +97,13 @@ scoop install contextzip                       # Windows (Scoop)
 
 Or download an archive for your platform from the [latest release](https://github.com/akadeepesh/contextzip/releases/latest), unpack it, and put the `contextzip` folder on your PATH. Builds are made for Windows x64, macOS (Apple Silicon and Intel) and Linux x64/arm64 (glibc 2.35 or newer).
 
-**In VS Code, Cursor or Windsurf**, install the **contextzip** extension. It bundles the CLI, adds "Package for AI" to the Explorer, and offers to apply an AI's ZIP as soon as it lands in your Downloads. See [vscode/README.md](vscode/README.md).
+**In VS Code**, install [contextzip from the Marketplace](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip) (or run `code --install-extension contextzip.contextzip`). It bundles the CLI, so there's nothing else to install. See [VS Code extension](#vs-code-extension).
 
 **For AI agents:** `pip install "contextzip[mcp]"` and register `contextzip mcp` as an MCP server (Python 3.10+). See [CLI.md](https://github.com/akadeepesh/contextzip/blob/main/CLI.md#contextzip-mcp).
 
-**Just trying it?** Nothing stays installed with these:
+**No install at all:** drop a folder or paste a repo link on [contextzipcli.com](https://www.contextzipcli.com).
+
+**Just trying the CLI?** Nothing stays installed with these:
 
 ```bash
 npx @contextzip/cli          # Node.js
@@ -190,6 +198,35 @@ No clone and no git needed: contextzip downloads one commit through the host's A
 - **Send the reply back as a pull request:** for a GitHub repo, `contextzip apply-zip reply.zip --pr` commits the AI's changes on top of the commit you packaged and opens a pull request, forking first if you can't push. No clone needed.
 - **Cache:** a commit is downloaded once and reused. Override the location with `CONTEXTZIP_CACHE_DIR`; downloads over 250 MB are refused unless you raise `CONTEXTZIP_REMOTE_MAX_MB`.
 
+### In your browser
+
+[contextzipcli.com](https://www.contextzipcli.com) runs contextzip in your browser, with the same rules as the CLI:
+
+- **Drop a folder** (or choose one) and it's packaged right in the page. Your files never leave your machine.
+- **Paste a GitHub, GitLab or Bitbucket link** to package a public repository. Shortcut: put `contextzipcli.com/` in front of a repo URL, as in `contextzipcli.com/github.com/user/repo`.
+- **Apply the AI's reply** to your folder (Chrome and Edge): pick the folder and the ZIP, review the plan, and the safe changes are written for you.
+
+### VS Code extension
+
+[contextzip for VS Code](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip) bundles the CLI, so it works without Python.
+
+- **Package for AI** from the Explorer's right-click menu, the status bar or the command palette: the whole project, selected files and folders, git changes, the files for a task, or a GitHub repo. The ZIP goes on your clipboard.
+- **Apply the reply:** when an AI's ZIP lands in your Downloads, the extension offers to apply it. Every file's status shows in the **AI Changes** view, safe changes apply in one step, and conflicts open in VS Code's three-way merge editor.
+
+### MCP server for AI agents
+
+```bash
+pip install "contextzip[mcp]"      # Python 3.10+
+```
+
+Then register it in your MCP client:
+
+```json
+{"mcpServers": {"contextzip": {"command": "contextzip", "args": ["mcp"]}}}
+```
+
+An agent can then package a project or a repository, preview and apply a reply, list snapshots and open a pull request. Each tool returns the same JSON as `--json`. See [CLI.md](https://github.com/akadeepesh/contextzip/blob/main/CLI.md#contextzip-mcp) for every tool.
+
 ### AI-powered file selection
 
 ```bash
@@ -267,8 +304,12 @@ This opens a local browser tab where you can tick files and folders to always in
 | `contextzip --git-changes` | Package only modified, staged and untracked files |
 | `contextzip apply-zip [ZIP]` | Write an AI-returned ZIP back into your project, safely |
 | `contextzip watch -- COMMAND` | Run a command and package debug context when an error appears |
+| `contextzip apply-zip ZIP --pr` | Send an AI's reply to a GitHub repo back as a pull request |
+| `contextzip snapshots` | List what you've sent, so a reply can be merged against it |
+| `contextzip mcp` | Run the MCP server for AI agents |
 | `contextzip config …` | Gemini key, workspace location and the visual config UI |
-| `contextzip update` | Check PyPI for a newer release and update in place |
+| `contextzip update` | Update to the latest release (or print the npm, Homebrew or Scoop command for a standalone build) |
+| `contextzip setup-path` | Put `cz` on your PATH when pip didn't |
 
 **Run flags** work on `contextzip`, `include` and `exclude`:
 
@@ -289,7 +330,7 @@ This opens a local browser tab where you can tick files and folders to always in
 
 Every command supports `-h` / `--help`, and `contextzip --version` prints the installed version.
 
-For every flag of every subcommand (`apply-zip`, `watch`, `config`, `update`), see **[CLI.md](https://github.com/akadeepesh/contextzip/blob/main/CLI.md)** or the [online CLI reference](https://www.contextzipcli.com/cli).
+For every flag of every subcommand (`apply-zip`, `snapshots`, `watch`, `mcp`, `config`, `update`), see **[CLI.md](https://github.com/akadeepesh/contextzip/blob/main/CLI.md)** or the [online CLI reference](https://www.contextzipcli.com/docs/cli).
 
 ## Configuration
 
@@ -339,7 +380,7 @@ contextzip config --set-workspace cwd      # put .contextzip/ in the current dir
 contextzip config --show-key-path          # print the config file location
 ```
 
-The full option-by-option guide is at [contextzipcli.com/configuration](https://www.contextzipcli.com/configuration).
+The full option-by-option guide is at [contextzipcli.com/docs/configuration](https://www.contextzipcli.com/docs/configuration).
 
 ## What is always excluded
 
@@ -423,7 +464,7 @@ pkg = create_zip(get_files(repo.project_dir), output=repo.zip_path)
 
 All exceptions inherit from `ContextzipError`: `NotARepositoryError`, `GitNotFoundError`, `GitCommandError`, `NoFilesError`, `ZipNotFoundError` and `RemoteFetchError`.
 
-For full signatures, see [contextzipcli.com/cli#python-api](https://www.contextzipcli.com/cli#python-api).
+For full signatures, see [contextzipcli.com/cli#python-api](https://www.contextzipcli.com/docs/cli#python-api).
 
 ## Privacy & security
 

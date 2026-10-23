@@ -134,6 +134,11 @@ class ZipNotFoundError(ContextzipError):
     """Raised when apply_zip() can't resolve which zip to apply."""
 
 
+class RemoteFetchError(ContextzipError):
+    """Raised when fetch_remote() can't get a GitHub repository: not found,
+    private without a token, rate limited, or over the size limit."""
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -445,6 +450,47 @@ def apply_zip(
     manifest_path = find_latest_manifest(pdir, manifest) if manifest is not None else None
     plan = build_plan(resolved_zip, pdir, manifest_path)
     return execute_plan(plan, pdir, include_risky=include_risky)
+
+
+def fetch_remote(target: str, ref: str | None = None):
+    """
+    Download a GitHub repository into contextzip's local cache — one commit,
+    no git or clone needed — and return where it landed.
+
+    Parameters
+    ----------
+    target:
+        ``github.com/owner/repo``, a full URL (including
+        ``/tree/<branch>/<folder>`` links), ``gh:owner/repo`` or
+        ``git@github.com:owner/repo.git``.
+    ref:
+        Branch, tag or commit. Defaults to the repository's default branch.
+
+    Private repositories use ``GITHUB_TOKEN`` / ``GH_TOKEN``, or the token
+    from ``gh auth token``. A commit that's already cached is reused.
+
+    Returns
+    -------
+    remote.FetchedRemote
+        ``project_dir`` is the unpacked tree, ``sha`` the commit,
+        ``zip_path`` where the CLI would write its ZIP, and ``subdir`` the
+        folder a /tree/ link pointed at, if any.
+
+    Example
+    -------
+    ::
+
+        from contextzip import create_zip, fetch_remote, get_files
+
+        repo = fetch_remote("github.com/pallets/click")
+        pkg = create_zip(get_files(repo.project_dir), output=repo.zip_path)
+    """
+    from contextzip import remote
+
+    try:
+        return remote.fetch(target, ref)
+    except remote.RemoteError as exc:
+        raise RemoteFetchError(str(exc)) from None
 
 
 def detect_ecosystem(

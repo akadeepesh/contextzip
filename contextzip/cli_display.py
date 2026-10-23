@@ -22,18 +22,31 @@ from pathlib import Path
 
 from rich.console import Console
 
+from contextzip import jsonout
 from contextzip.clipboard import Tier
+from contextzip.tokens import estimate_tokens, format_tokens
 
 console = Console()
 
 
 # ---------------------------------------------------------------------------
 # Core log primitives — every command builds its output from these three.
+# Under --json they're collected into the result instead (see jsonout.py).
 # ---------------------------------------------------------------------------
+
+
+def _collected(level: str, text: str, detail: str | None = None) -> bool:
+    session = jsonout.active()
+    if session is None:
+        return False
+    session.record(level, text, detail)
+    return True
 
 
 def ok(text: str, detail: str | None = None, *, con: Console = console) -> None:
     """A completed step: green check, plain text, optional dim detail."""
+    if _collected("ok", text, detail):
+        return
     line = f"[green]✓[/] {text}"
     if detail:
         line += f"  [dim]· {detail}[/]"
@@ -42,16 +55,22 @@ def ok(text: str, detail: str | None = None, *, con: Console = console) -> None:
 
 def warn(text: str, *, con: Console = console) -> None:
     """A non-fatal issue worth a glance."""
+    if _collected("warn", text):
+        return
     con.print(f"[yellow]![/] {text}")
 
 
 def err(text: str, *, con: Console = console) -> None:
     """A fatal problem — command is about to exit non-zero."""
+    if _collected("error", text):
+        return
     con.print(f"[red]✗[/] {text}")
 
 
 def info(text: str, *, con: Console = console) -> None:
     """A quiet, dim aside — not a step, just context."""
+    if _collected("info", text):
+        return
     con.print(f"  [dim]{text}[/]")
 
 
@@ -186,7 +205,10 @@ def print_scan_summary(
 ) -> None:
     """Scan-only line, used when no packaging happens (dry runs)."""
     label, detail = scan_label_and_detail(resolved, git_mode=git_mode)
-    ok(label, detail, con=con)
+    binary = set(resolved.binary_files)
+    text_bytes = sum(p.stat().st_size for p in resolved.included if p not in binary and p.exists())
+    tokens = format_tokens(estimate_tokens(text_bytes))
+    ok(label, f"{detail}, {tokens}" if detail else tokens, con=con)
 
     if resolved.skipped and not verbose:
         info(f"{len(resolved.skipped)} file(s) skipped — see report", con=con)
@@ -290,7 +312,8 @@ def print_scan_and_pack(
     )
     pack_detail = (
         f"{human_size(result.uncompressed_bytes)} → "
-        f"{human_size(result.compressed_bytes)}, {size_detail}"
+        f"{human_size(result.compressed_bytes)}, {size_detail}, "
+        f"{format_tokens(result.estimated_tokens)}"
     )
     detail = f"{scan_detail}, {pack_detail}" if scan_detail else pack_detail
     ok(f"{label} & Packed {result.file_count} files", detail, con=con)

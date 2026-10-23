@@ -1113,3 +1113,32 @@ This project uses [Semantic Versioning](https://semver.org/).
   cleanly" with lines missing. Those cases are now conflicts, like
   `git merge-file`. Changes that are one or more lines apart still merge.
 - The conflict wording now says "the same or neighbouring lines", to match.
+
+---
+
+## [Unreleased]
+
+### Added
+- **Package a GitHub repository without cloning it:**
+  `contextzip github.com/user/repo`, a `/tree/<branch>/<folder>` link,
+  `gh:user/repo` or `git@github.com:user/repo.git`, with `--ref` for a
+  branch, tag or commit. Also `--from REPO`, which works on `include` and
+  `exclude` too.
+  - Downloads one commit through the GitHub API into your user cache. No git
+    needed. A cached commit is reused, and the 3 newest per repo are kept.
+  - Private repos use `GITHUB_TOKEN` / `GH_TOKEN`, or your `gh auth token`.
+    The token is sent only to `api.github.com`, never to the download host.
+  - Branch names with slashes in `/tree/` links resolve correctly.
+  - `.git/`, `.contextzip/`, symlinks and unsafe paths are never unpacked.
+    Downloads over 250 MB are refused (`CONTEXTZIP_REMOTE_MAX_MB`).
+- **`--json`** on `contextzip`, `include`, `exclude`, `apply-zip` and
+  `snapshots` prints one JSON object instead of terminal output, for editors
+  and scripts. It never prompts, and the exit code matches `ok`.
+  `apply-zip --json` writes nothing when a file needs a decision, unless
+  `--safe-only`, `--yes` or `--review` says what to do. The schema is in
+  CLI.md.
+- **Estimated token count** (`≈ 46k tokens`) in the summary line, in dry
+  runs and in the report, so you can tell whether a ZIP will fit before you
+  upload it.
+- Python API: `fetch_remote()` and `RemoteFetchError`.
+  `PackageResult.estimated_tokens`.

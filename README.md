@@ -49,6 +49,7 @@ When the AI sends changed files back, `contextzip apply-zip` writes them into yo
 - [Features](#features)
   - [Smart packaging](#smart-packaging)
   - [Package only what changed](#package-only-what-changed)
+  - [Package a GitHub repo](#package-a-github-repo)
   - [AI-powered file selection](#ai-powered-file-selection)
   - [Applying AI changes back](#applying-ai-changes-back)
   - [Terminal error watcher](#terminal-error-watcher)
@@ -115,6 +116,7 @@ contextzip --prompt "fix the login redirect bug"   # let AI pick the relevant fi
 contextzip include src/ app/                # only these folders
 contextzip include src/ .env                # .env too, values redacted
 contextzip --here                           # only the folder you're in (monorepos)
+contextzip github.com/user/repo             # a GitHub repo, without cloning it
 contextzip exclude tests/ '*.snap'          # everything except these
 contextzip apply-zip                        # write the AI's changes back
 ```
@@ -138,7 +140,8 @@ On top of the stack rules, contextzip also:
 - respects your `.gitignore` (turn this off with `--no-gitignore`),
 - flags large files (1 MB or more by default) and binary files before packaging,
 - skips dangling symlinks and unreadable files, and tells you why,
-- writes a plain-text report next to every ZIP listing what went in and what was left out.
+- writes a plain-text report next to every ZIP listing what went in and what was left out,
+- estimates the token count of what it packed (`≈ 46k tokens`), so you know whether it'll fit before you upload.
 
 ### Package only what changed
 
@@ -147,6 +150,19 @@ contextzip --git-changes
 ```
 
 This packages only the files git reports as **staged, modified or untracked**. It's ideal for code review or "here's what I changed, what's wrong?" prompts. Deleted files, submodules and monorepo roots are handled for you, and the secret-exclusion rules still apply to files git tracks.
+
+### Package a GitHub repo
+
+```bash
+contextzip github.com/pallets/click
+contextzip https://github.com/pallets/click/tree/main/src     # one branch, one folder
+contextzip gh:you/private-repo --ref dev
+```
+
+No clone and no git needed: contextzip downloads one commit through the GitHub API into a local cache and packages it like any other project, with the same stack detection, exclusions and redaction. `include` and `exclude` work as usual, and a `/tree/<branch>/<folder>` link packages just that folder.
+
+- **Private repos:** set `GITHUB_TOKEN`, or sign in with the GitHub CLI (`gh auth login`) and contextzip uses that. The token is only ever sent to `api.github.com`.
+- **Cache:** a commit is downloaded once and reused. Override the location with `CONTEXTZIP_CACHE_DIR`; downloads over 250 MB are refused unless you raise `CONTEXTZIP_REMOTE_MAX_MB`.
 
 ### AI-powered file selection
 
@@ -218,6 +234,7 @@ This opens a local browser tab where you can tick files and folders to always in
 | Command | What it does |
 |---|---|
 | `contextzip` | Detect the stack, exclude noise and package the project |
+| `contextzip github.com/user/repo` | Package a GitHub repository without cloning it |
 | `contextzip include PATH…` | Package **only** these paths |
 | `contextzip exclude PATTERN…` | Package everything **except** these patterns |
 | `contextzip --prompt "task"` | Let Gemini pick only the files relevant to a task |
@@ -240,6 +257,9 @@ This opens a local browser tab where you can tick files and folders to always in
 | `--no-clipboard` | | Don't copy the ZIP to the clipboard. |
 | `--no-gitignore` | | Ignore `.gitignore` and use only the built-in rules. |
 | `--verbose` | `-v` | List every included and excluded file. |
+| `--from REPO` | | Package a GitHub repository instead of the local project (or just put the repo first: `contextzip github.com/user/repo`). |
+| `--ref REF` | | Branch, tag or commit for `--from`. |
+| `--json` | | Print one JSON object instead of terminal output, for editors and scripts. Also on `apply-zip` and `snapshots`. |
 
 Every command supports `-h` / `--help`, and `contextzip --version` prints the installed version.
 
@@ -345,7 +365,7 @@ Old outputs are cleaned up automatically: `output/` keeps the latest ZIP per mod
 contextzip is also a library. The functions behave like the CLI but return plain Python objects and raise exceptions instead of printing.
 
 ```python
-from contextzip import get_files, get_git_changes, create_zip, apply_zip, detect_ecosystem
+from contextzip import get_files, get_git_changes, create_zip, apply_zip, detect_ecosystem, fetch_remote
 
 # All project files, filtered by .gitignore and the built-in rules
 collection = get_files(include=["src/"], exclude=["*.log"])
@@ -359,6 +379,10 @@ print(f"Packed {pkg.file_count} files → {pkg.zip_path}")
 
 # What stack is this?
 print(detect_ecosystem("."))
+
+# A GitHub repository, without cloning it
+repo = fetch_remote("github.com/pallets/click")
+pkg = create_zip(get_files(repo.project_dir), output=repo.zip_path)
 ```
 
 | Function | Returns |
@@ -368,16 +392,18 @@ print(detect_ecosystem("."))
 | `create_zip(collection, output=…)` | `PackageResult` with the ZIP path, file count and sizes |
 | `apply_zip(zip_path=None, …)` | `ApplyResult` describing what was written |
 | `detect_ecosystem(path=None)` | Detected ecosystem information |
+| `fetch_remote(target, ref=None)` | `FetchedRemote`: a GitHub repo unpacked into the cache (`project_dir`, `sha`, `zip_path`) |
 
-All exceptions inherit from `ContextzipError`: `NotARepositoryError`, `GitNotFoundError`, `GitCommandError`, `NoFilesError` and `ZipNotFoundError`.
+All exceptions inherit from `ContextzipError`: `NotARepositoryError`, `GitNotFoundError`, `GitCommandError`, `NoFilesError`, `ZipNotFoundError` and `RemoteFetchError`.
 
 For full signatures, see [contextzipcli.com/cli#python-api](https://www.contextzipcli.com/cli#python-api).
 
 ## Privacy & security
 
 - **Local by default.** Packaging, `apply-zip`, `watch` and the config UI never make network requests.
-- **Network use is opt-in and limited to two features:**
+- **Network use is opt-in and limited to three features:**
   - `--prompt` sends file paths, sizes and your prompt to the Gemini API. File contents are never sent.
+  - Packaging a GitHub repo (`contextzip github.com/user/repo`) downloads it from GitHub. Your token, if any, is sent only to `api.github.com`.
   - `contextzip update` asks PyPI for the latest version number.
 - **No telemetry.** Nothing is collected or phoned home.
 - **Manifests stay local.** `apply-zip` manifests are written next to the ZIP and never inside it.

@@ -1116,7 +1116,7 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased]
+## [0.5.2] — Unreleased
 
 ### Added
 - **Package a GitHub repository without cloning it:**

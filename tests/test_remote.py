@@ -90,7 +90,7 @@ class ParseTests(TempProject):
         self.assertEqual(parse_target("github.com/octo/demo/blob/main/README.md").tree, ("main", "README.md"))
 
     def test_rejects_other_hosts_and_pages(self):
-        for text in ("gitlab.com/a/b", "https://bitbucket.org/a/b", "github.com/octo", "github.com/octo/demo/pull/3", "gh:../demo"):
+        for text in ("codeberg.org/a/b", "https://example.com/a/b", "github.com/octo", "github.com/octo/demo/pull/3", "gh:../demo"):
             with self.subTest(text=text), self.assertRaises(RemoteError):
                 parse_target(text)
 
@@ -239,8 +239,95 @@ class FetchTests(TempProject):
 
     def test_errors_say_what_kind_they_are(self):
         with self.assertRaises(RemoteError) as caught:
-            parse_target("gitlab.com/a/b")
+            parse_target("codeberg.org/a/b")
         self.assertEqual(caught.exception.kind, "invalid")
         with self.assertRaises(RemoteError) as caught:
             self.fetch(FakeGitHub(b"", refs={}, repo_exists=False))
         self.assertEqual(caught.exception.kind, "not_found")
+
+
+class OtherHostsParseTests(TempProject):
+    def test_gitlab_forms(self):
+        self.assertEqual(parse_target("gl:group/project"), RemoteSpec("group", "project", host="gitlab.com"))
+        self.assertEqual(
+            parse_target("https://gitlab.com/group/sub/project/-/tree/feature/x/src"),
+            RemoteSpec("group/sub", "project", ("feature", "x", "src"), host="gitlab.com"),
+        )
+        self.assertEqual(parse_target("git@gitlab.com:group/project.git"), RemoteSpec("group", "project", host="gitlab.com"))
+        with self.assertRaises(RemoteError):
+            parse_target("gitlab.com/group/project/-/merge_requests/3")
+
+    def test_bitbucket_forms(self):
+        self.assertEqual(parse_target("bb:team/repo"), RemoteSpec("team", "repo", host="bitbucket.org"))
+        self.assertEqual(
+            parse_target("https://bitbucket.org/team/repo/src/main/lib"),
+            RemoteSpec("team", "repo", ("main", "lib"), host="bitbucket.org"),
+        )
+
+    def test_looks_like_remote_for_every_host(self):
+        for text in ("gl:a/b", "bb:a/b", "gitlab.com/a/b", "bitbucket.org/a/b", "codeberg.org/a/b"):
+            self.assertTrue(looks_like_remote(text), text)
+
+
+class OtherHostsFetchTests(TempProject):
+    def setUp(self) -> None:
+        super().setUp()
+        self.cache = self.tmp / "cache"
+        self.requests: list[httpx.Request] = []
+
+    def run_fetch(self, target, handler, **kw):
+        def recording(request):
+            self.requests.append(request)
+            return handler(request)
+
+        kw.setdefault("use_gh_token", False)
+        return fetch(target, cache_dir=self.cache, transport=httpx.MockTransport(recording), **kw)
+
+    def test_gitlab_subgroup_project(self):
+        tar = make_tarball({"main.go": b"package main"}, top="project-sha-sha")
+
+        def handler(request):
+            path = request.url.raw_path.decode()
+            if path.startswith("/api/v4/projects/group%2Fsub%2Fproject/repository/commits/"):
+                ref = path.rsplit("/", 1)[1]
+                return httpx.Response(200, json={"id": SHA}) if ref in ("HEAD", "main") else httpx.Response(404, json={})
+            if path.startswith("/api/v4/projects/group%2Fsub%2Fproject/repository/archive.tar.gz"):
+                return httpx.Response(200, content=tar)
+            return httpx.Response(404, json={})
+
+        got = self.run_fetch("gitlab.com/group/sub/project", handler, token="glpat-x")
+        self.assertEqual((got.sha, got.spec.slug), (SHA, "group/sub/project"))
+        self.assertEqual((got.project_dir / "main.go").read_bytes(), b"package main")
+        self.assertTrue(all(r.headers.get("private-token") == "glpat-x" for r in self.requests))
+        self.assertIn("gitlab.com", got.project_dir.parts)
+
+    def test_bitbucket_default_branch_and_redirected_download(self):
+        tar = make_tarball({"app.py": b"print(1)"}, top="team-repo-aaaaaaa")
+
+        def handler(request):
+            host, path = request.url.host, request.url.path
+            if host == "api.bitbucket.org" and path == "/2.0/repositories/team/repo":
+                return httpx.Response(200, json={"is_private": False, "mainbranch": {"name": "trunk"}})
+            if host == "api.bitbucket.org" and path == "/2.0/repositories/team/repo/commit/trunk":
+                return httpx.Response(200, json={"hash": SHA})
+            if host == "bitbucket.org" and path == f"/team/repo/get/{SHA}.tar.gz":
+                return httpx.Response(302, headers={"location": "https://bbuseruploads.example/r.tar.gz"})
+            if host == "bbuseruploads.example":
+                return httpx.Response(200, content=tar)
+            return httpx.Response(404, json={})
+
+        got = self.run_fetch("bb:team/repo", handler, token="bb-token", public_only=True)
+        self.assertEqual(got.sha, SHA)
+        self.assertEqual((got.project_dir / "app.py").read_bytes(), b"print(1)")
+        uploads = [r for r in self.requests if r.url.host == "bbuseruploads.example"]
+        self.assertTrue(uploads and all("authorization" not in r.headers for r in uploads))
+
+    def test_public_only_on_gitlab_uses_visibility(self):
+        def handler(request):
+            if request.url.raw_path.decode() == "/api/v4/projects/group%2Fproject":
+                return httpx.Response(200, json={"visibility": "internal"})
+            return httpx.Response(404, json={})
+
+        with self.assertRaises(RemoteError) as caught:
+            self.run_fetch("gl:group/project", handler, public_only=True)
+        self.assertEqual(caught.exception.kind, "private")

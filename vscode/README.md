@@ -15,7 +15,7 @@ Web chats are great at whole-project changes, but getting a project in and the a
 | **Package for AI (only these)** | Right-click files or folders in the Explorer. |
 | **contextzip: Package Git Changes for AI** | Only staged, modified and untracked files. |
 | **contextzip: Package Files for a Task…** | Describe the task; Gemini picks the files from their paths and sizes (contents never leave your machine). Needs a free Gemini API key. |
-| **contextzip: Package a GitHub Repository…** | `github.com/user/repo` or a `/tree/<branch>/<folder>` link, without cloning. |
+| **contextzip: Package a GitHub, GitLab or Bitbucket Repository…** | A repository URL or a link to a branch's folder, without cloning. |
 | **contextzip: Apply AI Changes from a ZIP…** | Pick the AI's ZIP, or right-click a `.zip` in the Explorer. |
 
 ## Applying a reply
@@ -44,6 +44,6 @@ Works in VS Code 1.90+, Cursor, Windsurf and VSCodium. In a remote window (SSH, 
 
 ## Privacy
 
-Everything runs on your machine. The only network use is the optional task-based file picker (paths and sizes to Gemini) and fetching a GitHub repository when you ask for one. No telemetry.
+Everything runs on your machine. The only network use is the optional task-based file picker (paths and sizes to Gemini) and fetching a remote repository when you ask for one. No telemetry.
 
 [Documentation](https://www.contextzipcli.com) · [Source](https://github.com/akadeepesh/contextzip) · MIT licensed

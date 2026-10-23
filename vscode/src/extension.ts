@@ -280,14 +280,14 @@ async function packageForTask(): Promise<void> {
 
 async function packageGitHub(): Promise<void> {
   const repo = await vscode.window.showInputBox({
-    title: "Package a GitHub repository",
-    prompt: "No clone needed. Private repos use GITHUB_TOKEN or your gh login.",
-    placeHolder: "github.com/user/repo, or a /tree/<branch>/<folder> link",
+    title: "Package a GitHub, GitLab or Bitbucket repository",
+    prompt: "No clone needed. Private repos use GITHUB_TOKEN (or your gh login), GITLAB_TOKEN or BITBUCKET_TOKEN.",
+    placeHolder: "github.com/user/repo, gitlab.com/group/project, bitbucket.org/team/repo, or a link to a folder",
     ignoreFocusOut: true,
     validateInput: (v) =>
-      !v.trim() || /^(gh:|git@github\.com:|(https?:\/\/)?(www\.)?github\.com\/)/i.test(v.trim())
+      !v.trim() || /^(gh:|gl:|bb:|git@(github\.com|gitlab\.com|bitbucket\.org):|(https?:\/\/)?(www\.)?(github\.com|gitlab\.com|bitbucket\.org)\/)/i.test(v.trim())
         ? undefined
-        : "Use github.com/user/repo, a GitHub URL, or gh:user/repo",
+        : "Use a GitHub, GitLab or Bitbucket URL, or gh:/gl:/bb:user/repo",
   });
   if (!repo?.trim()) return;
   const cwd = (await pickFolder(false)) ?? os.homedir();

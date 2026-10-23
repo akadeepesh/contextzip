@@ -184,10 +184,11 @@ def _modifier_options(f):
             default=None,
             metavar="REPO",
             help=(
-                "Package a GitHub repository instead of the local project, without "
-                "cloning it: github.com/user/repo, a /tree/<branch>/<folder> link, or "
-                "gh:user/repo. Shortcut: contextzip github.com/user/repo. Private repos "
-                "use GITHUB_TOKEN or your gh login."
+                "Package a GitHub, GitLab or Bitbucket repository instead of the local "
+                "project, without cloning it: github.com/user/repo, gitlab.com/group/project, "
+                "bitbucket.org/team/repo, a link to a branch's folder, or gh:/gl:/bb:user/repo. "
+                "Shortcut: contextzip github.com/user/repo. Private repos use GITHUB_TOKEN "
+                "(or your gh login), GITLAB_TOKEN or BITBUCKET_TOKEN."
             ),
         ),
         click.option(
@@ -502,6 +503,24 @@ def cmd_include(
         "if files need a decision, nothing is written unless --safe-only, --yes or --review says what to do."
     ),
 )
+@click.option(
+    "--pr",
+    "as_pr",
+    is_flag=True,
+    default=False,
+    help=(
+        "The reply is for a GitHub repository you packaged with `contextzip github.com/user/repo`: "
+        "open a pull request with its changes instead of writing files here. No clone needed; "
+        "forks the repository if you can't push to it. Needs GITHUB_TOKEN or your gh login."
+    ),
+)
+@click.option(
+    "--from",
+    "pr_repo",
+    default=None,
+    metavar="REPO",
+    help="With --pr: the repository the reply is for, when its CONTEXTZIP.md doesn't say.",
+)
 def cmd_apply_zip(
     zip_path: str | None,
     snapshot_ref: str | None,
@@ -515,6 +534,8 @@ def cmd_apply_zip(
     safe_only: bool,
     yes: bool,
     json_output: bool,
+    as_pr: bool,
+    pr_repo: str | None,
 ) -> None:
     """
     Apply an AI-returned ZIP back into the project.
@@ -527,6 +548,7 @@ def cmd_apply_zip(
       contextzip apply-zip --review         # decide file by file in the browser
       contextzip apply-zip --editor         # resolve conflicts in VS Code
       contextzip apply-zip --safe-only      # scripts/CI: only the safe changes
+      contextzip apply-zip reply.zip --pr   # a packaged GitHub repo: open a pull request
 
     \b
     HOW IT WORKS
@@ -551,7 +573,20 @@ def cmd_apply_zip(
       say-so. Files are only removed with an explicit yes (or --remove-moved
       / --allow-delete), and never one you've changed since the snapshot.
     """
+    if pr_repo and not as_pr:
+        raise click.UsageError("--from goes with --pr: apply-zip --pr --from github.com/user/repo")
     with _json_session("apply-zip", json_output):
+        if as_pr:
+            _apply_as_pull_request(
+                zip_path,
+                repo=pr_repo,
+                dry_run=dry_run,
+                verbose=verbose,
+                yes=yes,
+                remove_moved=remove_moved,
+                allow_delete=allow_delete,
+            )
+            return
         _apply_zip(
             zip_path,
             snapshot_ref=snapshot_ref,
@@ -565,6 +600,101 @@ def cmd_apply_zip(
             safe_only=safe_only,
             yes=yes,
         )
+
+
+def _apply_as_pull_request(
+    zip_path: str | None,
+    *,
+    repo: str | None,
+    dry_run: bool,
+    verbose: bool,
+    yes: bool,
+    remove_moved: bool,
+    allow_delete: bool,
+) -> None:
+    """apply-zip --pr: the reply's changes as a pull request (see pullrequest.py)."""
+    from contextzip import pullrequest as pr_mod
+
+    console.print()
+    if not zip_path:
+        err("Give the reply's ZIP: contextzip apply-zip reply.zip --pr")
+        raise SystemExit(1)
+    zip_file = Path(zip_path).expanduser().resolve()
+    if not zip_file.is_file():
+        err(f"No such file: {zip_path}")
+        raise SystemExit(1)
+
+    try:
+        cached = pr_mod.find_cached_repo(zip_file, repo)
+    except remote_mod.RemoteError as exc:
+        jsonout.put("error_kind", exc.kind)
+        err(str(exc))
+        raise SystemExit(1)
+    how = "named in the reply's CONTEXTZIP.md" if cached.snapshot is not None else "the most recently packaged commit"
+    ok(f"Reply for {cached.spec.slug}@{cached.sha[:7]}", how)
+    jsonout.put("repository", {"host": cached.spec.host, "repo": cached.spec.slug, "sha": cached.sha, "ref": cached.ref})
+
+    try:
+        with status("[cyan]Matching files and comparing versions…[/]"):
+            plan = build_plan(zip_file, cached.project_dir, cached.snapshot.manifest_path if cached.snapshot else None)
+        if cached.snapshot is not None:
+            plan.snapshot = plan.snapshot or cached.snapshot.label
+            plan.matched_by_guide = True
+    except ApplyError as exc:
+        err(str(exc))
+        raise SystemExit(1)
+
+    try:
+        print_apply_plan(plan, cached.project_dir, verbose=verbose)
+        jsonout.put("plan", jsonout.plan_data(plan))
+        jsonout.put("pull_request", None)
+        changes, left_out = pr_mod.changes_from_plan(plan, remove_moved=remove_moved, allow_delete=allow_delete)
+        for path, why in left_out:
+            warn(f"Not included: {path} ({why})")
+        if not changes:
+            info("Nothing to put in a pull request: the reply has no changes that can be applied safely.")
+            return
+        title, body = pr_mod.pr_text(cached, plan, changes, left_out)
+        n = len(changes)
+        summary = {"title": title, "files": [c.path for c in changes], "left_out": [p for p, _ in left_out]}
+        if dry_run:
+            jsonout.put("pull_request", {"dry_run": True, **summary})
+            info(f"Dry run — would open a pull request on {cached.spec.slug} with {n} change{'s' if n != 1 else ''}.")
+            return
+        if cached.spec.host != remote_mod.HOST:
+            err(f"Pull requests are only supported on GitHub for now, not {cached.spec.host_name}.")
+            raise SystemExit(1)
+        token = remote_mod.github_token()
+        if not token:
+            err("Opening a pull request needs a GitHub token: set GITHUB_TOKEN, or sign in with `gh auth login`.")
+            raise SystemExit(1)
+        if not yes:
+            if not _interactive():
+                err("Opening a pull request publishes these changes. Add --yes to confirm.")
+                raise SystemExit(1)
+            if not click.confirm(f"  Open a pull request on {cached.spec.slug} with {n} change{'s' if n != 1 else ''}?", default=True):
+                info("Cancelled — nothing was sent to GitHub.")
+                return
+
+        branch = f"contextzip/{plan.snapshot or cached.sha[:7]}"
+        try:
+            with status(f"[cyan]Opening a pull request on {cached.spec.slug}…[/]"):
+                pr = pr_mod.open_pull_request(
+                    cached.spec, cached.sha, cached.ref, changes, title=title, body=body, branch=branch, token=token
+                )
+        except remote_mod.RemoteError as exc:
+            jsonout.put("error_kind", exc.kind)
+            err(str(exc))
+            raise SystemExit(1)
+        ok(f"Opened pull request #{pr.number}", pr.url)
+        if pr.forked:
+            info(f"From your fork {pr.repo}, since you can't push to {cached.spec.slug}.")
+        jsonout.put(
+            "pull_request",
+            {**summary, "url": pr.url, "number": pr.number, "branch": pr.branch, "pushed_to": pr.repo, "forked": pr.forked},
+        )
+    finally:
+        discard_plan(plan)
 
 
 def _apply_zip(
@@ -1173,6 +1303,40 @@ def _ago(seconds: float) -> str:
     return "just now"
 
 
+@main.command("mcp")
+def cmd_mcp() -> None:
+    """
+    Run contextzip as an MCP server (stdio), for AI agents and editors.
+
+    
+    Needs the optional extra, on Python 3.10 or newer:
+      pip install "contextzip[mcp]"
+
+    
+    Then register it in your MCP client, for example:
+      {"mcpServers": {"contextzip": {"command": "contextzip", "args": ["mcp"]}}}
+
+    
+    Tools: package_project, package_repository, preview_apply,
+    apply_changes (safe changes by default), open_pull_request (a dry run
+    by default) and list_snapshots. Each returns the same JSON as --json.
+    """
+    import sys
+
+    try:
+        from contextzip.mcp_server import serve
+
+        import mcp.server.mcpserver  # noqa: F401  (fail here, with a clear message, if it's missing)
+    except ImportError:
+        console_err = Console(stderr=True)
+        if sys.version_info < (3, 10):
+            console_err.print("[red]✗[/] The MCP server needs Python 3.10 or newer (this is " + sys.version.split()[0] + ").")
+        else:
+            console_err.print('[red]✗[/] The MCP server is an optional extra. Install it with: pip install "contextzip[mcp]"')
+        raise SystemExit(1)
+    serve()
+
+
 @main.command("setup-path")
 @click.option(
     "--yes",
@@ -1495,7 +1659,7 @@ def _fetch_remote(target: str, ref: str | None):
 
     try:
         spec = remote_mod.parse_target(target)
-        with status(f"[cyan]Fetching {spec.slug} from GitHub…[/]"):
+        with status(f"[cyan]Fetching {spec.slug} from {spec.host_name}…[/]"):
             fetched = remote_mod.fetch(spec, ref)
     except remote_mod.RemoteError as exc:
         jsonout.put("error_kind", exc.kind)
@@ -1555,7 +1719,7 @@ def _package(
     fetched = None
     if remote:
         if git_changes:
-            err("--git-changes needs a local checkout — it can't be combined with a GitHub repository.")
+            err("--git-changes needs a local checkout — it can't be combined with a remote repository.")
             raise SystemExit(1)
         fetched = _fetch_remote(remote, ref)
         # A /tree/<branch>/<folder> link acts like running from that folder.
@@ -1567,7 +1731,7 @@ def _package(
         )
     else:
         if ref:
-            err("--ref picks a branch of a GitHub repository — use it with --from github.com/user/repo.")
+            err("--ref picks a branch of a remote repository — use it with --from github.com/user/repo.")
             raise SystemExit(1)
         project_root = _resolve_root()
     project_dir = project_root.root

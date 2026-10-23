@@ -105,7 +105,7 @@ class ServiceTests(TempProject):
         self.assertNotIn(str(self.tmp), body.decode())
 
     def test_bad_requests(self):
-        for query, status in (("", "400"), ("repo=gitlab.com/a/b", "400"), ("repo=github.com/a/b&format=tar", "400")):
+        for query, status in (("", "400"), ("repo=codeberg.org/a/b", "400"), ("repo=github.com/a/b&format=tar", "400")):
             with self.subTest(query=query):
                 got, _headers, body = call(query)
                 self.assertTrue(got.startswith(status), got)

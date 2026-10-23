@@ -18,6 +18,14 @@
 
 https://github.com/user-attachments/assets/91913ad6-6161-430d-9075-b0fa76498021
 
+<div align="center">
+
+[![Watch the 72-second walkthrough: cz, then cz apply-zip](https://i.ytimg.com/vi/9FnYfyB3qd8/maxresdefault.jpg)](https://youtu.be/9FnYfyB3qd8)
+
+**[Watch the 72-second walkthrough on YouTube](https://youtu.be/9FnYfyB3qd8)**: package a project with `cz`, paste it into Claude, and write the reply back with `cz apply-zip`.
+
+</div>
+
 ---
 
 ## Why contextzip?

@@ -167,6 +167,14 @@ class PackageResult:
     # Empty unless limits.redact_secrets is enabled or a secret file such
     # as .env was deliberately included (those are always redacted).
     redacted: list[tuple[Path, list[str]]] = field(default_factory=list)
+    text_bytes: int = 0
+    """Bytes of the included text files (binary ones left out), for the token estimate."""
+
+    @property
+    def estimated_tokens(self) -> int:
+        from contextzip.tokens import estimate_tokens
+
+        return estimate_tokens(self.text_bytes)
 
     @property
     def compression_ratio(self) -> float:
@@ -299,6 +307,7 @@ def create_zip_silent(
     skipped_in_zip: list[tuple[Path, str]] = []
     redacted: list[tuple[Path, list[str]]] = []
     uncompressed = 0
+    text_bytes = 0
     file_count = 0
 
     with zipfile.ZipFile(
@@ -334,6 +343,8 @@ def create_zip_silent(
                 if matched:
                     redacted.append((rel, matched))
                 uncompressed += file_size
+                if abs_path not in binary_paths:
+                    text_bytes += file_size
                 file_count += 1
             except PermissionError:
                 skipped_in_zip.append((abs_path, "permission denied"))
@@ -351,6 +362,7 @@ def create_zip_silent(
         compressed_bytes=compressed,
         skipped_in_zip=skipped_in_zip,
         redacted=redacted,
+        text_bytes=text_bytes,
         snapshot=snapshot.label if snapshot is not None and snapshot.is_complete else None,
         snapshot_id=snapshot.id if snapshot is not None and snapshot.is_complete else None,
     )
@@ -409,6 +421,7 @@ def create_zip(
     skipped_in_zip: list[tuple[Path, str]] = []
     redacted: list[tuple[Path, list[str]]] = []
     uncompressed = 0
+    text_bytes = 0
     file_count = 0
 
     with Progress(
@@ -459,6 +472,8 @@ def create_zip(
                     if matched:
                         redacted.append((rel, matched))
                     uncompressed += file_size
+                    if abs_path not in binary_paths:
+                        text_bytes += file_size
                     file_count += 1
                 except PermissionError:
                     skipped_in_zip.append((abs_path, "permission denied"))
@@ -478,6 +493,7 @@ def create_zip(
         compressed_bytes=compressed,
         skipped_in_zip=skipped_in_zip,
         redacted=redacted,
+        text_bytes=text_bytes,
         snapshot=snapshot.label if snapshot is not None and snapshot.is_complete else None,
         snapshot_id=snapshot.id if snapshot is not None and snapshot.is_complete else None,
     )

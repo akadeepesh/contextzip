@@ -9,6 +9,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 - [Quick reference](#quick-reference)
 - [Run flags](#run-flags)
 - [`contextzip`](#contextzip) — package the project
+- [GitHub repositories](#github-repositories) — package a repo without cloning it
 - [`contextzip include`](#contextzip-include) / [`exclude`](#contextzip-exclude)
 - [`contextzip apply-zip`](#contextzip-apply-zip)
 - [`contextzip watch`](#contextzip-watch)
@@ -16,6 +17,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 - [`contextzip update`](#contextzip-update)
 - [`contextzip setup-path`](#contextzip-setup-path)
 - [Global flags](#global-flags)
+- [JSON output](#json-output)
 - [Where files go](#where-files-go)
 
 ## Quick reference
@@ -23,6 +25,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 | Command | What it does |
 |---|---|
 | `contextzip` | Detect the stack, exclude noise, package the project |
+| `contextzip github.com/user/repo` | Package a GitHub repository without cloning it |
 | `contextzip include PATH…` | Package **only** these paths |
 | `contextzip exclude PATTERN…` | Package everything **except** these patterns |
 | `contextzip --prompt "task"` | Let Gemini pick only the files relevant to a task |
@@ -49,6 +52,9 @@ These flags work on the main command **and** on `include` and `exclude`. Flags g
 | `--git-changes` | | Only include files git reports as modified, added or untracked. The project must be inside a git repository. |
 | `--verbose` | `-v` | Show every included and excluded file. |
 | `--here` | | Only package the folder you're in. Paths in the ZIP stay relative to the project root. |
+| `--from REPO` | | Package a GitHub repository instead of the local project. See [GitHub repositories](#github-repositories). |
+| `--ref REF` | | Branch, tag or commit to package with `--from`. Defaults to the repository's default branch. |
+| `--json` | | Print one JSON object instead of terminal output. Never prompts. See [JSON output](#json-output). |
 
 `--include` and `--exclude` (and the `include` / `exclude` subcommands) also work together with `--git-changes`, and are combined with `always_include` / `always_exclude` from `.contextzip/config.json`.
 
@@ -77,6 +83,28 @@ contextzip --prompt "fix the login redirect bug"
 contextzip -o ~/Desktop/project.zip         # write to an exact path
 contextzip --no-clipboard                   # build the ZIP, skip clipboard
 ```
+
+The summary line ends with an estimated token count (`≈ 46k tokens`), so you can tell whether the ZIP will fit before you upload it. It's bytes of text divided by four: a rough guide, since every model counts differently.
+
+## GitHub repositories
+
+Package a GitHub repository without cloning it. Put the repository where a command would go, or pass it with `--from`:
+
+```bash
+contextzip github.com/pallets/click                          # default branch
+contextzip https://github.com/pallets/click/tree/main/src    # one branch, one folder
+contextzip gh:pallets/click --ref 8.1.7                      # a tag (or branch, or commit)
+contextzip gh:pallets/click include src/ tests/test_basic.py # include/exclude work as usual
+contextzip --from git@github.com:you/private-repo.git -n
+```
+
+contextzip asks the GitHub API which commit to use, downloads that commit as one archive (no git needed) and unpacks it into a local cache. Then it's an ordinary project: stack detection, exclusion rules and redaction all apply, and the ZIP goes on your clipboard. A `/tree/<branch>/<folder>` link packages just that folder; paths you name with `include` are relative to it.
+
+- **Private repositories** use a token from `GITHUB_TOKEN` or `GH_TOKEN`, or the one `gh auth token` prints if you're signed in to the GitHub CLI. The token is only sent to `api.github.com`. A token also lifts GitHub's limit of 60 API requests an hour.
+- **Cache:** each commit is kept in your user cache folder (`%LOCALAPPDATA%\contextzip\Cache\remote` on Windows, `~/Library/Caches/contextzip/remote` on macOS, `~/.cache/contextzip/remote` on Linux; override with `CONTEXTZIP_CACHE_DIR`). The ZIP and its report are written next to the unpacked tree. A cached commit isn't downloaded again, and a full commit SHA that's cached needs no network at all. The 3 most recent commits per repository are kept.
+- **Size limit:** downloads over 250 MB are refused; change it with `CONTEXTZIP_REMOTE_MAX_MB`.
+- **Not unpacked:** `.git/`, `.contextzip/`, symlinks, and names your system can't store (on Windows, names like `CON` or containing `:`).
+- `--git-changes` needs a local checkout, so it can't be combined with a repository. To apply the AI's reply, package from a clone and run `apply-zip` there.
 
 ## `contextzip include`
 
@@ -115,7 +143,7 @@ Quote patterns that contain `*` so your shell doesn't expand them first.
 Apply an AI-returned ZIP back into your project.
 
 ```bash
-contextzip apply-zip [ZIP] [--manifest PATH] [-n] [-v] [--review | --editor | --safe-only | -y]
+contextzip apply-zip [ZIP] [--manifest PATH] [-n] [-v] [--review | --editor | --safe-only | -y] [--json]
 ```
 
 | Argument / flag | Short | Description |
@@ -131,6 +159,7 @@ contextzip apply-zip [ZIP] [--manifest PATH] [-n] [-v] [--review | --editor | --
 | `--snapshot ID` | | The snapshot this reply answers (e.g. `14`). Usually found automatically. |
 | `--remove-moved` | | Remove the old copy of files the AI moved (only if you haven't changed them). |
 | `--allow-delete` | | Delete files the AI asked to delete in `CONTEXTZIP.md` (only if you haven't changed them). |
+| `--json` | | Print one JSON object with every file's status. Never prompts: if files need a decision, nothing is written unless `--safe-only`, `--yes` or `--review` says what to do. Can't be combined with `--editor`. |
 
 ```bash
 contextzip apply-zip                    # from .contextzip/inbox/, asks when something needs a decision
@@ -226,7 +255,7 @@ A workspace location can also be pinned for a whole team by committing `.context
 List this project's snapshots: number, token, mode, file count, age, and whether a reply has been applied.
 
 ```bash
-contextzip snapshots
+contextzip snapshots [--json]
 ```
 
 Every package is kept as a numbered snapshot in `.contextzip/snapshots/` (local, never uploaded): a copy of the ZIP plus a manifest of what was sent. Each ZIP's `CONTEXTZIP.md` names its snapshot, e.g. `Snapshot: 14-k3f9a2`. Snapshots are kept while they're among the newest `snapshots.keep` (10), younger than `snapshots.max_age_days` (14), or still awaited by a reply in the inbox.
@@ -282,6 +311,24 @@ It never adds the folder twice. Open a new terminal afterwards. `python -m conte
 | `--help` | `-h` | Show help. Works on every command: `contextzip apply-zip -h`. |
 | `--version` | | Print the installed version. |
 
+## JSON output
+
+Add `--json` to `contextzip`, `include`, `exclude`, `apply-zip` or `snapshots` and contextzip prints exactly one JSON object on stdout instead of terminal output, for editors, scripts and CI. It never prompts, and the exit code matches `ok`: 0 when it's `true`, non-zero when it's `false`.
+
+```bash
+contextzip --json --no-clipboard
+contextzip --json -n --verbose                 # dry run: what would be included, and what wouldn't
+contextzip apply-zip reply.zip --json --dry-run
+```
+
+Every object has `ok`, `command`, `version`, `warnings` (strings) and `log` (each step as `{"level", "text", "detail"}`), plus `error` when `ok` is false. The rest depends on the command:
+
+| Command | Fields |
+|---|---|
+| `contextzip`, `include`, `exclude` | `mode`, `dry_run`, `project` (`root`, `kind`), `remote` (with `--from`), `detection`, `files` (counts, `included_bytes`, `estimated_tokens`, `included_files`, warnings; `excluded_files` with `--verbose`), `ai` (with `--prompt`), `zip` (path, sizes, `estimated_tokens`, `snapshot`, `redacted`; `null` on a dry run), `report`, `clipboard` |
+| `apply-zip` | `project`, `plan` (`snapshot`, `remap`, `needs_decision`, `counts`, and `files`: each with `path`, `source`, `status`, `safe`, `reason`, `moved_from`, …), `result` (`written`, `skipped`, `removed`, `zip_kept`, `archived_to`; `null` when nothing was written), `report` |
+| `snapshots` | `project`, `snapshots` (`id`, `token`, `label`, `mode`, `files`, `status`, `created`) |
+
 ## Where files go
 
 | Path | Contents |
@@ -291,5 +338,6 @@ It never adds the folder twice. Open a new terminal afterwards. `python -m conte
 | `.contextzip/inbox/` | Where `apply-zip` looks for a returned ZIP when you don't pass a path |
 | `.contextzip/config.json` | Project config: `always_include`, `always_exclude`, `workspace_location`, `ai`, size limits |
 | `.contextzip/snapshots/` | Numbered snapshots: a copy of each ZIP you sent and its manifest — what `apply-zip` merges against |
+| Your user cache folder | GitHub repositories fetched with `--from`, one folder per commit, with the ZIP next to each (see [GitHub repositories](#github-repositories)) |
 
 Where `.contextzip/` itself lives defaults to the git root; see `contextzip config --set-workspace`.

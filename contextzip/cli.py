@@ -75,11 +75,28 @@ from contextzip.cli_ai import (
 )
 from contextzip.cli_onboard import onboard_api_key
 from contextzip import cleanup as cleanup_mod
+from contextzip import jsonout
 from contextzip import updater as updater_mod
+from contextzip import remote as remote_mod
 from contextzip import root as root_mod
-from contextzip.root import ROOT_KIND_LABELS, find_project_root, to_root_relative
+from contextzip.root import ROOT_KIND_LABELS, ProjectRoot, find_project_root, to_root_relative
 
 console = Console()
+
+
+def _interactive() -> bool:
+    """True when there's a person at a terminal to ask. Never under --json."""
+    import sys
+
+    return sys.stdin.isatty() and sys.stdout.isatty() and jsonout.active() is None
+
+
+def _json_session(command: str, enabled: bool):
+    """Run a command body under --json when *enabled* (see jsonout.py)."""
+    from contextzip import cli_ai, cli_display, cli_onboard
+
+    consoles = (console, cli_display.console, cli_ai.console, cli_onboard.console)
+    return jsonout.session(command, enabled, consoles=consoles)
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +177,31 @@ def _modifier_options(f):
                 "the project root; paths in the ZIP stay relative to it."
             ),
         ),
+        click.option(
+            "--from",
+            "remote",
+            default=None,
+            metavar="REPO",
+            help=(
+                "Package a GitHub repository instead of the local project, without "
+                "cloning it: github.com/user/repo, a /tree/<branch>/<folder> link, or "
+                "gh:user/repo. Shortcut: contextzip github.com/user/repo. Private repos "
+                "use GITHUB_TOKEN or your gh login."
+            ),
+        ),
+        click.option(
+            "--ref",
+            default=None,
+            metavar="REF",
+            help="Branch, tag or commit to package with --from (default: the repo's default branch).",
+        ),
+        click.option(
+            "--json",
+            "json_output",
+            is_flag=True,
+            default=False,
+            help="Print one JSON object instead of terminal output, for editors and scripts. Never prompts.",
+        ),
     ]
     for dec in reversed(decorators):
         f = dec(f)
@@ -171,7 +213,34 @@ def _modifier_options(f):
 # ---------------------------------------------------------------------------
 
 
+class _MainGroup(click.Group):
+    """
+    Lets a repository stand where a command would: `contextzip
+    github.com/user/repo -n` runs as `contextzip -n --from github.com/user/repo`,
+    and `contextzip gh:user/repo include src/` as `include src/ --from …` —
+    moved to the end so it reaches whichever command actually runs.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        takes_value = {
+            opt
+            for p in self.params
+            if isinstance(p, click.Option) and not p.is_flag and not p.count
+            for opt in (*p.opts, *p.secondary_opts)
+        }
+        for i, arg in enumerate(args):
+            if arg in self.commands or arg == "--":
+                break
+            if i and args[i - 1] in takes_value:
+                continue
+            if not arg.startswith("-") and remote_mod.looks_like_remote(arg):
+                args = [*args[:i], *args[i + 1:], "--from", arg]
+                break
+        return super().parse_args(ctx, args)
+
+
 @click.group(
+    cls=_MainGroup,
     invoke_without_command=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
@@ -210,6 +279,9 @@ def main(
     git_changes: bool,
     verbose: bool,
     here: bool,
+    remote: str | None,
+    ref: str | None,
+    json_output: bool,
 ) -> None:
     """
     \b
@@ -240,6 +312,9 @@ def main(
         git_changes=git_changes,
         verbose=verbose,
         here=here,
+        remote=remote,
+        ref=ref,
+        json_output=json_output,
     )
 
 
@@ -261,6 +336,9 @@ def cmd_exclude(
     git_changes: bool,
     verbose: bool,
     here: bool,
+    remote: str | None,
+    ref: str | None,
+    json_output: bool,
 ) -> None:
     """
     Exclude specific files or patterns and package everything else.
@@ -286,6 +364,9 @@ def cmd_exclude(
         git_changes=git_changes,
         verbose=verbose,
         here=here,
+        remote=remote,
+        ref=ref,
+        json_output=json_output,
     )
 
 
@@ -307,6 +388,9 @@ def cmd_include(
     git_changes: bool,
     verbose: bool,
     here: bool,
+    remote: str | None,
+    ref: str | None,
+    json_output: bool,
 ) -> None:
     """
     Package only the specified paths and skip everything else.
@@ -331,6 +415,9 @@ def cmd_include(
         git_changes=git_changes,
         verbose=verbose,
         here=here,
+        remote=remote,
+        ref=ref,
+        json_output=json_output,
     )
 
 
@@ -404,6 +491,16 @@ def cmd_include(
     default=False,
     help="Apply everything without asking. Where you and the AI disagree, the AI's version wins.",
 )
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help=(
+        "Print one JSON object instead of terminal output, for editors and scripts. Never prompts: "
+        "if files need a decision, nothing is written unless --safe-only, --yes or --review says what to do."
+    ),
+)
 def cmd_apply_zip(
     zip_path: str | None,
     snapshot_ref: str | None,
@@ -416,6 +513,7 @@ def cmd_apply_zip(
     use_editor: bool,
     safe_only: bool,
     yes: bool,
+    json_output: bool,
 ) -> None:
     """
     Apply an AI-returned ZIP back into the project.
@@ -452,6 +550,40 @@ def cmd_apply_zip(
       say-so. Files are only removed with an explicit yes (or --remove-moved
       / --allow-delete), and never one you've changed since the snapshot.
     """
+    with _json_session("apply-zip", json_output):
+        _apply_zip(
+            zip_path,
+            snapshot_ref=snapshot_ref,
+            manifest_path=manifest_path,
+            remove_moved=remove_moved,
+            allow_delete=allow_delete,
+            dry_run=dry_run,
+            verbose=verbose,
+            review=review,
+            use_editor=use_editor,
+            safe_only=safe_only,
+            yes=yes,
+        )
+
+
+def _apply_zip(
+    zip_path: str | None,
+    *,
+    snapshot_ref: str | None,
+    manifest_path: str | None,
+    remove_moved: bool,
+    allow_delete: bool,
+    dry_run: bool,
+    verbose: bool,
+    review: bool,
+    use_editor: bool,
+    safe_only: bool,
+    yes: bool,
+) -> None:
+    if use_editor and jsonout.active() is not None:
+        err("--editor needs a terminal to ask in — use --review, --safe-only or --yes with --json.")
+        raise SystemExit(1)
+
     project_root = _resolve_root()
     project_dir = project_root.root
     project_cfg = load_project_config(project_dir)
@@ -489,6 +621,10 @@ def cmd_apply_zip(
 
     print_apply_plan(plan, project_dir, verbose=verbose)
     report_path = write_apply_report(project_dir=project_dir, plan=plan)
+    jsonout.put("project", {"root": str(project_dir), "kind": project_root.kind})
+    jsonout.put("plan", jsonout.plan_data(plan))
+    jsonout.put("result", None)
+    jsonout.put("report", str(report_path))
 
     if not plan.writable_entries:
         info("Nothing to apply — every file already matches the project.")
@@ -549,6 +685,8 @@ def cmd_apply_zip(
     print_apply_result(result)
     report_path = write_apply_report(project_dir=project_dir, plan=plan, result=result)
     print_report_hint(report_path)
+    jsonout.put("result", jsonout.apply_result_data(result))
+    jsonout.put("report", str(report_path))
 
     # ── Auto-cleanup ─────────────────────────────────────────────────────────
     _auto_cleanup(project_dir, project_cfg)
@@ -561,11 +699,9 @@ def _resolve_root():
     writes .contextzip/config.json there, which makes it the root from then
     on; a no is remembered so the question never comes back.
     """
-    import sys
-
     project_root = find_project_root()
     suggested = project_root.suggested_root
-    if suggested is None or not (sys.stdin.isatty() and sys.stdout.isatty()):
+    if suggested is None or not _interactive():
         return project_root
 
     projects = sorted(
@@ -607,9 +743,7 @@ def _removal_consent(plan, *, remove_moved: bool, allow_delete: bool) -> tuple[b
     files' old copies and requested deletions separately, when there's
     someone to ask and no flag already answered.
     """
-    import sys
-
-    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    interactive = _interactive()
     moves = plan.moves
     if moves and not remove_moved and interactive:
         console.print()
@@ -651,9 +785,7 @@ def _apply_mode(plan, *, review: bool, use_editor: bool, safe_only: bool, yes: b
     if yes:
         return "all"
 
-    import sys
-
-    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+    if not _interactive():
         err("Some files need a decision, and there's no one here to ask.")
         info("Re-run with --safe-only to apply just the safe changes, or --yes to apply everything.")
         discard_plan(plan)
@@ -963,7 +1095,14 @@ def cmd_config(
 
 
 @main.command("snapshots")
-def cmd_snapshots() -> None:
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help="Print one JSON object instead of terminal output, for editors and scripts.",
+)
+def cmd_snapshots(json_output: bool) -> None:
     """
     List this project's snapshots.
 
@@ -979,6 +1118,11 @@ def cmd_snapshots() -> None:
     than `snapshots.max_age_days` (default 14), or still awaited by a reply
     in the inbox.
     """
+    with _json_session("snapshots", json_output):
+        _list_snapshots()
+
+
+def _list_snapshots() -> None:
     from contextzip import snapshots as snaps
 
     project_root = _resolve_root()
@@ -987,6 +1131,8 @@ def cmd_snapshots() -> None:
     print_root_notice(project_root)
 
     found = snaps.list_snapshots(project_dir)
+    jsonout.put("project", {"root": str(project_dir), "kind": project_root.kind})
+    jsonout.put("snapshots", [])
     if not found:
         info("No snapshots yet — run contextzip to make one.")
         console.print()
@@ -1004,6 +1150,12 @@ def cmd_snapshots() -> None:
         status = data.get("status", "pending")
         mode = {"standard": "codebase", "git-changes": "changes", "prompt": "prompt"}.get(data.get("mode", ""), data.get("mode", "?"))
         age = _ago(now - snaps.created_ts(s))
+        session = jsonout.active()
+        if session is not None:
+            session.data["snapshots"].append(
+                {"id": s.id, "token": s.token, "label": s.label, "mode": mode, "files": files,
+                 "status": status, "created": snaps.created_ts(s)}
+            )
         colour = "green" if status == "applied" else "dim"
         console.print(
             f"  [bold]#{s.id:<4}[/] [dim]{s.token}[/]  {mode:<9} {files:>5} files  {age:>12}   [{colour}]{status}[/]"
@@ -1237,11 +1389,9 @@ def _maybe_offer_config_ui(
     Returns True if the user saved a config during the offered session
     (the caller should reload project config before continuing).
     """
-    import sys
-
     if prompt or output:
         return False
-    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+    if not _interactive():
         return False
     if os.environ.get("CI"):
         return False
@@ -1305,7 +1455,57 @@ def _auto_cleanup(project_dir: Path, project_cfg) -> None:
     print_auto_cleanup(result)
 
 
-def _run(
+def _run(*, json_output: bool = False, **kwargs) -> None:
+    """
+    All packaging work lives in _package. The main command and every
+    subcommand delegate here after collecting their arguments/flags,
+    keeping the CLI surface thin and the logic testable in isolation.
+    """
+    with _json_session("package", json_output):
+        _package(**kwargs)
+
+
+def _fetch_remote(target: str, ref: str | None):
+    """Fetch a GitHub repository into the cache (see remote.py), or exit with why not."""
+    from contextzip.cli_display import human_size
+
+    try:
+        spec = remote_mod.parse_target(target)
+        with console.status(f"[cyan]Fetching {spec.slug} from GitHub…[/]", spinner="dots"):
+            fetched = remote_mod.fetch(spec, ref)
+    except remote_mod.RemoteError as exc:
+        err(str(exc))
+        raise SystemExit(1)
+
+    where = "from cache" if fetched.cached else f"downloaded {human_size(fetched.download_bytes)}"
+    ok(f"Fetched {fetched.label}", f"{fetched.ref or 'default branch'} · {where}")
+    if fetched.subdir:
+        info(f"Only {fetched.subdir}, from the link")
+    if fetched.skipped:
+        n = len(fetched.skipped)
+        info(f"{n} entr{'ies' if n != 1 else 'y'} in the repo couldn't be unpacked here (links, or names this system doesn't allow)")
+    jsonout.put("remote", jsonout.remote_data(fetched))
+    return fetched
+
+
+def _gemini_key_or_exit() -> str:
+    """The Gemini key, set up interactively on first use — never prompting under --json."""
+    diagnosis = diagnose_api_key()
+    if diagnosis:
+        warn(diagnosis)
+    api_key = get_api_key()
+    if api_key:
+        return api_key
+    if jsonout.active() is not None:
+        err("No Gemini API key set. Set GEMINI_API_KEY, or run contextzip --prompt once in a terminal to set one up.")
+        raise SystemExit(1)
+    api_key = onboard_api_key()
+    if not api_key:
+        raise SystemExit(0)
+    return api_key
+
+
+def _package(
     *,
     extra_exclude: list[str] | None,
     include_only: list[str] | None,
@@ -1317,15 +1517,36 @@ def _run(
     git_changes: bool,
     verbose: bool,
     here: bool = False,
+    remote: str | None = None,
+    ref: str | None = None,
 ) -> None:
-    """
-    All packaging work lives here. The main command and every subcommand
-    delegate to this function after collecting their arguments/flags,
-    keeping the CLI surface thin and the logic testable in isolation.
-    """
-    project_root = _resolve_root()
-    project_dir = project_root.root
     console.print()
+    run_mode = "git-changes" if git_changes else ("prompt" if prompt else "standard")
+    jsonout.put("mode", run_mode)
+    jsonout.put("dry_run", dry_run)
+    jsonout.put("zip", None)
+
+    # ── Where to work: this project, or a GitHub repository ─────────────────
+    fetched = None
+    if remote:
+        if git_changes:
+            err("--git-changes needs a local checkout — it can't be combined with a GitHub repository.")
+            raise SystemExit(1)
+        fetched = _fetch_remote(remote, ref)
+        # A /tree/<branch>/<folder> link acts like running from that folder.
+        target = fetched.project_dir / fetched.subdir if fetched.subdir else fetched.project_dir
+        project_root = ProjectRoot(
+            root=fetched.project_dir,
+            cwd=target if target.is_dir() else target.parent,
+            kind="remote",
+        )
+    else:
+        if ref:
+            err("--ref picks a branch of a GitHub repository — use it with --from github.com/user/repo.")
+            raise SystemExit(1)
+        project_root = _resolve_root()
+    project_dir = project_root.root
+    jsonout.put("project", {"root": str(project_dir), "kind": project_root.kind})
 
     # Paths typed on the command line are relative to where you are — like
     # git add — so translate them to the project root before anything else.
@@ -1333,9 +1554,13 @@ def _run(
         include_only = to_root_relative(include_only, project_root)
     if extra_exclude:
         extra_exclude = to_root_relative(extra_exclude, project_root, patterns=True)
-    if here and project_root.in_subdir:
-        include_only = [*(include_only or []), project_root.subdir]
-    print_root_notice(project_root, here=here, packaging=True)
+    if fetched is not None:
+        if fetched.subdir and not include_only:
+            include_only = [fetched.subdir]
+    else:
+        if here and project_root.in_subdir:
+            include_only = [*(include_only or []), project_root.subdir]
+        print_root_notice(project_root, here=here, packaging=True)
 
     # ── Project config (.contextzip/config.json) ────────────────────────────
     project_cfg = load_project_config(project_dir)
@@ -1349,9 +1574,10 @@ def _run(
         detection = detect(project_dir)
 
     print_detection(detection)
+    jsonout.put("detection", jsonout.detection_data(detection))
 
     # ── First-run offer: visual config UI ────────────────────────────────────
-    if project_cfg.source_path is None:
+    if project_cfg.source_path is None and fetched is None:
         saved = _maybe_offer_config_ui(
             project_dir, detection, prompt=prompt, output=output
         )
@@ -1430,6 +1656,7 @@ def _run(
         scan_label, scan_detail = scan_label_and_detail(resolved, git_mode=False)
 
     large_file_warn_bytes = int(project_cfg.limits.max_file_size_mb * 1024 * 1024)
+    jsonout.put("files", jsonout.files_data(resolved, project_dir, verbose=verbose, git_mode=git_changes))
 
     # ── Dry run ──────────────────────────────────────────────────────────────
     if dry_run:
@@ -1439,14 +1666,7 @@ def _run(
                 resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
             )
             _enforce_ai_config(project_cfg.ai)
-            diagnosis = diagnose_api_key()
-            if diagnosis:
-                warn(diagnosis)
-            api_key = get_api_key()
-            if not api_key:
-                api_key = onboard_api_key()
-                if not api_key:
-                    raise SystemExit(0)
+            api_key = _gemini_key_or_exit()
             run_ai_selection_preview(
                 resolved=resolved,
                 project_dir=project_dir,
@@ -1473,14 +1693,7 @@ def _run(
 
     if prompt:
         _enforce_ai_config(project_cfg.ai)
-        diagnosis = diagnose_api_key()
-        if diagnosis:
-            warn(diagnosis)
-        api_key = get_api_key()
-        if not api_key:
-            api_key = onboard_api_key()
-            if not api_key:
-                raise SystemExit(0)
+        api_key = _gemini_key_or_exit()
 
         selected_paths, prompt_txt = run_ai_selection(
             resolved=resolved,
@@ -1500,10 +1713,16 @@ def _run(
             raise SystemExit(1)
 
         resolved.included = selected_paths
+        jsonout.put(
+            "ai",
+            {"prompt": prompt, "selected": [p.relative_to(project_dir).as_posix() for p in selected_paths]},
+        )
 
     # ── Create ZIP ───────────────────────────────────────────────────────────
-    output_path = Path(output).resolve() if output else None
-    run_mode = "git-changes" if git_changes else ("prompt" if prompt else "standard")
+    if output:
+        output_path = Path(output).resolve()
+    else:
+        output_path = fetched.zip_path if fetched is not None else None
 
     try:
         result = create_zip(
@@ -1528,6 +1747,7 @@ def _run(
     print_zip_write_warnings(result)
     print_redaction_summary(result)
     print_package_result(result)
+    jsonout.put("zip", jsonout.package_data(result, project_dir))
 
     # ── Report ───────────────────────────────────────────────────────────────
     report_path = write_scan_report(
@@ -1543,11 +1763,17 @@ def _run(
         skipped_in_zip=result.skipped_in_zip,
     )
     print_report_hint(report_path)
+    jsonout.put("report", str(report_path))
 
     # ── Clipboard ────────────────────────────────────────────────────────────
+    jsonout.put("clipboard", None)
     if not no_clipboard:
         cb = clipboard_handle(result.zip_path)
         print_clipboard_result(cb)
+        jsonout.put("clipboard", jsonout.clipboard_data(cb))
+
+    if fetched is not None:
+        info("This is a copy of the repo at that commit. To apply the AI's changes, package from a clone and run contextzip apply-zip there.")
 
     # ── Auto-cleanup ─────────────────────────────────────────────────────────
     _auto_cleanup(project_dir, project_cfg)

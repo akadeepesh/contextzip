@@ -1,6 +1,6 @@
 """contextzip — intelligent codebase packager for AI tools."""
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 from contextzip.api import (
     FileCollection,
@@ -10,11 +10,13 @@ from contextzip.api import (
     GitCommandError,
     NoFilesError,
     ZipNotFoundError,
+    RemoteFetchError,
     get_git_changes,
     get_files,
     create_zip,
     apply_zip,
     detect_ecosystem,
+    fetch_remote,
 )
 from contextzip.packager import PackageResult
 from contextzip.applier import ApplyResult
@@ -26,6 +28,7 @@ __all__ = [
     "create_zip",
     "apply_zip",
     "detect_ecosystem",
+    "fetch_remote",
     # Data types
     "FileCollection",
     "PackageResult",
@@ -37,4 +40,5 @@ __all__ = [
     "GitCommandError",
     "NoFilesError",
     "ZipNotFoundError",
+    "RemoteFetchError",
 ]

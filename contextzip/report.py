@@ -17,6 +17,7 @@ from pathlib import Path
 
 from contextzip.filters import summarise_exclusions
 from contextzip.cli_display import human_size
+from contextzip.tokens import estimate_tokens, format_tokens
 from contextzip.applier import inbox_dir
 
 
@@ -68,10 +69,12 @@ def write_scan_report(
 
     total = len(resolved.included) + len(resolved.excluded)
     included_size = sum(p.stat().st_size for p in resolved.included if p.exists())
+    binary = set(resolved.binary_files)
+    text_size = sum(p.stat().st_size for p in resolved.included if p not in binary and p.exists())
     w("Files")
     if mode != "git-changes":
         w(f"  scanned  : {total + len(resolved.skipped)}")
-    w(f"  included : {len(resolved.included)} ({human_size(included_size)})")
+    w(f"  included : {len(resolved.included)} ({human_size(included_size)}, {format_tokens(estimate_tokens(text_size))})")
     if mode != "git-changes":
         w(f"  excluded : {len(resolved.excluded)}")
     if resolved.skipped:

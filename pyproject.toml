@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "contextzip"
-version = "0.5.4"
+version = "0.5.5"
 description = "Intelligently package your codebase for AI tools"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -32,6 +32,10 @@ dependencies = [
     "pathspec>=0.12",
     "httpx>=0.27",
 ]
+
+[project.optional-dependencies]
+# `contextzip mcp`: contextzip as an MCP server for AI agents.
+mcp = ["mcp>=2.3,<3; python_version >= '3.10'"]
 
 [project.urls]
 Homepage = "https://www.contextzipcli.com"

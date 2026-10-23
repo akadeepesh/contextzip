@@ -1303,6 +1303,40 @@ def _ago(seconds: float) -> str:
     return "just now"
 
 
+@main.command("mcp")
+def cmd_mcp() -> None:
+    """
+    Run contextzip as an MCP server (stdio), for AI agents and editors.
+
+    
+    Needs the optional extra, on Python 3.10 or newer:
+      pip install "contextzip[mcp]"
+
+    
+    Then register it in your MCP client, for example:
+      {"mcpServers": {"contextzip": {"command": "contextzip", "args": ["mcp"]}}}
+
+    
+    Tools: package_project, package_repository, preview_apply,
+    apply_changes (safe changes by default), open_pull_request (a dry run
+    by default) and list_snapshots. Each returns the same JSON as --json.
+    """
+    import sys
+
+    try:
+        from contextzip.mcp_server import serve
+
+        import mcp.server.mcpserver  # noqa: F401  (fail here, with a clear message, if it's missing)
+    except ImportError:
+        console_err = Console(stderr=True)
+        if sys.version_info < (3, 10):
+            console_err.print("[red]✗[/] The MCP server needs Python 3.10 or newer (this is " + sys.version.split()[0] + ").")
+        else:
+            console_err.print('[red]✗[/] The MCP server is an optional extra. Install it with: pip install "contextzip[mcp]"')
+        raise SystemExit(1)
+    serve()
+
+
 @main.command("setup-path")
 @click.option(
     "--yes",

@@ -110,7 +110,10 @@ def _ancestors(start: Path) -> list[Path]:
 def is_git_root(path: Path) -> bool:
     """True if *path* has a .git folder or a .git file (worktree/submodule)."""
     marker = path / ".git"
-    return marker.is_dir() or marker.is_file()
+    try:
+        return marker.is_dir() or marker.is_file()
+    except OSError:  # a folder we may not look inside, e.g. /tmp/systemd-private-*
+        return False
 
 
 def find_git_root(start: Path) -> Path | None:
@@ -174,7 +177,10 @@ _GENERIC_PARENTS = {
 
 
 def _is_project(folder: Path) -> bool:
-    return is_git_root(folder) or any((folder / m).is_file() for m in _PROJECT_MARKERS)
+    try:
+        return is_git_root(folder) or any((folder / m).is_file() for m in _PROJECT_MARKERS)
+    except OSError:
+        return False
 
 
 def _suggest_parent(root: Path) -> Path | None:

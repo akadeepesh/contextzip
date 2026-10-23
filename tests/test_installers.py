@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 from unittest import mock
 
@@ -90,8 +91,8 @@ def can_symlink(where: Path) -> bool:
 
 class MaterializeSymlinksTests(TempProject):
     def test_macos_framework_links_become_copies(self):
-        if not can_symlink(self.tmp):
-            self.skipTest("this system doesn't allow creating symlinks")
+        if os.name == "nt" or not can_symlink(self.tmp):
+            self.skipTest("only macOS builds have symlinks to replace")
         app = self.tmp / "contextzip"
         version = app / "_internal" / "Python.framework" / "Versions" / "3.12"
         (version / "Resources").mkdir(parents=True)

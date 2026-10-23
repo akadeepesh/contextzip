@@ -101,6 +101,23 @@ PR titles should follow the format:
 
 ---
 
+## Versions and releases
+
+A version is set in four places, which must always agree (a test checks this): `contextzip/__init__.py`, `pyproject.toml`, `npm/cli/package.json` (`version` and every `optionalDependencies` entry) and the example in the `contextzip/jsonout.py` docstring.
+
+Publishing a GitHub release for a tag `vX.Y.Z` runs two workflows:
+
+- `python-publish.yml` checks the tag against the version and publishes to PyPI.
+- `binaries.yml` builds the standalone binary on every target in `installers/targets.json`, smoke-tests each one, attaches the archives and `SHA256SUMS` to the release, publishes `@contextzip/cli` and its platform packages to npm (`NPM_TOKEN`), and updates the Homebrew tap and Scoop bucket (`HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN`). Steps whose secret isn't set are skipped.
+
+To build and smoke-test the binary for your own machine:
+
+```bash
+python -m pip install . pyinstaller==6.22.3
+python installers/build_binary.py
+node npm/scripts/assemble.mjs --artifacts dist/release --out dist/npm --allow-missing
+```
+
 ## Code style
 
 - Follow the existing patterns in the codebase — each module has a clear single responsibility

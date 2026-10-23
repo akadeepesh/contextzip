@@ -1,0 +1,7 @@
+[
+  { "target": "win32-x64", "os": "win32", "cpu": "x64", "runner": "windows-latest" },
+  { "target": "darwin-arm64", "os": "darwin", "cpu": "arm64", "runner": "macos-15" },
+  { "target": "darwin-x64", "os": "darwin", "cpu": "x64", "runner": "macos-15-intel" },
+  { "target": "linux-x64", "os": "linux", "cpu": "x64", "runner": "ubuntu-22.04" },
+  { "target": "linux-arm64", "os": "linux", "cpu": "arm64", "runner": "ubuntu-22.04-arm" }
+]

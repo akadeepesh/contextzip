@@ -1142,3 +1142,34 @@ This project uses [Semantic Versioning](https://semver.org/).
   upload it.
 - Python API: `fetch_remote()` and `RemoteFetchError`.
   `PackageResult.estimated_tokens`.
+
+---
+
+## [0.5.3] — Unreleased
+
+### Added
+- **Standalone builds: contextzip without Python.** Every release now
+  includes a ready-to-run build for Windows x64, macOS (Apple Silicon and
+  Intel) and Linux x64/arm64:
+  - **npm:** `npm install -g @contextzip/cli`, or `npx @contextzip/cli` to
+    try it. npm installs only the build for your machine.
+  - **Homebrew:** `brew install akadeepesh/tap/contextzip`.
+  - **Scoop:** `scoop bucket add contextzip https://github.com/akadeepesh/scoop-bucket`,
+    then `scoop install contextzip`.
+  - **Download:** archives and `SHA256SUMS` are attached to each GitHub
+    release.
+  - Each build is smoke-tested in CI before it's published: it packages a
+    project and applies a reply.
+- `contextzip update` and `setup-path` recognise a standalone build and
+  print the npm, Homebrew or Scoop command to use instead of running pip.
+- The README lists zero-install options: `npx @contextzip/cli`,
+  `uvx contextzip` and `pipx run contextzip`.
+
+### Developer notes
+- `installers/build_binary.py` builds a PyInstaller one-folder app in UTF-8
+  mode and smoke-tests it. `npm/scripts/assemble.mjs` turns the archives
+  into npm packages. `installers/manifests.py` writes the Homebrew formula
+  and Scoop manifest. `installers/targets.json` is the single list of
+  targets, and `.github/workflows/binaries.yml` runs it all.
+- The version now also lives in `npm/cli/package.json`; a test keeps all
+  copies in sync.

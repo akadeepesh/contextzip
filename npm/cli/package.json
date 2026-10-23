@@ -1,0 +1,30 @@
+{
+  "name": "@contextzip/cli",
+  "version": "0.5.3",
+  "description": "Package exactly the right parts of your codebase for any AI tool, in one command. Then write the AI's changes back.",
+  "keywords": ["ai", "cli", "context", "zip", "llm", "claude", "chatgpt", "codebase"],
+  "homepage": "https://www.contextzipcli.com",
+  "bugs": "https://github.com/akadeepesh/contextzip/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akadeepesh/contextzip.git",
+    "directory": "npm/cli"
+  },
+  "license": "MIT",
+  "author": "Deepesh",
+  "bin": {
+    "contextzip": "bin/contextzip.js",
+    "cz": "bin/contextzip.js"
+  },
+  "files": ["bin/"],
+  "engines": {
+    "node": ">=16"
+  },
+  "optionalDependencies": {
+    "@contextzip/cli-win32-x64": "0.5.3",
+    "@contextzip/cli-darwin-arm64": "0.5.3",
+    "@contextzip/cli-darwin-x64": "0.5.3",
+    "@contextzip/cli-linux-x64": "0.5.3",
+    "@contextzip/cli-linux-arm64": "0.5.3"
+  }
+}

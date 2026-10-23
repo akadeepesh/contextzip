@@ -1,0 +1,183 @@
+name: Binaries
+
+# Standalone builds (no Python needed) for npm, Homebrew, Scoop and direct
+# download. Pull requests that touch packaging build and smoke-test every
+# target; a published release also uploads the archives, publishes to npm
+# and updates the Homebrew tap and Scoop bucket.
+#
+# Secrets, all optional until release day:
+#   NPM_TOKEN            npm automation token that can publish @contextzip/*
+#   HOMEBREW_TAP_TOKEN   token with push access to akadeepesh/homebrew-tap
+#   SCOOP_BUCKET_TOKEN   token with push access to akadeepesh/scoop-bucket
+# A step whose secret is missing is skipped, never failed.
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - "installers/**"
+      - "npm/**"
+      - ".github/workflows/binaries.yml"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targets:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.read.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: echo "matrix=$(jq -c . installers/targets.json)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: targets
+    name: build · ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: python -m pip install . pyinstaller==6.22.3
+
+      - name: Build and smoke-test
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            python installers/build_binary.py --target ${{ matrix.target }} --expect-version "${{ github.event.release.tag_name }}"
+          else
+            python installers/build_binary.py --target ${{ matrix.target }}
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/release/*
+          if-no-files-found: error
+
+  npm:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: dist/release
+          merge-multiple: true
+
+      - name: Assemble packages
+        run: node npm/scripts/assemble.mjs --artifacts dist/release --out dist/npm
+
+      - name: Pack and run through the launcher
+        run: |
+          for d in dist/npm/*/; do (cd "$d" && npm pack --pack-destination ..); done
+          mkdir -p /tmp/npmtest && cd /tmp/npmtest && npm init -y > /dev/null
+          npm install --no-audit --no-fund "$GITHUB_WORKSPACE"/dist/npm/contextzip-cli-linux-x64-*.tgz "$GITHUB_WORKSPACE"/dist/npm/contextzip-cli-[0-9]*.tgz
+          ./node_modules/.bin/cz --version
+          ./node_modules/.bin/contextzip --help > /dev/null
+
+      - name: Publish to npm
+        if: github.event_name == 'release'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "NPM_TOKEN isn't set — skipping npm publish"; exit 0; fi
+          # Platform packages first, so @contextzip/cli never points at a missing version.
+          for d in dist/npm/cli-*/; do (cd "$d" && npm publish --access public --provenance); done
+          (cd dist/npm/cli && npm publish --access public --provenance)
+
+  release-assets:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: dist/release
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist/release
+        run: sha256sum contextzip-* > SHA256SUMS && cat SHA256SUMS
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/release/* --clobber --repo "${{ github.repository }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: dist/release/SHA256SUMS
+
+  package-managers:
+    if: github.event_name == 'release'
+    needs: release-assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: checksums
+          path: dist/release
+
+      - name: Write the Homebrew formula and Scoop manifest
+        run: python installers/manifests.py --version "${{ github.event.release.tag_name }}" --checksums dist/release/SHA256SUMS --out dist/manifests
+
+      - name: Attach them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/manifests/* --clobber --repo "${{ github.repository }}"
+
+      - name: Update the Homebrew tap
+        env:
+          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "HOMEBREW_TAP_TOKEN isn't set — skipping"; exit 0; fi
+          git clone "https://x-access-token:${TOKEN}@github.com/akadeepesh/homebrew-tap.git" tap
+          mkdir -p tap/Formula && cp dist/manifests/contextzip.rb tap/Formula/contextzip.rb
+          cd tap && git config user.name "contextzip release" && git config user.email "actions@github.com"
+          git add Formula/contextzip.rb && git commit -m "contextzip ${{ github.event.release.tag_name }}" && git push
+
+      - name: Update the Scoop bucket
+        env:
+          TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "SCOOP_BUCKET_TOKEN isn't set — skipping"; exit 0; fi
+          git clone "https://x-access-token:${TOKEN}@github.com/akadeepesh/scoop-bucket.git" bucket
+          mkdir -p bucket/bucket && cp dist/manifests/contextzip.json bucket/bucket/contextzip.json
+          cd bucket && git config user.name "contextzip release" && git config user.email "actions@github.com"
+          git add bucket/contextzip.json && git commit -m "contextzip ${{ github.event.release.tag_name }}" && git push

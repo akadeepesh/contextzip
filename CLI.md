@@ -286,6 +286,8 @@ cz update                    # same thing, short alias
 
 It detects whether contextzip was installed with pip, pipx or uv tool and re-runs the matching one, upgrading the same interpreter that is currently running (never a different `pip` that happens to be first on your `PATH`). The manual equivalent is `pip install --upgrade contextzip`.
 
+A standalone build (from npm, Homebrew, Scoop or a downloaded archive) has no pip to call, so `update` prints the command for the tool that installed it instead: `npm install -g @contextzip/cli@latest`, `brew upgrade contextzip` or `scoop update contextzip`. `setup-path` likewise explains that the installer manages PATH.
+
 ## `contextzip setup-path`
 
 Put the `cz` and `contextzip` commands on your PATH. Use it when your terminal says `cz` is not recognized or not found after `pip install contextzip`. That happens when pip installs the commands into a folder that isn't on PATH, which is common with the Microsoft Store or install-manager Python on Windows and with `pip install --user`.

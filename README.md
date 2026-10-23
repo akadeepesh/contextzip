@@ -414,6 +414,7 @@ pkg = create_zip(get_files(repo.project_dir), output=repo.zip_path)
 | `apply_zip(zip_path=None, …)` | `ApplyResult` describing what was written |
 | `detect_ecosystem(path=None)` | Detected ecosystem information |
 | `fetch_remote(target, ref=None)` | `FetchedRemote`: a GitHub repo unpacked into the cache (`project_dir`, `sha`, `zip_path`) |
+| `web.run(args, cwd=None)` | Any CLI command's `--json` result as a dict, without printing or prompting (used in the browser via Pyodide, and on servers) |
 
 All exceptions inherit from `ContextzipError`: `NotARepositoryError`, `GitNotFoundError`, `GitCommandError`, `NoFilesError`, `ZipNotFoundError` and `RemoteFetchError`.
 

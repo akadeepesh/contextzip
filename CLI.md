@@ -18,6 +18,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 - [`contextzip setup-path`](#contextzip-setup-path)
 - [Global flags](#global-flags)
 - [JSON output](#json-output)
+- [In a browser or on a server](#in-a-browser-or-on-a-server)
 - [Where files go](#where-files-go)
 
 ## Quick reference
@@ -330,6 +331,27 @@ Every object has `ok`, `command`, `version`, `warnings` (strings) and `log` (eac
 | `contextzip`, `include`, `exclude` | `mode`, `dry_run`, `project` (`root`, `kind`), `remote` (with `--from`), `detection`, `files` (counts, `included_bytes`, `estimated_tokens`, `included_files`, warnings; `excluded_files` with `--verbose`), `ai` (with `--prompt`), `zip` (path, sizes, `estimated_tokens`, `snapshot`, `redacted`; `null` on a dry run), `report`, `clipboard` |
 | `apply-zip` | `project`, `plan` (`snapshot`, `remap`, `needs_decision`, `counts`, and `files`: each with `path`, `source`, `status`, `safe`, `reason`, `moved_from`, …), `result` (`written`, `skipped`, `removed`, `zip_kept`, `archived_to`; `null` when nothing was written), `report` |
 | `snapshots` | `project`, `snapshots` (`id`, `token`, `label`, `mode`, `files`, `status`, `created`) |
+
+When `--from` can't fetch a repository, the result also has `error_kind`: `invalid`, `not_found`, `private`, `too_big`, `rate_limited`, `auth` or `unavailable`.
+
+## In a browser or on a server
+
+`contextzip.web.run(args, cwd)` runs any command above and returns its `--json` result as a dict, without printing, prompting or exiting. It's how contextzipcli.com runs the real contextzip in the browser through [Pyodide](https://pyodide.org), so a dropped folder is packaged (and a reply applied) with exactly the CLI's rules:
+
+```python
+from contextzip.web import run
+
+result = run(["--no-clipboard"], cwd="/project")
+run(["apply-zip", "/reply.zip", "--safe-only"], cwd="/project")
+```
+
+`contextzip.service.app` is a WSGI app that packages **public** GitHub repositories for anyone: `?repo=github.com/user/repo[&ref=…][&format=json]` returns the ZIP, or a JSON summary of what's in it. It checks with GitHub that every repository is public (so a server token can never expose private ones), caps downloads at 100 MB, rate-limits each client, and never returns server paths. To deploy it on Vercel, `api/pack.py` is just:
+
+```python
+from contextzip.service import app
+```
+
+Settings: `GITHUB_TOKEN` (optional, for GitHub's higher rate limit; prefer one that can only read public repositories), `CONTEXTZIP_REMOTE_MAX_MB`, `CONTEXTZIP_SERVICE_RATE` (requests per client per minute, default 20) and `CONTEXTZIP_CACHE_DIR`.
 
 ## Where files go
 

@@ -31,7 +31,7 @@
     "upload"
   ],
   "contextzip": {
-    "cliVersion": "0.5.3"
+    "cliVersion": "0.5.4"
   },
   "main": "./out/src/extension.js",
   "activationEvents": [

@@ -40,6 +40,9 @@ API_URL = "https://api.github.com"
 HOST = "github.com"
 CACHE_ENV_VAR = "CONTEXTZIP_CACHE_DIR"
 MAX_MB_ENV_VAR = "CONTEXTZIP_REMOTE_MAX_MB"
+# Set by a server that fetches on behalf of other people (see service.py):
+# with its own token it could otherwise read that account's private repos.
+PUBLIC_ONLY_ENV_VAR = "CONTEXTZIP_REMOTE_PUBLIC_ONLY"
 DEFAULT_MAX_MB = 250
 # The unpacked tree may be much larger than the gzipped download; this caps
 # it, so a pathological archive can't fill the disk.
@@ -65,7 +68,15 @@ _OTHER_HOSTS = ("gitlab.com", "bitbucket.org", "codeberg.org")
 
 
 class RemoteError(Exception):
-    """A GitHub repository couldn't be fetched. The message is shown as-is."""
+    """
+    A GitHub repository couldn't be fetched. The message is shown as-is;
+    *kind* says why, for callers that map it to something (an HTTP status):
+    invalid, not_found, private, too_big, rate_limited, auth or unavailable.
+    """
+
+    def __init__(self, message: str, kind: str = "unavailable"):
+        super().__init__(message)
+        self.kind = kind
 
 
 @dataclass(frozen=True)
@@ -139,26 +150,26 @@ def parse_target(text: str) -> RemoteSpec:
     elif raw.lower().startswith("git@"):
         host, _, rest = raw[4:].partition(":")
         if host.lower() != HOST:
-            raise RemoteError(_unsupported_host(host))
+            raise RemoteError(_unsupported_host(host), "invalid")
     else:
         rest = re.sub(r"^https?://", "", raw, flags=re.IGNORECASE)
         if rest.lower().startswith("www."):
             rest = rest[4:]
         host, _, rest = rest.partition("/")
         if host.lower() != HOST:
-            raise RemoteError(_unsupported_host(host))
+            raise RemoteError(_unsupported_host(host), "invalid")
 
     rest = re.split(r"[?#]", rest, maxsplit=1)[0]
     segments = [s for s in rest.split("/") if s]
     if len(segments) < 2:
-        raise RemoteError(f"Expected a repository like github.com/owner/repo, got {text!r}")
+        raise RemoteError(f"Expected a repository like github.com/owner/repo, got {text!r}", "invalid")
 
     owner, repo = segments[0], segments[1]
     if repo.lower().endswith(".git"):
         repo = repo[:-4]
     for name in (owner, repo):
         if not _NAME_RE.match(name) or name in (".", ".."):
-            raise RemoteError(f"{name!r} isn't a valid GitHub owner or repository name")
+            raise RemoteError(f"{name!r} isn't a valid GitHub owner or repository name", "invalid")
 
     extra = segments[2:]
     if not extra:
@@ -167,7 +178,8 @@ def parse_target(text: str) -> RemoteSpec:
         return RemoteSpec(owner, repo, tuple(extra[1:]))
     raise RemoteError(
         f"Can't package github.com/{owner}/{repo}/{'/'.join(extra)} — "
-        "use the repository URL, or a /tree/<branch>/<folder> link"
+        "use the repository URL, or a /tree/<branch>/<folder> link",
+        "invalid",
     )
 
 
@@ -261,6 +273,7 @@ def fetch(
     token: str | None = None,
     use_gh_token: bool = True,
     max_bytes: int | None = None,
+    public_only: bool | None = None,
     cache_dir: Path | None = None,
     transport=None,
 ) -> FetchedRemote:
@@ -268,22 +281,27 @@ def fetch(
     Resolve *target* to one commit and make sure it's unpacked in the cache.
 
     *ref* (a branch, tag or commit) overrides the default branch; it can't
-    be combined with a /tree/<ref>/ URL. *transport* is an httpx transport,
-    for tests. Raises RemoteError with a user-facing message on failure.
+    be combined with a /tree/<ref>/ URL. *public_only* refuses private
+    repositories (default: the CONTEXTZIP_REMOTE_PUBLIC_ONLY env var); a
+    server fetching for other people must set it. *transport* is an httpx
+    transport, for tests. Raises RemoteError with a user-facing message.
     """
     import httpx
 
     spec = parse_target(target) if isinstance(target, str) else target
     if ref and spec.tree:
-        raise RemoteError("Give the branch either in the URL (/tree/<branch>) or with --ref, not both")
+        raise RemoteError("Give the branch either in the URL (/tree/<branch>) or with --ref, not both", "invalid")
 
     root = cache_dir or cache_root()
+    if public_only is None:
+        public_only = os.environ.get(PUBLIC_ONLY_ENV_VAR, "").strip().lower() in ("1", "true", "yes")
     if token is None and use_gh_token:
         token = github_token()
     limit = max_bytes or max_download_bytes()
 
-    # A full SHA that's already cached needs no network at all.
-    if ref and _SHA_RE.match(ref.lower()) and not spec.tree:
+    # A full SHA that's already cached needs no network at all (public-only
+    # mode always asks GitHub: visibility can change).
+    if ref and _SHA_RE.match(ref.lower()) and not spec.tree and not public_only:
         hit = _cached(spec, ref.lower(), ref, None, root)
         if hit is not None:
             return hit
@@ -292,6 +310,8 @@ def fetch(
     api_headers = {**headers, **({"Authorization": f"Bearer {token}"} if token else {})}
 
     with httpx.Client(timeout=_TIMEOUT, transport=transport, headers=headers) as client:
+        if public_only:
+            _require_public(client, api_headers, spec, has_token=bool(token))
         sha, ref, subdir = _resolve(client, api_headers, spec, ref, has_token=bool(token))
 
         hit = _cached(spec, sha, ref, subdir, root)
@@ -344,7 +364,7 @@ def _cached(spec: RemoteSpec, sha: str, ref: str | None, subdir: str | None, roo
 def _fetched(spec: RemoteSpec, sha: str, ref: str | None, subdir: str | None, entry: Path, *, cached: bool) -> FetchedRemote:
     project_dir = entry / spec.repo
     if subdir and not (project_dir / subdir).exists():
-        raise RemoteError(f"{subdir} doesn't exist in {spec.slug} at {sha[:7]}")
+        raise RemoteError(f"{subdir} doesn't exist in {spec.slug} at {sha[:7]}", "not_found")
     return FetchedRemote(
         spec=spec,
         sha=sha,
@@ -377,6 +397,23 @@ def _resolve(client, api_headers: dict, spec: RemoteSpec, ref: str | None, *, ha
     raise AssertionError("unreachable")
 
 
+def _require_public(client, api_headers: dict, spec: RemoteSpec, *, has_token: bool) -> None:
+    resp = _get(client, f"{API_URL}/repos/{spec.owner}/{spec.repo}", api_headers)
+    if resp.status_code == 404:
+        raise RemoteError(f"Repository {spec.slug} not found (only public repositories can be packaged here)", "not_found")
+    _raise_for_status(resp, spec, has_token=has_token)
+    try:
+        private = bool(resp.json().get("private", True))
+    except ValueError:
+        private = True
+    if private:
+        raise RemoteError(
+            f"{spec.slug} is private. Only public repositories can be packaged here; "
+            "for a private one, use the contextzip CLI with your own GitHub token.",
+            "private",
+        )
+
+
 def _commit_sha(client, api_headers: dict, spec: RemoteSpec, ref: str, *, has_token: bool) -> str | None:
     url = f"{API_URL}/repos/{spec.owner}/{spec.repo}/commits/{quote(ref, safe='')}"
     resp = _get(client, url, {**api_headers, "Accept": "application/vnd.github.sha"})
@@ -400,11 +437,11 @@ def _raise_not_found(client, api_headers: dict, spec: RemoteSpec, ref: str | Non
             if has_token
             else "If it's private, set GITHUB_TOKEN or sign in with `gh auth login`."
         )
-        raise RemoteError(f"Repository {spec.slug} not found. {hint}")
+        raise RemoteError(f"Repository {spec.slug} not found. {hint}", "not_found")
     _raise_for_status(resp, spec, has_token=has_token)
     if ref:
-        raise RemoteError(f"No branch, tag or commit {ref!r} in {spec.slug}")
-    raise RemoteError(f"{spec.slug} has no commits yet")
+        raise RemoteError(f"No branch, tag or commit {ref!r} in {spec.slug}", "not_found")
+    raise RemoteError(f"{spec.slug} has no commits yet", "not_found")
 
 
 def _get(client, url: str, headers: dict):
@@ -421,7 +458,7 @@ def _raise_for_status(resp, spec: RemoteSpec, *, has_token: bool) -> None:
     if code < 400:
         return
     if code == 401:
-        raise RemoteError("GitHub rejected the token (401). Check GITHUB_TOKEN, or run `gh auth login` again.")
+        raise RemoteError("GitHub rejected the token (401). Check GITHUB_TOKEN, or run `gh auth login` again.", "auth")
     if code in (403, 429) and resp.headers.get("x-ratelimit-remaining") == "0":
         reset = resp.headers.get("x-ratelimit-reset", "")
         when = ""
@@ -429,9 +466,9 @@ def _raise_for_status(resp, spec: RemoteSpec, *, has_token: bool) -> None:
             minutes = max(1, round((int(reset) - time.time()) / 60))
             when = f" Try again in about {minutes} minute{'s' if minutes != 1 else ''}."
         hint = "" if has_token else " Set GITHUB_TOKEN or sign in with `gh auth login` for a higher limit."
-        raise RemoteError(f"GitHub's API rate limit was reached.{when}{hint}")
+        raise RemoteError(f"GitHub's API rate limit was reached.{when}{hint}", "rate_limited")
     if code == 403:
-        raise RemoteError(f"GitHub refused access to {spec.slug} (403).")
+        raise RemoteError(f"GitHub refused access to {spec.slug} (403).", "auth")
     raise RemoteError(f"GitHub returned {code} for {spec.slug}")
 
 
@@ -460,12 +497,12 @@ def _download(client, api_headers: dict, spec: RemoteSpec, sha: str, dest: Path,
                 raise RemoteError(f"Downloading {spec.slug} failed ({stream.status_code})")
             declared = stream.headers.get("content-length", "")
             if declared.isdigit() and int(declared) > limit:
-                raise RemoteError(_too_big(spec, limit))
+                raise RemoteError(_too_big(spec, limit), "too_big")
             with dest.open("wb") as fh:
                 for chunk in stream.iter_bytes():
                     written += len(chunk)
                     if written > limit:
-                        raise RemoteError(_too_big(spec, limit))
+                        raise RemoteError(_too_big(spec, limit), "too_big")
                     fh.write(chunk)
     except httpx.HTTPError as exc:
         raise RemoteError(f"Downloading {spec.slug} failed: {exc}") from None
@@ -543,7 +580,8 @@ def _unpack(archive: Path, entry: Path, project_dir: Path, max_total: int) -> li
                 if total > max_total:
                     raise RemoteError(
                         f"The unpacked repository is larger than {max_total // (1024 * 1024)} MB. "
-                        "Clone it and package locally instead."
+                        "Clone it and package locally instead.",
+                        "too_big",
                     )
                 src = tar.extractfile(member)
                 if src is None:

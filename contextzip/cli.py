@@ -28,7 +28,7 @@ from contextzip.filters import (
     resolve_files_from_git,
 )
 from contextzip.git import get_changed_files, GitError
-from contextzip.packager import create_zip
+from contextzip.packager import create_zip, create_zip_silent
 from contextzip.clipboard import handle as clipboard_handle
 from contextzip.project_config import (
     load_project_config,
@@ -37,6 +37,7 @@ from contextzip.project_config import (
 )
 
 from contextzip.cli_display import (
+    status,
     ok,
     warn,
     err,
@@ -613,7 +614,7 @@ def _apply_zip(
             raise SystemExit(1)
 
     try:
-        with console.status("[cyan]Matching files and comparing versions…[/]", spinner="dots"):
+        with status("[cyan]Matching files and comparing versions…[/]"):
             plan = build_plan(resolved_zip, project_dir, explicit_manifest)
     except ApplyError as exc:
         err(str(exc))
@@ -891,7 +892,7 @@ def cmd_watch(command: tuple[str, ...]) -> None:
 
     console.print()
 
-    with console.status("[cyan]Detecting project ecosystem…[/]", spinner="dots"):
+    with status("[cyan]Detecting project ecosystem…[/]"):
         detection = detect(project_dir)
 
     print_detection(detection)
@@ -981,7 +982,7 @@ def cmd_config(
         from contextzip.webui.server import launch_config_ui
 
         project_dir = _resolve_root().root
-        with console.status("[cyan]Detecting project ecosystem…[/]", spinner="dots"):
+        with status("[cyan]Detecting project ecosystem…[/]"):
             detection = _detect(project_dir)
         launch_config_ui(project_dir, detection, con=console)
         return
@@ -1147,18 +1148,18 @@ def _list_snapshots() -> None:
     for s in found:
         data = s.load()
         files = len(data.get("files", {}))
-        status = data.get("status", "pending")
+        state = data.get("status", "pending")
         mode = {"standard": "codebase", "git-changes": "changes", "prompt": "prompt"}.get(data.get("mode", ""), data.get("mode", "?"))
         age = _ago(now - snaps.created_ts(s))
         session = jsonout.active()
         if session is not None:
             session.data["snapshots"].append(
                 {"id": s.id, "token": s.token, "label": s.label, "mode": mode, "files": files,
-                 "status": status, "created": snaps.created_ts(s)}
+                 "status": state, "created": snaps.created_ts(s)}
             )
-        colour = "green" if status == "applied" else "dim"
+        colour = "green" if state == "applied" else "dim"
         console.print(
-            f"  [bold]#{s.id:<4}[/] [dim]{s.token}[/]  {mode:<9} {files:>5} files  {age:>12}   [{colour}]{status}[/]"
+            f"  [bold]#{s.id:<4}[/] [dim]{s.token}[/]  {mode:<9} {files:>5} files  {age:>12}   [{colour}]{state}[/]"
         )
     console.print()
 
@@ -1314,7 +1315,7 @@ def cmd_update(check_only: bool, yes: bool) -> None:
     manual = binary.update_command if binary else "pip install --upgrade contextzip"
 
     console.print()
-    with console.status("[cyan]Checking for updates…[/]", spinner="dots"):
+    with status("[cyan]Checking for updates…[/]"):
         check = updater_mod.check_latest_version()
 
     if check.latest is None:
@@ -1349,7 +1350,7 @@ def cmd_update(check_only: bool, yes: bool) -> None:
             console.print()
             return
 
-    with console.status(f"[cyan]Updating to {check.latest}…[/]", spinner="dots"):
+    with status(f"[cyan]Updating to {check.latest}…[/]"):
         result = updater_mod.run_update()
 
     console.print()
@@ -1494,9 +1495,10 @@ def _fetch_remote(target: str, ref: str | None):
 
     try:
         spec = remote_mod.parse_target(target)
-        with console.status(f"[cyan]Fetching {spec.slug} from GitHub…[/]", spinner="dots"):
+        with status(f"[cyan]Fetching {spec.slug} from GitHub…[/]"):
             fetched = remote_mod.fetch(spec, ref)
     except remote_mod.RemoteError as exc:
+        jsonout.put("error_kind", exc.kind)
         err(str(exc))
         raise SystemExit(1)
 
@@ -1593,7 +1595,7 @@ def _package(
         )
 
     # ── Detection ────────────────────────────────────────────────────────────
-    with console.status("[cyan]Detecting project ecosystem…[/]", spinner="dots"):
+    with status("[cyan]Detecting project ecosystem…[/]"):
         detection = detect(project_dir)
 
     print_detection(detection)
@@ -1621,7 +1623,7 @@ def _package(
 
     # ── Git-changes mode ─────────────────────────────────────────────────────
     if git_changes:
-        with console.status("[cyan]Querying git for changed files…[/]", spinner="dots"):
+        with status("[cyan]Querying git for changed files…[/]"):
             git_result = get_changed_files(project_dir)
 
         if isinstance(git_result, GitError):
@@ -1638,7 +1640,7 @@ def _package(
         if verbose:
             print_git_verbose_files(git_result)
 
-        with console.status("[cyan]Checking git-changed files…[/]", spinner="dots"):
+        with status("[cyan]Checking git-changed files…[/]"):
             resolved = resolve_files_from_git(
                 git_files=git_result.files,
                 project_dir=project_dir,
@@ -1654,7 +1656,7 @@ def _package(
         # ── Build exclusion spec ─────────────────────────────────────────────
         gitignore_path = None if no_gitignore else (project_dir / ".gitignore")
 
-        with console.status("[cyan]Building exclusion rules…[/]", spinner="dots"):
+        with status("[cyan]Building exclusion rules…[/]"):
             spec = build_spec(
                 rule_modules=detection.rule_modules,
                 extra_exclude=normalized_exclude if normalized_exclude else None,
@@ -1662,7 +1664,7 @@ def _package(
             )
 
         # ── Resolve files ─────────────────────────────────────────────────────
-        with console.status("[cyan]Scanning project files…[/]", spinner="dots"):
+        with status("[cyan]Scanning project files…[/]"):
             resolved = resolve_files(
                 project_dir=project_dir,
                 spec=spec,
@@ -1747,18 +1749,21 @@ def _package(
     else:
         output_path = fetched.zip_path if fetched is not None else None
 
+    zip_options = dict(
+        resolve_result=resolved,
+        project_dir=project_dir,
+        output_path=output_path,
+        mode=run_mode,
+        prompt_txt=prompt_txt,
+        redact_secrets_enabled=project_cfg.limits.redact_secrets,
+        ecosystem=detection.display_name,
+        guide=project_cfg.zip_guide,
+    )
     try:
-        result = create_zip(
-            resolve_result=resolved,
-            project_dir=project_dir,
-            output_path=output_path,
-            console=console,
-            mode=run_mode,
-            prompt_txt=prompt_txt,
-            redact_secrets_enabled=project_cfg.limits.redact_secrets,
-            ecosystem=detection.display_name,
-            guide=project_cfg.zip_guide,
-        )
+        if jsonout.active() is not None:
+            result = create_zip_silent(**zip_options)  # no progress bar to draw
+        else:
+            result = create_zip(console=console, **zip_options)
     except Exception as exc:
         err(f"Failed to create ZIP: {exc}")
         raise SystemExit(1)

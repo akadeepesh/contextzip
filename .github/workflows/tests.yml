@@ -36,3 +36,30 @@ jobs:
 
       - name: Run tests
         run: python -m unittest discover -s tests -t . -v
+
+  pyodide:
+    # contextzipcli.com runs contextzip in the browser through Pyodide;
+    # this proves the real wheel packages and applies there.
+    name: Pyodide (browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: pyodide/package-lock.json
+
+      - name: Build the wheel
+        run: python -m pip wheel . --no-deps -w dist/wheel
+
+      - name: Package and apply inside Pyodide
+        working-directory: pyodide
+        run: |
+          npm ci
+          node smoke.mjs ../dist/wheel/contextzip-*.whl

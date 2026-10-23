@@ -1,0 +1,12 @@
+{
+  "name": "contextzip-pyodide-smoke",
+  "private": true,
+  "description": "Checks that contextzip runs inside Pyodide, the way contextzipcli.com runs it in the browser.",
+  "type": "module",
+  "scripts": {
+    "smoke": "node smoke.mjs"
+  },
+  "devDependencies": {
+    "pyodide": "314.0.7"
+  }
+}

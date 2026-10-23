@@ -14,7 +14,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from contextzip.cli_display import print_ai_selection, err, warn, info
+from contextzip.cli_display import print_ai_selection, err, warn, info, status
 from contextzip.filters import normalize_pattern  # noqa: F401  (re-exported for cli.py)
 
 console = Console()
@@ -52,7 +52,7 @@ def run_ai_selection(
     from contextzip.ai.selector import ai_select, USED_HEURISTIC
     from contextzip.ai.gemini import GeminiError
 
-    with con.status("[cyan]Asking Gemini to select relevant files…[/]", spinner="dots"):
+    with status("[cyan]Asking Gemini to select relevant files…[/]", con=con):
         try:
             selected_paths, prompt_txt, method = ai_select(
                 resolved=resolved,
@@ -96,7 +96,7 @@ def run_ai_selection_preview(
     from contextzip.ai.selector import ai_select, USED_HEURISTIC
     from contextzip.ai.gemini import GeminiError
 
-    with con.status("[cyan]Asking Gemini to select relevant files…[/]", spinner="dots"):
+    with status("[cyan]Asking Gemini to select relevant files…[/]", con=con):
         try:
             selected_paths, _, method = ai_select(
                 resolved=resolved,

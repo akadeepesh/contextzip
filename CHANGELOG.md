@@ -1165,6 +1165,14 @@ This project uses [Semantic Versioning](https://semver.org/).
 - The README lists zero-install options: `npx @contextzip/cli`,
   `uvx contextzip` and `pipx run contextzip`.
 
+### Fixed
+- Running contextzip from a project directly inside `/tmp` on Linux crashed
+  with `PermissionError`. The check for sibling project folders tripped over
+  unreadable ones such as `/tmp/systemd-private-*`, and now skips them.
+- The macOS standalone build contains no symlinks, which npm packages and
+  VS Code extensions can't hold. They're replaced with copies, and the
+  build is smoke-tested after that.
+
 ### Developer notes
 - `installers/build_binary.py` builds a PyInstaller one-folder app in UTF-8
   mode and smoke-tests it. `npm/scripts/assemble.mjs` turns the archives

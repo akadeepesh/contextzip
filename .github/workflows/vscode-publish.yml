@@ -1,7 +1,9 @@
 name: Publish VS Code extension
 
 # Push a tag vscode-vX.Y.Z (matching vscode/package.json) to publish the
-# extension. It bundles the contextzip CLI named in package.json's
+# extension. Every run also attaches the .vsix files (one per platform, plus a
+# universal one) to a GitHub release for that tag, for uploading to the
+# VS Code Marketplace by hand when there's no VSCE_PAT. It bundles the contextzip CLI named in package.json's
 # "contextzip.cliVersion", taken from that CLI release's assets, so publish
 # the CLI release first.
 #
@@ -14,7 +16,7 @@ on:
     tags: ["vscode-v*"]
 
 permissions:
-  contents: read
+  contents: write # the GitHub release with the .vsix files
 
 jobs:
   publish:
@@ -65,6 +67,32 @@ jobs:
         run: |
           if [ -z "$OVSX_PAT" ]; then echo "OVSX_PAT isn't set — skipping Open VSX"; exit 0; fi
           for f in ../dist/vscode/*.vsix; do npx ovsx publish "$f" -p "$OVSX_PAT"; done
+
+      - name: Attach the .vsix files to a GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          # This version's section of vscode/CHANGELOG.md, then how to upload.
+          node -e '
+            const [v] = process.argv.slice(1);
+            const part = require("fs").readFileSync("CHANGELOG.md", "utf8").split(/^## /m).find((p) => p.startsWith(`[${v}]`));
+            console.log(part ? part.split("\n").slice(1).join("\n").trim() : "");
+          ' "$VERSION" > ../dist/vsix-notes.md
+          cat >> ../dist/vsix-notes.md <<EOF
+
+          ### Uploading to the VS Code Marketplace
+
+          On marketplace.visualstudio.com/manage, upload contextzip-win32-x64-$VERSION.vsix (New extension, or … → Update
+          on the extension), then each other platform's file the same way, and contextzip-$VERSION.vsix (the universal
+          fallback) last.
+          EOF
+          # Never "Latest": that stays the CLI's release.
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --latest=false \
+              --title "contextzip for VS Code $VERSION" --notes-file ../dist/vsix-notes.md
+          fi
+          gh release upload "$GITHUB_REF_NAME" ../dist/vscode/*.vsix --clobber
 
       - uses: actions/upload-artifact@v4
         with:

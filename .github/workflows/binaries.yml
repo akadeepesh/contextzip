@@ -30,6 +30,8 @@ permissions:
 
 jobs:
   targets:
+    # A vscode-v* release is the VS Code extension's (vscode-publish.yml), not a CLI release.
+    if: ${{ github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'vscode-') }}
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.read.outputs.matrix }}

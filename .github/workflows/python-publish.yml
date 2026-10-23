@@ -10,6 +10,8 @@ permissions:
 jobs:
   # ── Job 1: Validate the version tag matches the package version ────────────
   validate:
+    # A vscode-v* release is the VS Code extension's (vscode-publish.yml), not a CLI release.
+    if: ${{ !startsWith(github.event.release.tag_name, 'vscode-') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

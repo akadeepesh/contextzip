@@ -1,8 +1,8 @@
 name: Binaries
 
 # Standalone builds (no Python needed) for npm, Homebrew, Scoop and direct
-# download. Pull requests that touch packaging build and smoke-test every
-# target; a published release also uploads the archives, publishes to npm
+# download. Pushes to next and pull requests build and smoke-test every
+# target; only a published release uploads the archives, publishes to npm
 # and updates the Homebrew tap and Scoop bucket.
 #
 # Secrets, all optional until release day:
@@ -14,6 +14,8 @@ name: Binaries
 on:
   release:
     types: [published]
+  push:
+    branches: [next]
   pull_request:
     paths:
       - "installers/**"

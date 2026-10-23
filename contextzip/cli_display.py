@@ -67,6 +67,18 @@ def err(text: str, *, con: Console = console) -> None:
     con.print(f"[red]✗[/] {text}")
 
 
+def status(text: str, *, con: Console = console):
+    """
+    A spinner while something runs. Under --json it's never seen, so it's
+    skipped: its refresh thread is also something Pyodide can't start.
+    """
+    if jsonout.active() is not None:
+        import contextlib
+
+        return contextlib.nullcontext()
+    return con.status(text, spinner="dots")
+
+
 def info(text: str, *, con: Console = console) -> None:
     """A quiet, dim aside — not a step, just context."""
     if _collected("info", text):

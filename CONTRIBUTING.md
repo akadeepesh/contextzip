@@ -118,6 +118,7 @@ To build and smoke-test the binary for your own machine:
 python -m pip install . pyinstaller==6.22.3
 python installers/build_binary.py
 node npm/scripts/assemble.mjs --artifacts dist/release --out dist/npm --allow-missing
+(cd pyodide && npm ci && node smoke.mjs ../dist/wheel/contextzip-*.whl)   # after: python -m pip wheel . --no-deps -w dist/wheel
 cd vscode && npm ci && npm test
 node scripts/package.mjs --artifacts ../dist/release --out ../dist/vscode --allow-missing
 ```

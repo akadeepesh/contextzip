@@ -4,6 +4,7 @@ import io
 import json
 import os
 import tarfile
+from unittest import mock
 
 import httpx
 
@@ -37,10 +38,11 @@ def make_tarball(files: dict[str, bytes], top: str = "octo-demo-aaaaaaa", links:
 class FakeGitHub:
     """Just enough of api.github.com + its download host for remote.fetch."""
 
-    def __init__(self, tarball: bytes, refs: dict[str, str] | None = None, repo_exists: bool = True):
+    def __init__(self, tarball: bytes, refs: dict[str, str] | None = None, repo_exists: bool = True, private: bool = False):
         self.tarball = tarball
         self.refs = refs if refs is not None else {"HEAD": SHA, "main": SHA}
         self.repo_exists = repo_exists
+        self.private = private
         self.requests: list[httpx.Request] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
@@ -58,7 +60,7 @@ class FakeGitHub:
         if path.startswith(prefix + "/tarball/"):
             return httpx.Response(302, headers={"location": "https://codeload.example/octo/demo/tar.gz/x"})
         if path == prefix:
-            return httpx.Response(200, json={}) if self.repo_exists else httpx.Response(404, json={})
+            return httpx.Response(200, json={"private": self.private}) if self.repo_exists else httpx.Response(404, json={})
         return httpx.Response(404, json={})
 
     @property
@@ -217,3 +219,28 @@ class FetchTests(TempProject):
         got = self.fetch(FakeGitHub(make_tarball({"a.txt": b"1"})), ref="main")
         marker = json.loads((got.project_dir.parent / ".complete").read_text(encoding="utf-8"))
         self.assertEqual((marker["repo"], marker["sha"], marker["ref"]), ("octo/demo", SHA, "main"))
+
+    def test_public_only_refuses_a_private_repo(self):
+        gh = FakeGitHub(make_tarball({"a.txt": b"1"}), private=True)
+        with self.assertRaises(RemoteError) as caught:
+            self.fetch(gh, token="server-token", public_only=True)
+        self.assertEqual(caught.exception.kind, "private")
+        self.assertFalse(any("/tarball/" in r.url.path for r in gh.requests))
+
+    def test_public_only_allows_a_public_repo(self):
+        got = self.fetch(FakeGitHub(make_tarball({"a.txt": b"1"})), public_only=True)
+        self.assertEqual(got.sha, SHA)
+
+    def test_public_only_comes_from_the_environment(self):
+        gh = FakeGitHub(make_tarball({"a.txt": b"1"}), private=True)
+        with mock.patch.dict(os.environ, {remote.PUBLIC_ONLY_ENV_VAR: "1"}):
+            with self.assertRaises(RemoteError):
+                self.fetch(gh)
+
+    def test_errors_say_what_kind_they_are(self):
+        with self.assertRaises(RemoteError) as caught:
+            parse_target("gitlab.com/a/b")
+        self.assertEqual(caught.exception.kind, "invalid")
+        with self.assertRaises(RemoteError) as caught:
+            self.fetch(FakeGitHub(b"", refs={}, repo_exists=False))
+        self.assertEqual(caught.exception.kind, "not_found")

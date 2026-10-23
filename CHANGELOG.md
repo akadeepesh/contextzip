@@ -1181,3 +1181,26 @@ This project uses [Semantic Versioning](https://semver.org/).
   targets, and `.github/workflows/binaries.yml` runs it all.
 - The version now also lives in `npm/cli/package.json`; a test keeps all
   copies in sync.
+
+---
+
+## [0.5.4] — Unreleased
+
+### Added
+- **contextzip runs in the browser.** `contextzip.web.run(args, cwd)` runs
+  any command and returns its `--json` result as a dict. contextzipcli.com
+  uses it through Pyodide (WebAssembly Python), so a folder dropped on the
+  site is packaged, and a reply applied, with exactly the CLI's rules,
+  without the code leaving the browser. CI runs a package + apply round
+  trip inside Pyodide on every change.
+- **`contextzip.service`:** a WSGI app that packages public GitHub
+  repositories for contextzipcli.com: `?repo=github.com/user/repo` returns
+  the ZIP, and `&format=json` returns a summary. It checks with GitHub that
+  every repository is public, caps downloads, rate-limits each client,
+  sets cache headers, and never returns server paths.
+- `--json` results include `error_kind` when a GitHub repository can't be
+  fetched (`not_found`, `private`, `too_big`, `rate_limited`, …).
+
+### Fixed
+- Under `--json`, no spinner or progress bar is started at all. They weren't
+  shown anyway, and their background thread can't run in Pyodide.

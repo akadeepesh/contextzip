@@ -1,6 +1,6 @@
 {
   "name": "@contextzip/cli",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Package exactly the right parts of your codebase for any AI tool, in one command. Then write the AI's changes back.",
   "keywords": ["ai", "cli", "context", "zip", "llm", "claude", "chatgpt", "codebase"],
   "homepage": "https://www.contextzipcli.com",
@@ -21,10 +21,10 @@
     "node": ">=16"
   },
   "optionalDependencies": {
-    "@contextzip/cli-win32-x64": "0.5.3",
-    "@contextzip/cli-darwin-arm64": "0.5.3",
-    "@contextzip/cli-darwin-x64": "0.5.3",
-    "@contextzip/cli-linux-x64": "0.5.3",
-    "@contextzip/cli-linux-arm64": "0.5.3"
+    "@contextzip/cli-win32-x64": "0.5.4",
+    "@contextzip/cli-darwin-arm64": "0.5.4",
+    "@contextzip/cli-darwin-x64": "0.5.4",
+    "@contextzip/cli-linux-x64": "0.5.4",
+    "@contextzip/cli-linux-arm64": "0.5.4"
   }
 }

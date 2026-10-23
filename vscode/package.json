@@ -1,0 +1,171 @@
+{
+  "name": "contextzip",
+  "displayName": "contextzip",
+  "description": "Package the right files of your project for Claude, ChatGPT or any AI chat, then apply the AI's changes back without losing your edits.",
+  "version": "0.1.0",
+  "publisher": "contextzip",
+  "license": "MIT",
+  "homepage": "https://www.contextzipcli.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akadeepesh/contextzip.git",
+    "directory": "vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/akadeepesh/contextzip/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "claude",
+    "chatgpt",
+    "context",
+    "zip",
+    "llm",
+    "upload"
+  ],
+  "contextzip": {
+    "cliVersion": "0.5.3"
+  },
+  "main": "./out/src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "contextzip.package",
+        "title": "Package Project for AI",
+        "category": "contextzip",
+        "icon": "$(package)"
+      },
+      {
+        "command": "contextzip.packageSelection",
+        "title": "Package for AI (only these)",
+        "category": "contextzip"
+      },
+      {
+        "command": "contextzip.packageChanges",
+        "title": "Package Git Changes for AI",
+        "category": "contextzip"
+      },
+      {
+        "command": "contextzip.packageForTask",
+        "title": "Package Files for a Task…",
+        "category": "contextzip"
+      },
+      {
+        "command": "contextzip.packageGitHub",
+        "title": "Package a GitHub Repository…",
+        "category": "contextzip"
+      },
+      {
+        "command": "contextzip.applyZip",
+        "title": "Apply AI Changes from a ZIP…",
+        "category": "contextzip"
+      },
+      {
+        "command": "contextzip.clearPlan",
+        "title": "Clear",
+        "category": "contextzip",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "contextzip.showLog",
+        "title": "Show Log",
+        "category": "contextzip"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "contextzip.packageSelection",
+          "when": "resourceExtname != .zip",
+          "group": "7_contextzip@1"
+        },
+        {
+          "command": "contextzip.applyZip",
+          "when": "resourceExtname == .zip",
+          "group": "7_contextzip@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "contextzip.packageSelection",
+          "when": "false"
+        },
+        {
+          "command": "contextzip.clearPlan",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "contextzip.clearPlan",
+          "when": "view == contextzip.plan",
+          "group": "navigation"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "contextzip.plan",
+          "name": "AI Changes",
+          "when": "contextzip.hasPlan"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "contextzip",
+      "properties": {
+        "contextzip.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Path to a `contextzip` executable. Leave empty to use the one bundled with this extension, or `contextzip`/`cz` on your PATH."
+        },
+        "contextzip.copyToClipboard": {
+          "type": "boolean",
+          "default": true,
+          "description": "Put the ZIP on the clipboard as a file after packaging, ready to paste into an AI chat."
+        },
+        "contextzip.watchDownloads": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When a ZIP lands in your Downloads folder and it's an AI reply to something you packaged in this workspace, offer to apply it. Only the ZIP's file list and its `CONTEXTZIP.md` are read."
+        },
+        "contextzip.downloadsFolder": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "The folder to watch for AI replies. Empty means your Downloads folder."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "test": "npm run compile && node --test \"out/test/unit/*.test.js\"",
+    "test:integration": "npm run compile && node out/test/integration/run.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.42",
+    "@types/vscode": "1.90.0",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0",
+    "ovsx": "1.2.0",
+    "typescript": "5.9.3"
+  }
+}

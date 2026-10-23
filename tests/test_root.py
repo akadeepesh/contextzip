@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from unittest import mock
 
 from contextzip.packager import _workspace_dir
 from contextzip.root import find_project_root, to_root_relative
@@ -8,6 +10,25 @@ from tests.helpers import TempProject
 
 
 class FindProjectRootTests(TempProject):
+    def test_an_unreadable_sibling_folder_is_not_a_crash(self):
+        # On Linux, /tmp/systemd-private-* can't be looked into: running
+        # from /tmp/<project> crashed while checking the siblings.
+        # (Not directly in self.tmp: that's above the fake home, where
+        # siblings are never checked.)
+        project = self.tmp / "shop" / "app"
+        project.mkdir(parents=True)
+        (self.tmp / "shop" / "locked").mkdir()
+        real_is_dir = Path.is_dir
+
+        def is_dir(path, *args, **kwargs):
+            if "locked" in path.parts and path.name != "locked":
+                raise PermissionError(13, "Permission denied", str(path))
+            return real_is_dir(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "is_dir", is_dir):
+            pr = find_project_root(project)
+        self.assertEqual(pr.root, project)
+
     def test_git_folder_is_the_root_from_a_subfolder(self):
         (self.root / ".git").mkdir()
         sub = self.root / "frontend" / "src"

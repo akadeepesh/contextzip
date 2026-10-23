@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 from unittest import mock
 
@@ -55,6 +56,12 @@ class ReleaseFilesTests(TempProject):
         self.assertEqual(pkg["optionalDependencies"], expected)
         self.assertEqual(set(pkg["bin"].values()), {"bin/contextzip.js"})  # one file, so npx can pick it
 
+    def test_vscode_extension_bundles_this_version(self):
+        ext = json.loads((ROOT / "vscode" / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            ext["contextzip"]["cliVersion"], __version__, "bump vscode/package.json contextzip.cliVersion too"
+        )
+
     def test_targets_use_node_platform_names(self):
         for t in TARGETS:
             self.assertEqual(t["target"], f"{t['os']}-{t['cpu']}")
@@ -64,6 +71,43 @@ class ReleaseFilesTests(TempProject):
     def test_pyproject_version_matches(self):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn(f'version = "{__version__}"', text)
+
+
+def load_build_binary():
+    spec = importlib.util.spec_from_file_location("cz_build_binary", ROOT / "installers" / "build_binary.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def can_symlink(where: Path) -> bool:
+    try:
+        (where / "probe-link").symlink_to(where)
+    except (OSError, NotImplementedError):
+        return False
+    (where / "probe-link").unlink()
+    return True
+
+
+class MaterializeSymlinksTests(TempProject):
+    def test_macos_framework_links_become_copies(self):
+        if os.name == "nt" or not can_symlink(self.tmp):
+            self.skipTest("only macOS builds have symlinks to replace")
+        app = self.tmp / "contextzip"
+        version = app / "_internal" / "Python.framework" / "Versions" / "3.12"
+        (version / "Resources").mkdir(parents=True)
+        (version / "Python").write_bytes(b"dylib")
+        (version / "Resources" / "Info.plist").write_text("plist", encoding="utf-8")
+        framework = app / "_internal" / "Python.framework"
+        (framework / "Versions" / "Current").symlink_to("3.12", target_is_directory=True)
+        (framework / "Python").symlink_to("Versions/Current/Python")
+        (framework / "Resources").symlink_to("Versions/Current/Resources", target_is_directory=True)
+        (app / "_internal" / "Python").symlink_to("Python.framework/Versions/3.12/Python")
+
+        self.assertEqual(load_build_binary().materialize_symlinks(app), 4)
+        self.assertEqual([p for p in app.rglob("*") if p.is_symlink()], [])
+        self.assertEqual((app / "_internal" / "Python").read_bytes(), b"dylib")
+        self.assertEqual((framework / "Resources" / "Info.plist").read_text(encoding="utf-8"), "plist")
 
 
 class ManifestTests(TempProject):

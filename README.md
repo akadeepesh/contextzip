@@ -91,6 +91,8 @@ scoop install contextzip                       # Windows (Scoop)
 
 Or download an archive for your platform from the [latest release](https://github.com/akadeepesh/contextzip/releases/latest), unpack it, and put the `contextzip` folder on your PATH. Builds are made for Windows x64, macOS (Apple Silicon and Intel) and Linux x64/arm64 (glibc 2.35 or newer).
 
+**In VS Code, Cursor or Windsurf**, install the **contextzip** extension. It bundles the CLI, adds "Package for AI" to the Explorer, and offers to apply an AI's ZIP as soon as it lands in your Downloads. See [vscode/README.md](vscode/README.md).
+
 **Just trying it?** Nothing stays installed with these:
 
 ```bash

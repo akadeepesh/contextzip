@@ -1116,7 +1116,7 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.5.2] — Unreleased
+## [0.5.2] — 2026-10-23
 
 ### Added
 - **Package a GitHub repository without cloning it:**
@@ -1145,7 +1145,7 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.5.3] — Unreleased
+## [0.5.3] — 2026-10-23
 
 ### Added
 - **Standalone builds: contextzip without Python.** Every release now
@@ -1184,7 +1184,7 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.5.4] — Unreleased
+## [0.5.4] — 2026-10-23
 
 ### Added
 - **contextzip runs in the browser.** `contextzip.web.run(args, cwd)` runs
@@ -1207,7 +1207,7 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.5.5] — Unreleased
+## [0.5.5] — 2026-10-23
 
 ### Added
 - **GitLab and Bitbucket repositories**, alongside GitHub:

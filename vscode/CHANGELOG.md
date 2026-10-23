@@ -1,6 +1,10 @@
 # Changelog
 
-## [0.1.0] — Unreleased
+## [0.1.1] — Unreleased
+
+- The extension has an icon on the Marketplace and in the Extensions view.
+
+## [0.1.0] — 2026-10-24
 
 First release.
 

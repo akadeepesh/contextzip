@@ -49,7 +49,7 @@ When the AI sends changed files back, `contextzip apply-zip` writes them into yo
 - [Features](#features)
   - [Smart packaging](#smart-packaging)
   - [Package only what changed](#package-only-what-changed)
-  - [Package a GitHub repo](#package-a-github-repo)
+  - [Package a GitHub, GitLab or Bitbucket repo](#package-a-github-gitlab-or-bitbucket-repo)
   - [AI-powered file selection](#ai-powered-file-selection)
   - [Applying AI changes back](#applying-ai-changes-back)
   - [Terminal error watcher](#terminal-error-watcher)
@@ -92,6 +92,8 @@ scoop install contextzip                       # Windows (Scoop)
 Or download an archive for your platform from the [latest release](https://github.com/akadeepesh/contextzip/releases/latest), unpack it, and put the `contextzip` folder on your PATH. Builds are made for Windows x64, macOS (Apple Silicon and Intel) and Linux x64/arm64 (glibc 2.35 or newer).
 
 **In VS Code, Cursor or Windsurf**, install the **contextzip** extension. It bundles the CLI, adds "Package for AI" to the Explorer, and offers to apply an AI's ZIP as soon as it lands in your Downloads. See [vscode/README.md](vscode/README.md).
+
+**For AI agents:** `pip install "contextzip[mcp]"` and register `contextzip mcp` as an MCP server (Python 3.10+). See [CLI.md](https://github.com/akadeepesh/contextzip/blob/main/CLI.md#contextzip-mcp).
 
 **Just trying it?** Nothing stays installed with these:
 
@@ -137,7 +139,7 @@ contextzip --prompt "fix the login redirect bug"   # let AI pick the relevant fi
 contextzip include src/ app/                # only these folders
 contextzip include src/ .env                # .env too, values redacted
 contextzip --here                           # only the folder you're in (monorepos)
-contextzip github.com/user/repo             # a GitHub repo, without cloning it
+contextzip github.com/user/repo             # a GitHub/GitLab/Bitbucket repo, without cloning it
 contextzip exclude tests/ '*.snap'          # everything except these
 contextzip apply-zip                        # write the AI's changes back
 ```
@@ -172,17 +174,20 @@ contextzip --git-changes
 
 This packages only the files git reports as **staged, modified or untracked**. It's ideal for code review or "here's what I changed, what's wrong?" prompts. Deleted files, submodules and monorepo roots are handled for you, and the secret-exclusion rules still apply to files git tracks.
 
-### Package a GitHub repo
+### Package a GitHub, GitLab or Bitbucket repo
 
 ```bash
 contextzip github.com/pallets/click
 contextzip https://github.com/pallets/click/tree/main/src     # one branch, one folder
 contextzip gh:you/private-repo --ref dev
+contextzip gitlab.com/group/project                           # or gl:group/project
+contextzip bitbucket.org/team/repo                            # or bb:team/repo
 ```
 
-No clone and no git needed: contextzip downloads one commit through the GitHub API into a local cache and packages it like any other project, with the same stack detection, exclusions and redaction. `include` and `exclude` work as usual, and a `/tree/<branch>/<folder>` link packages just that folder.
+No clone and no git needed: contextzip downloads one commit through the host's API into a local cache and packages it like any other project, with the same stack detection, exclusions and redaction. `include` and `exclude` work as usual, and a link to a branch's folder packages just that folder.
 
-- **Private repos:** set `GITHUB_TOKEN`, or sign in with the GitHub CLI (`gh auth login`) and contextzip uses that. The token is only ever sent to `api.github.com`.
+- **Private repos:** set `GITHUB_TOKEN` (or sign in with `gh auth login`), `GITLAB_TOKEN` or `BITBUCKET_TOKEN`. A token is only ever sent to its own host's API.
+- **Send the reply back as a pull request:** for a GitHub repo, `contextzip apply-zip reply.zip --pr` commits the AI's changes on top of the commit you packaged and opens a pull request, forking first if you can't push. No clone needed.
 - **Cache:** a commit is downloaded once and reused. Override the location with `CONTEXTZIP_CACHE_DIR`; downloads over 250 MB are refused unless you raise `CONTEXTZIP_REMOTE_MAX_MB`.
 
 ### AI-powered file selection
@@ -255,7 +260,7 @@ This opens a local browser tab where you can tick files and folders to always in
 | Command | What it does |
 |---|---|
 | `contextzip` | Detect the stack, exclude noise and package the project |
-| `contextzip github.com/user/repo` | Package a GitHub repository without cloning it |
+| `contextzip github.com/user/repo` | Package a GitHub, GitLab or Bitbucket repository without cloning it |
 | `contextzip include PATH…` | Package **only** these paths |
 | `contextzip exclude PATTERN…` | Package everything **except** these patterns |
 | `contextzip --prompt "task"` | Let Gemini pick only the files relevant to a task |
@@ -278,7 +283,7 @@ This opens a local browser tab where you can tick files and folders to always in
 | `--no-clipboard` | | Don't copy the ZIP to the clipboard. |
 | `--no-gitignore` | | Ignore `.gitignore` and use only the built-in rules. |
 | `--verbose` | `-v` | List every included and excluded file. |
-| `--from REPO` | | Package a GitHub repository instead of the local project (or just put the repo first: `contextzip github.com/user/repo`). |
+| `--from REPO` | | Package a remote repository instead of the local project (or just put the repo first: `contextzip github.com/user/repo`). |
 | `--ref REF` | | Branch, tag or commit for `--from`. |
 | `--json` | | Print one JSON object instead of terminal output, for editors and scripts. Also on `apply-zip` and `snapshots`. |
 
@@ -401,7 +406,7 @@ print(f"Packed {pkg.file_count} files → {pkg.zip_path}")
 # What stack is this?
 print(detect_ecosystem("."))
 
-# A GitHub repository, without cloning it
+# A remote repository, without cloning it
 repo = fetch_remote("github.com/pallets/click")
 pkg = create_zip(get_files(repo.project_dir), output=repo.zip_path)
 ```
@@ -413,7 +418,7 @@ pkg = create_zip(get_files(repo.project_dir), output=repo.zip_path)
 | `create_zip(collection, output=…)` | `PackageResult` with the ZIP path, file count and sizes |
 | `apply_zip(zip_path=None, …)` | `ApplyResult` describing what was written |
 | `detect_ecosystem(path=None)` | Detected ecosystem information |
-| `fetch_remote(target, ref=None)` | `FetchedRemote`: a GitHub repo unpacked into the cache (`project_dir`, `sha`, `zip_path`) |
+| `fetch_remote(target, ref=None)` | `FetchedRemote`: a GitHub, GitLab or Bitbucket repo unpacked into the cache (`project_dir`, `sha`, `zip_path`) |
 | `web.run(args, cwd=None)` | Any CLI command's `--json` result as a dict, without printing or prompting (used in the browser via Pyodide, and on servers) |
 
 All exceptions inherit from `ContextzipError`: `NotARepositoryError`, `GitNotFoundError`, `GitCommandError`, `NoFilesError`, `ZipNotFoundError` and `RemoteFetchError`.
@@ -425,7 +430,7 @@ For full signatures, see [contextzipcli.com/cli#python-api](https://www.contextz
 - **Local by default.** Packaging, `apply-zip`, `watch` and the config UI never make network requests.
 - **Network use is opt-in and limited to three features:**
   - `--prompt` sends file paths, sizes and your prompt to the Gemini API. File contents are never sent.
-  - Packaging a GitHub repo (`contextzip github.com/user/repo`) downloads it from GitHub. Your token, if any, is sent only to `api.github.com`.
+  - Packaging a remote repo (`contextzip github.com/user/repo`) downloads it from that host, and `apply-zip --pr` opens a pull request on GitHub. A token, if any, is sent only to its own host's API.
   - `contextzip update` asks PyPI for the latest version number.
 - **No telemetry.** Nothing is collected or phoned home.
 - **Manifests stay local.** `apply-zip` manifests are written next to the ZIP and never inside it.

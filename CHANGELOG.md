@@ -1204,3 +1204,28 @@ This project uses [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Under `--json`, no spinner or progress bar is started at all. They weren't
   shown anyway, and their background thread can't run in Pyodide.
+
+---
+
+## [0.5.5] — Unreleased
+
+### Added
+- **GitLab and Bitbucket repositories**, alongside GitHub:
+  `contextzip gitlab.com/group[/subgroup]/project` (including
+  `/-/tree/<branch>/<folder>` links and `gl:`) and
+  `contextzip bitbucket.org/team/repo` (`/src/<branch>/<folder>`, `bb:`).
+  Private repositories use `GITLAB_TOKEN` or `BITBUCKET_TOKEN`. The
+  public-only service accepts them too.
+- **`apply-zip --pr`: an AI's reply as a GitHub pull request.** For a
+  repository packaged with `contextzip github.com/user/repo`, the reply's
+  changes are committed on top of the packaged commit through GitHub's API
+  and a pull request is opened. No clone needed, and it forks first if you
+  can't push. Only safe changes are committed; anything that needs a
+  decision is listed in the description. It asks before publishing, and
+  needs `--yes` with `--json`. `--dry-run` shows what it would contain.
+- **`contextzip mcp`: an MCP server for AI agents.** Install it with
+  `pip install "contextzip[mcp]"` (Python 3.10+). It has six tools:
+  `package_project`, `package_repository`, `preview_apply`, `apply_changes`
+  (safe changes by default), `open_pull_request` (a dry run by default) and
+  `list_snapshots`. Each returns the same JSON as `--json`.
+- The `--json` `remote` object has a `host` field.

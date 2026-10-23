@@ -80,7 +80,41 @@ def build() -> Path:
     exe = APP_DIR / ("contextzip.exe" if os.name == "nt" else "contextzip")
     if not exe.is_file():
         sys.exit(f"build failed: {exe} is missing")
+    replaced = materialize_symlinks(APP_DIR)
+    if replaced:
+        print(f"replaced {replaced} symlink(s) with copies")
     return exe
+
+
+def materialize_symlinks(app: Path) -> int:
+    """
+    Replace every symlink in the app with a copy of what it points to.
+
+    The macOS build has a few (PyInstaller's Python.framework layout, and
+    `_internal/Python`, which the binary loads at startup). VSIX files can't
+    hold symlinks and npm packages may drop them, so the app must work
+    without any. Runs before the smoke test, so that's what gets tested.
+    """
+    replaced = 0
+    while True:
+        links = [
+            Path(dirpath) / name
+            for dirpath, dirnames, filenames in os.walk(app)  # doesn't descend into linked folders
+            for name in dirnames + filenames
+            if os.path.islink(os.path.join(dirpath, name))
+        ]
+        if not links:
+            return replaced
+        for link in links:
+            target = link.resolve()
+            if not target.exists() or not target.is_relative_to(app.resolve()):
+                sys.exit(f"build failed: {link} points outside the app ({target})")
+            link.unlink()
+            if target.is_dir():
+                shutil.copytree(target, link, symlinks=True)  # links inside are handled next pass
+            else:
+                shutil.copy2(target, link)
+            replaced += 1
 
 
 def smoke_test(exe: Path, expected_version: str) -> None:

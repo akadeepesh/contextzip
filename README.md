@@ -66,7 +66,7 @@ When the AI sends changed files back, `contextzip apply-zip` writes them into yo
 
 ## Installation
 
-contextzip needs **Python 3.9 or newer**.
+**With Python** (3.9 or newer):
 
 ```bash
 pip install contextzip
@@ -80,9 +80,28 @@ pipx install contextzip
 uv tool install contextzip
 ```
 
-This installs two commands that do the same thing: `contextzip` and the shorter `cz`.
+**Without Python.** These install a standalone build of the same tool:
 
-To update later, run `contextzip update`. It works out whether you installed with pip, pipx or uv and upgrades the right one.
+```bash
+npm install -g @contextzip/cli                 # Node.js 16+, any OS
+brew install akadeepesh/tap/contextzip         # macOS / Linux (Homebrew)
+scoop bucket add contextzip https://github.com/akadeepesh/scoop-bucket
+scoop install contextzip                       # Windows (Scoop)
+```
+
+Or download an archive for your platform from the [latest release](https://github.com/akadeepesh/contextzip/releases/latest), unpack it, and put the `contextzip` folder on your PATH. Builds are made for Windows x64, macOS (Apple Silicon and Intel) and Linux x64/arm64 (glibc 2.35 or newer).
+
+**Just trying it?** Nothing stays installed with these:
+
+```bash
+npx @contextzip/cli          # Node.js
+uvx contextzip               # uv
+pipx run contextzip          # pipx
+```
+
+Every method installs two commands that do the same thing: `contextzip` and the shorter `cz`.
+
+To update later, run `contextzip update`. It works out whether you installed with pip, pipx or uv and upgrades the right one. A standalone build tells you the npm, Homebrew or Scoop command to run instead.
 
 ### "`cz` is not recognized" / "command not found"
 
@@ -418,6 +437,7 @@ Found a vulnerability? Please follow [SECURITY.md](https://github.com/akadeepesh
 | Packaging, `apply-zip`, config | ✅ | ✅ | ✅ |
 | ZIP copied to clipboard as a file | ✅ native (`CF_HDROP`) | ✅ via Finder | ✅ built-in X11 owner (works under XWayland), or `wl-copy` / `xclip` |
 | `contextzip watch` | ✅ (best in Windows Terminal / VS Code) | ✅ | ✅ |
+| Standalone build (no Python: npm, Homebrew, Scoop, download) | ✅ x64 | ✅ Apple Silicon and Intel | ✅ x64 and arm64, glibc 2.35+ |
 
 If the clipboard can't be used, contextzip opens the output folder with the ZIP selected and tells you why. Use `--no-clipboard` to skip this step entirely.
 

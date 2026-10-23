@@ -123,6 +123,40 @@ def _installed_via_uv_tool() -> bool:
     return "/uv/tools/" in exe or "\\uv\\tools\\" in sys.executable.lower()
 
 
+RELEASES_URL = "https://github.com/akadeepesh/contextzip/releases/latest"
+NPM_PACKAGE = "@contextzip/cli"
+
+
+@dataclass(frozen=True)
+class BinaryInstall:
+    """A standalone (PyInstaller) build, and how its installer updates it."""
+
+    manager: str
+    update_command: str
+
+
+def binary_install(executable: str | None = None, frozen: bool | None = None) -> BinaryInstall | None:
+    """
+    How this standalone build was installed, or None when running from a
+    normal Python install. A standalone build has no pip to call, so
+    `update` and `setup-path` point to the tool that installed it instead.
+    """
+    if frozen is None:
+        frozen = bool(getattr(sys, "frozen", False))
+    if not frozen:
+        return None
+    exe = (executable or sys.executable).replace("\\", "/").lower()
+    if "/_npx/" in exe:
+        return BinaryInstall("npx", f"npx {NPM_PACKAGE}@latest")
+    if "/node_modules/" in exe:
+        return BinaryInstall("npm", f"npm install -g {NPM_PACKAGE}@latest")
+    if "/cellar/" in exe or "/homebrew/" in exe or "/linuxbrew/" in exe:
+        return BinaryInstall("Homebrew", "brew upgrade contextzip")
+    if "/scoop/apps/" in exe:
+        return BinaryInstall("Scoop", "scoop update contextzip")
+    return BinaryInstall("a download", f"download the latest build from {RELEASES_URL}")
+
+
 @dataclass
 class UpdateResult:
     ok: bool
@@ -141,7 +175,13 @@ def run_update(timeout: float = 120) -> UpdateResult:
       - otherwise `python -m pip install --upgrade contextzip`, using
         the *currently running* interpreter's pip — never a bare "pip"
         off PATH, which could silently target the wrong Python.
+
+    A standalone build (see `binary_install`) is never updated here; the
+    result carries the command to run instead.
     """
+    binary = binary_install()
+    if binary is not None:
+        return UpdateResult(ok=False, method=binary.manager, output=binary.update_command)
     if _installed_via_pipx() and shutil.which("pipx"):
         cmd = ["pipx", "upgrade", "contextzip"]
         method = "pipx"

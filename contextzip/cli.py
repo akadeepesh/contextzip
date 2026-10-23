@@ -1201,6 +1201,17 @@ def cmd_setup_path(yes: bool) -> None:
     from contextzip import pathsetup
 
     console.print()
+    binary = updater_mod.binary_install()
+    if binary is not None:
+        import sys
+
+        ok("This is a standalone build of contextzip", f"installed with {binary.manager}")
+        if binary.manager == "a download":
+            info(f"To run it from any terminal, add this folder to your PATH: {Path(sys.executable).parent}")
+        else:
+            info(f"{binary.manager} puts contextzip on your PATH. If a new terminal still can't find it, reinstall it.")
+        console.print()
+        return
     st = pathsetup.status()
 
     if st.manager == "pipx":
@@ -1295,7 +1306,13 @@ def cmd_update(check_only: bool, yes: bool) -> None:
       install came from pip, pipx, or uv tool and re-invokes the matching
       one, upgrading the same interpreter that's currently running —
       never a possibly-different "pip" found on PATH.
+
+      A standalone build (from npm, Homebrew or Scoop) is updated by the
+      tool that installed it; this prints the command to run.
     """
+    binary = updater_mod.binary_install()
+    manual = binary.update_command if binary else "pip install --upgrade contextzip"
+
     console.print()
     with console.status("[cyan]Checking for updates…[/]", spinner="dots"):
         check = updater_mod.check_latest_version()
@@ -1303,7 +1320,7 @@ def cmd_update(check_only: bool, yes: bool) -> None:
     if check.latest is None:
         err(f"Could not check for updates: {check.error}")
         info(f"You're on {check.current}. Try again later, or update manually:")
-        info("  pip install --upgrade contextzip")
+        info(f"  {manual}")
         console.print()
         raise SystemExit(1)
 
@@ -1313,6 +1330,12 @@ def cmd_update(check_only: bool, yes: bool) -> None:
         return
 
     info(f"Update available: {check.current} → {check.latest}")
+
+    if binary is not None:
+        info(f"This contextzip was installed with {binary.manager}. To update, run:")
+        console.print(f"    {binary.update_command}", highlight=False, soft_wrap=True)
+        console.print()
+        return
 
     if check_only:
         info("Run contextzip update to install it.")
@@ -1337,7 +1360,7 @@ def cmd_update(check_only: bool, yes: bool) -> None:
         err(f"Update via {result.method} failed")
         if result.output:
             console.print(f"[dim]{result.output}[/]")
-        info("You can also update manually: pip install --upgrade contextzip")
+        info(f"You can also update manually: {manual}")
     console.print()
 
 

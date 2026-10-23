@@ -55,6 +55,12 @@ class ReleaseFilesTests(TempProject):
         self.assertEqual(pkg["optionalDependencies"], expected)
         self.assertEqual(set(pkg["bin"].values()), {"bin/contextzip.js"})  # one file, so npx can pick it
 
+    def test_vscode_extension_bundles_this_version(self):
+        ext = json.loads((ROOT / "vscode" / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            ext["contextzip"]["cliVersion"], __version__, "bump vscode/package.json contextzip.cliVersion too"
+        )
+
     def test_targets_use_node_platform_names(self):
         for t in TARGETS:
             self.assertEqual(t["target"], f"{t['os']}-{t['cpu']}")

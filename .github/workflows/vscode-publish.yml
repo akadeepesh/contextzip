@@ -1,0 +1,72 @@
+name: Publish VS Code extension
+
+# Push a tag vscode-vX.Y.Z (matching vscode/package.json) to publish the
+# extension. It bundles the contextzip CLI named in package.json's
+# "contextzip.cliVersion", taken from that CLI release's assets, so publish
+# the CLI release first.
+#
+# Secrets (a missing one skips that store):
+#   VSCE_PAT   Azure DevOps token for the VS Code Marketplace publisher "contextzip"
+#   OVSX_PAT   Open VSX token for the "contextzip" namespace (Cursor, Windsurf, VSCodium)
+
+on:
+  push:
+    tags: ["vscode-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+
+      - name: Check the tag matches the extension version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME#vscode-v}" != "$VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match vscode/package.json version $VERSION"; exit 1
+          fi
+
+      - run: npm ci
+
+      - run: npm test
+
+      - name: Download the bundled CLI release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CLI=$(node -p "require('./package.json').contextzip.cliVersion")
+          gh release download "v$CLI" --repo "${{ github.repository }}" --pattern "contextzip-$CLI-*.tar.gz" --dir ../dist/release
+
+      - name: Package
+        run: node scripts/package.mjs --artifacts ../dist/release --out ../dist/vscode
+
+      - name: Publish to the VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then echo "VSCE_PAT isn't set — skipping the Marketplace"; exit 0; fi
+          npx vsce publish --packagePath ../dist/vscode/*.vsix
+
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then echo "OVSX_PAT isn't set — skipping Open VSX"; exit 0; fi
+          for f in ../dist/vscode/*.vsix; do npx ovsx publish "$f" -p "$OVSX_PAT"; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          path: dist/vscode/*.vsix

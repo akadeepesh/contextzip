@@ -1,0 +1,7 @@
+node_modules/
+out/
+bin/
+.vscode-test/
+*.vsix
+# copied from the repo root when packaging
+LICENSE

@@ -103,12 +103,14 @@ PR titles should follow the format:
 
 ## Versions and releases
 
-A version is set in four places, which must always agree (a test checks this): `contextzip/__init__.py`, `pyproject.toml`, `npm/cli/package.json` (`version` and every `optionalDependencies` entry) and the example in the `contextzip/jsonout.py` docstring.
+A version is set in five places, which must always agree (a test checks this): `contextzip/__init__.py`, `pyproject.toml`, `npm/cli/package.json` (`version` and every `optionalDependencies` entry), `vscode/package.json` (`contextzip.cliVersion`, the CLI the extension bundles) and the example in the `contextzip/jsonout.py` docstring.
 
 Publishing a GitHub release for a tag `vX.Y.Z` runs two workflows:
 
 - `python-publish.yml` checks the tag against the version and publishes to PyPI.
 - `binaries.yml` builds the standalone binary on every target in `installers/targets.json`, smoke-tests each one, attaches the archives and `SHA256SUMS` to the release, publishes `@contextzip/cli` and its platform packages to npm (`NPM_TOKEN`), and updates the Homebrew tap and Scoop bucket (`HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN`). Steps whose secret isn't set are skipped.
+
+The VS Code extension in `vscode/` has its own version (`vscode/package.json` `version`, with `vscode/CHANGELOG.md`). `binaries.yml` tests it and packages every platform on each run. To publish it, push a tag `vscode-vX.Y.Z` **after** the CLI release it bundles: `vscode-publish.yml` downloads that release's archives, packages one VSIX per platform plus a universal one, and publishes to the VS Code Marketplace (`VSCE_PAT`) and Open VSX (`OVSX_PAT`).
 
 To build and smoke-test the binary for your own machine:
 
@@ -116,6 +118,8 @@ To build and smoke-test the binary for your own machine:
 python -m pip install . pyinstaller==6.22.3
 python installers/build_binary.py
 node npm/scripts/assemble.mjs --artifacts dist/release --out dist/npm --allow-missing
+cd vscode && npm ci && npm test
+node scripts/package.mjs --artifacts ../dist/release --out ../dist/vscode --allow-missing
 ```
 
 ## Code style

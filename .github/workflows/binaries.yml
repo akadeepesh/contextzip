@@ -20,6 +20,7 @@ on:
     paths:
       - "installers/**"
       - "npm/**"
+      - "vscode/**"
       - ".github/workflows/binaries.yml"
       - "pyproject.toml"
   workflow_dispatch:
@@ -110,6 +111,48 @@ jobs:
           # Platform packages first, so @contextzip/cli never points at a missing version.
           for d in dist/npm/cli-*/; do (cd "$d" && npm publish --access public --provenance); done
           (cd dist/npm/cli && npm publish --access public --provenance)
+
+  vscode:
+    # Builds and tests the VS Code extension against the binaries just built.
+    # Publishing it is vscode-publish.yml's job (a vscode-v* tag).
+    needs: build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+
+      - run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: dist/release
+          merge-multiple: true
+
+      - name: Package every platform
+        run: node scripts/package.mjs --artifacts ../dist/release --out ../dist/vscode
+
+      - name: Integration test in VS Code (Linux build bundled)
+        run: |
+          mkdir -p bin && tar -xzf ../dist/release/contextzip-*-linux-x64.tar.gz -C bin
+          xvfb-run -a npm run test:integration
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          path: dist/vscode/*.vsix
+          if-no-files-found: error
 
   release-assets:
     if: github.event_name == 'release'

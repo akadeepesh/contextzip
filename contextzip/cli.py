@@ -184,10 +184,11 @@ def _modifier_options(f):
             default=None,
             metavar="REPO",
             help=(
-                "Package a GitHub repository instead of the local project, without "
-                "cloning it: github.com/user/repo, a /tree/<branch>/<folder> link, or "
-                "gh:user/repo. Shortcut: contextzip github.com/user/repo. Private repos "
-                "use GITHUB_TOKEN or your gh login."
+                "Package a GitHub, GitLab or Bitbucket repository instead of the local "
+                "project, without cloning it: github.com/user/repo, gitlab.com/group/project, "
+                "bitbucket.org/team/repo, a link to a branch's folder, or gh:/gl:/bb:user/repo. "
+                "Shortcut: contextzip github.com/user/repo. Private repos use GITHUB_TOKEN "
+                "(or your gh login), GITLAB_TOKEN or BITBUCKET_TOKEN."
             ),
         ),
         click.option(
@@ -1495,7 +1496,7 @@ def _fetch_remote(target: str, ref: str | None):
 
     try:
         spec = remote_mod.parse_target(target)
-        with status(f"[cyan]Fetching {spec.slug} from GitHub…[/]"):
+        with status(f"[cyan]Fetching {spec.slug} from {spec.host_name}…[/]"):
             fetched = remote_mod.fetch(spec, ref)
     except remote_mod.RemoteError as exc:
         jsonout.put("error_kind", exc.kind)
@@ -1555,7 +1556,7 @@ def _package(
     fetched = None
     if remote:
         if git_changes:
-            err("--git-changes needs a local checkout — it can't be combined with a GitHub repository.")
+            err("--git-changes needs a local checkout — it can't be combined with a remote repository.")
             raise SystemExit(1)
         fetched = _fetch_remote(remote, ref)
         # A /tree/<branch>/<folder> link acts like running from that folder.
@@ -1567,7 +1568,7 @@ def _package(
         )
     else:
         if ref:
-            err("--ref picks a branch of a GitHub repository — use it with --from github.com/user/repo.")
+            err("--ref picks a branch of a remote repository — use it with --from github.com/user/repo.")
             raise SystemExit(1)
         project_root = _resolve_root()
     project_dir = project_root.root

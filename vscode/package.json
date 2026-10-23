@@ -65,7 +65,7 @@
       },
       {
         "command": "contextzip.packageGitHub",
-        "title": "Package a GitHub Repository…",
+        "title": "Package a GitHub, GitLab or Bitbucket Repository…",
         "category": "contextzip"
       },
       {

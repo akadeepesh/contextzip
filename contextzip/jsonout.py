@@ -188,6 +188,7 @@ def clipboard_data(cb) -> dict:
 
 def remote_data(fetched) -> dict:
     return {
+        "host": fetched.spec.host,
         "repo": fetched.spec.slug,
         "sha": fetched.sha,
         "ref": fetched.ref,

@@ -2,8 +2,13 @@
   "name": "contextzip",
   "displayName": "contextzip",
   "description": "Package the right files of your project for Claude, ChatGPT or any AI chat, then apply the AI's changes back without losing your edits.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "contextzip",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0d1017",
+    "theme": "dark"
+  },
   "license": "MIT",
   "homepage": "https://www.contextzipcli.com",
   "repository": {

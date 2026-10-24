@@ -1,6 +1,10 @@
 # Changelog
 
-## [0.1.1] — Unreleased
+## [0.1.2] — 2026-10-24
+
+- Bundles the contextzip 0.5.6 CLI: `.gitignore` files in subfolders are respected (monorepos).
+
+## [0.1.1] — 2026-10-24
 
 - The extension has an icon on the Marketplace and in the Extensions view.
 

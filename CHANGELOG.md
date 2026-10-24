@@ -1230,7 +1230,7 @@ This project uses [Semantic Versioning](https://semver.org/).
   `list_snapshots`. Each returns the same JSON as `--json`.
 - The `--json` `remote` object has a `host` field.
 
-## [Unreleased]
+## [0.5.6] — 2026-10-24
 
 ### Fixed
 - **`.gitignore` files in subfolders are respected**, as git does: an

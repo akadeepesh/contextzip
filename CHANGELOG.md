@@ -1229,3 +1229,16 @@ This project uses [Semantic Versioning](https://semver.org/).
   (safe changes by default), `open_pull_request` (a dry run by default) and
   `list_snapshots`. Each returns the same JSON as `--json`.
 - The `--json` `remote` object has a `host` field.
+
+## [Unreleased]
+
+### Fixed
+- **`.gitignore` files in subfolders are respected**, as git does: an
+  `apps/web/.gitignore` in a monorepo now applies to `apps/web/`. Patterns
+  are read shallowest first, so a deeper file can override the root one,
+  and a `.gitignore` inside an ignored folder is not read. `--no-gitignore`
+  turns them all off.
+- **`--prompt` with a high `ai.max_files`** no longer risks Gemini's answer
+  being cut off: the reply's token budget now grows with the file cap.
+- **The Gemini API key is sent in the `x-goog-api-key` header** instead of
+  the URL, so it can't show up in proxy logs or error messages.

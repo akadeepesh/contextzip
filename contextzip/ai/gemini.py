@@ -29,7 +29,7 @@ except ImportError:
 
 _API_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models"
-    "/{model}:generateContent?key={key}"
+    "/{model}:generateContent"
 )
 
 DEFAULT_MODEL = "gemini-2.5-flash-lite"
@@ -39,6 +39,11 @@ DEFAULT_MODEL = "gemini-2.5-flash-lite"
 _MAX_FILES = 12
 
 _TIMEOUT_SECONDS = 30
+
+
+def _max_output_tokens(max_files: int) -> int:
+    """Output budget for a JSON list of up to *max_files* paths (never below the old 512)."""
+    return min(max(512, 128 + 64 * max_files), 8192)
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +125,10 @@ def select_files(
     system_prompt = _build_system_prompt(effective_max_files)
     user_message = _build_user_message(prompt, file_tree, ecosystem)
 
-    url = _API_URL.format(model=model, key=api_key)
+    # The key goes in a header, not the URL, so it stays out of proxy logs
+    # and error messages that quote the URL.
+    url = _API_URL.format(model=model)
+    headers = {"x-goog-api-key": api_key}
 
     payload = {
         "contents": [
@@ -131,13 +139,15 @@ def select_files(
         ],
         "generationConfig": {
             "temperature": 0.0,  # deterministic — this is a ranking task
-            "maxOutputTokens": 512,  # a list of paths needs very few tokens
+            # Room for every path the cap allows (long monorepo paths run ~40
+            # tokens each), so a high ai.max_files can't cut the JSON off.
+            "maxOutputTokens": _max_output_tokens(effective_max_files),
             "responseMimeType": "application/json",
         },
     }
 
     try:
-        response = httpx.post(url, json=payload, timeout=_TIMEOUT_SECONDS)
+        response = httpx.post(url, json=payload, headers=headers, timeout=_TIMEOUT_SECONDS)
     except httpx.TimeoutException:
         raise GeminiError("Request timed out after 30 seconds.")
     except httpx.RequestError as exc:

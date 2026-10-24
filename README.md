@@ -168,7 +168,7 @@ contextzip scans your project and recognises its stack from marker files such as
 
 On top of the stack rules, contextzip also:
 
-- respects your `.gitignore` (turn this off with `--no-gitignore`),
+- respects your `.gitignore` files, including ones in subfolders like `apps/web/.gitignore` (turn this off with `--no-gitignore`),
 - flags large files (1 MB or more by default) and binary files before packaging,
 - skips dangling symlinks and unreadable files, and tells you why,
 - writes a plain-text report next to every ZIP listing what went in and what was left out,

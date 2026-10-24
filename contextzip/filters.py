@@ -4,7 +4,7 @@ which files in a project directory should be included or excluded.
 
 Phase 5 hardening:
   - Symlinks are followed safely; dangling symlinks are skipped
-  - .gitignore in the project root is respected as extra exclusions
+  - .gitignore files (the root one and any in subfolders) are respected as extra exclusions
   - --include prefix matching is exact (src/ won't match src2/)
   - Binary-looking files (null bytes) are flagged but still included
   - Unreadable files are skipped with a warning rather than silently dropped
@@ -171,23 +171,67 @@ def build_spec(
         except ImportError:
             pass
 
-    # Respect the project's own .gitignore if present
-    if gitignore_path and gitignore_path.is_file():
-        try:
-            lines = gitignore_path.read_text(
-                encoding="utf-8", errors="ignore"
-            ).splitlines()
-            # Strip comments and blank lines; pathspec handles the rest
-            patterns.extend(
-                line for line in lines if line.strip() and not line.startswith("#")
-            )
-        except OSError:
-            pass
+    # Respect the project's own .gitignore if present, and the ones in its
+    # subfolders (apps/web/.gitignore in a monorepo), rebased onto the root
+    if gitignore_path:
+        patterns.extend(_read_gitignore(gitignore_path))
+        patterns.extend(_nested_gitignore_patterns(gitignore_path.parent, make_spec(patterns)))
 
     if extra_exclude:
         patterns.extend(extra_exclude)
 
     return make_spec(patterns)
+
+
+def _read_gitignore(path: Path) -> list[str]:
+    """A .gitignore's patterns, without comments and blank lines ([] if missing or unreadable)."""
+    try:
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return []
+    return [line for line in lines if line.strip() and not line.startswith("#")]
+
+
+def _rebase_gitignore_pattern(pattern: str, base: str) -> str:
+    """
+    Rewrite a pattern from *base*/.gitignore so it means the same thing
+    from the project root. As in git, a pattern with a slash before its end
+    is relative to *base*; one without matches at any depth below it.
+    """
+    negate = pattern.startswith("!")
+    if negate:
+        pattern = pattern[1:]
+    if pattern.startswith("/"):
+        rebased = f"/{base}{pattern}"
+    elif "/" in pattern.rstrip("/"):
+        rebased = f"/{base}/{pattern}"
+    else:
+        rebased = f"/{base}/**/{pattern}"
+    return ("!" if negate else "") + rebased
+
+
+def _nested_gitignore_patterns(root: Path, spec: pathspec.PathSpec) -> list[str]:
+    """
+    Patterns from every .gitignore below *root*, shallowest first so a
+    deeper file overrides a shallower one, as in git. Folders already
+    excluded by *spec* (or always pruned) aren't searched: git doesn't read
+    a .gitignore inside an ignored folder either.
+    """
+    found: list[tuple[int, str, Path]] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel = Path(dirpath).relative_to(root).as_posix()
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in _ALWAYS_PRUNED_DIRNAMES
+            and not spec.match_file(d + "/" if rel == "." else f"{rel}/{d}/")
+        ]
+        if rel != "." and ".gitignore" in filenames:
+            found.append((rel.count("/"), rel, Path(dirpath) / ".gitignore"))
+    patterns: list[str] = []
+    for _depth, rel, path in sorted(found):
+        patterns.extend(_rebase_gitignore_pattern(p, rel) for p in _read_gitignore(path))
+    return patterns
 
 
 def build_force_include_spec(patterns: list[str] | None) -> pathspec.PathSpec | None:

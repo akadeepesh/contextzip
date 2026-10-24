@@ -82,3 +82,43 @@ class ResolveFilesTests(TempProject):
         spec = build_spec(rule_modules=["base"])
         fi = build_force_include_spec([".env"])
         self.assertIn(".env", self.rels(resolve_files(self.root, spec, force_include=fi)))
+
+
+class NestedGitignoreTests(TempProject):
+    """A .gitignore in a subfolder applies below it, as in git (monorepos)."""
+
+    def rels(self, result):
+        return sorted(p.relative_to(self.root).as_posix() for p in result.included)
+
+    def resolve(self):
+        spec = build_spec(rule_modules=[], gitignore_path=self.root / ".gitignore")
+        return self.rels(resolve_files(self.root, spec))
+
+    def test_subfolder_gitignore(self):
+        self.write("apps/web/.gitignore", "*.gen.ts\n/out/\nsrc/secret.txt\n!keep.gen.ts\n")
+        for f in ["apps/web/a.ts", "apps/web/x.gen.ts", "apps/web/deep/y.gen.ts", "apps/web/keep.gen.ts",
+                  "apps/web/out/o.js", "apps/web/sub/out/o.js", "apps/web/src/secret.txt", "apps/api/x.gen.ts"]:
+            self.write(f, "x")
+        self.assertEqual(
+            self.resolve(),
+            ["apps/api/x.gen.ts", "apps/web/.gitignore", "apps/web/a.ts", "apps/web/keep.gen.ts", "apps/web/sub/out/o.js"],
+        )
+
+    def test_deeper_gitignore_overrides_root(self):
+        self.write(".gitignore", "*.log\n")
+        self.write("pkg/.gitignore", "!important.log\n")
+        for f in ["a.log", "pkg/important.log", "pkg/other.log"]:
+            self.write(f, "x")
+        self.assertEqual(self.resolve(), [".gitignore", "pkg/.gitignore", "pkg/important.log"])
+
+    def test_gitignore_inside_an_ignored_folder_is_not_read(self):
+        self.write(".gitignore", "generated/\n")
+        self.write("generated/.gitignore", "!*\n")
+        self.write("generated/a.ts", "x")
+        self.assertEqual(self.resolve(), [".gitignore"])
+
+    def test_no_gitignore_flag_skips_nested_ones_too(self):
+        self.write("apps/web/.gitignore", "*.ts\n")
+        self.write("apps/web/a.ts", "x")
+        spec = build_spec(rule_modules=[], gitignore_path=None)
+        self.assertIn("apps/web/a.ts", self.rels(resolve_files(self.root, spec)))

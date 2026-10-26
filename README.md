@@ -507,3 +507,9 @@ Adding a new language takes three small steps: a `PATTERNS` list in `contextzip/
 ## License
 
 [MIT](https://github.com/akadeepesh/contextzip/blob/main/LICENSE) © Deepesh
+
+---
+
+<p align="center"><sub>
+  Built by <a href="https://akadeepesh.com?ref=github">Deepesh Kumar</a>
+</sub></p>

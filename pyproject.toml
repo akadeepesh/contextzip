@@ -39,6 +39,7 @@ mcp = ["mcp>=2.3,<3; python_version >= '3.10'"]
 
 [project.urls]
 Homepage = "https://www.contextzipcli.com"
+Author = "https://akadeepesh.com"
 Documentation = "https://www.contextzipcli.com/getting-started"
 Repository = "https://github.com/akadeepesh/contextzip"
 Issues = "https://github.com/akadeepesh/contextzip/issues"

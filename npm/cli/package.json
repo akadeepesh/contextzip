@@ -11,7 +11,11 @@
     "directory": "npm/cli"
   },
   "license": "MIT",
-  "author": "Deepesh",
+  "author": {
+    "name": "Deepesh",
+    "email": "akadeepesh1710@gmail.com",
+    "url": "https://akadeepesh.com"
+  },
   "bin": {
     "contextzip": "bin/contextzip.js",
     "cz": "bin/contextzip.js"

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markup import escape
 
 from contextzip import __version__
 from contextzip.config import (
@@ -1468,15 +1469,17 @@ def cmd_update(check_only: bool, yes: bool) -> None:
     HOW IT WORKS
       contextzip cuts frequent releases, so this beats remembering
       `pip install --upgrade contextzip` by hand. It detects whether this
-      install came from pip, pipx, or uv tool and re-invokes the matching
-      one, upgrading the same interpreter that's currently running —
-      never a possibly-different "pip" found on PATH.
+      install came from pip, pipx, uv tool or a uv-made venv, tries the
+      matching installer first and falls back to the others (pip ↔ uv,
+      pip --user) until the new version actually lands — always upgrading
+      the interpreter that's currently running, never a possibly-different
+      "pip" found on PATH.
 
       A standalone build (from npm, Homebrew or Scoop) is updated by the
       tool that installed it; this prints the command to run.
     """
     binary = updater_mod.binary_install()
-    manual = binary.update_command if binary else "pip install --upgrade contextzip"
+    manual = binary.update_command if binary else updater_mod.manual_update_command()
 
     console.print()
     with status("[cyan]Checking for updates…[/]"):
@@ -1515,18 +1518,33 @@ def cmd_update(check_only: bool, yes: bool) -> None:
             return
 
     with status(f"[cyan]Updating to {check.latest}…[/]"):
-        result = updater_mod.run_update()
+        result = updater_mod.run_update(target=check.latest)
 
     console.print()
     if result.ok:
         ok(f"Updated to contextzip {check.latest}", f"via {result.method}")
+        if len(result.attempts) > 1:
+            tried = ", ".join(a.step.method for a in result.attempts[:-1])
+            info(f"({tried} didn't work here, so contextzip fell back to {result.method}.)")
         info("Restart any running contextzip/watch sessions to pick it up.")
+        console.print()
+        return
+
+    if not result.attempts:
+        err("Couldn't find pip or uv for this Python to run the update with")
     else:
-        err(f"Update via {result.method} failed")
-        if result.output:
-            console.print(f"[dim]{result.output}[/]")
-        info(f"You can also update manually: {manual}")
+        err("Update failed — tried " + ", then ".join(a.step.method for a in result.attempts))
+        for attempt in result.attempts:
+            console.print(f"  [bold]{attempt.step.method}[/] [dim]$ {attempt.step.display}[/]", highlight=False, soft_wrap=True)
+            tail = attempt.output.splitlines()[-4:]
+            for line in tail:
+                console.print(f"    [dim]{escape(line)}[/]", highlight=False, soft_wrap=True)
+    if result.hint:
+        info(result.hint)
+    info("To update by hand, run:")
+    console.print(f"    {manual}", highlight=False, soft_wrap=True)
     console.print()
+    raise SystemExit(1)
 
 
 # Core execution logic (shared by main command + all subcommands)

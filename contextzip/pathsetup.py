@@ -99,7 +99,8 @@ def in_path_value(directory: Path, value: str, sep: str = os.pathsep) -> bool:
 
 
 def status() -> PathStatus:
-    manager = "pipx" if updater._installed_via_pipx() else "uv" if updater._installed_via_uv_tool() else None
+    install = updater.current_install()
+    manager = "pipx" if install.via_pipx else "uv" if install.via_uv_tool else None
     directory = scripts_dir()
     return PathStatus(
         directory=directory,

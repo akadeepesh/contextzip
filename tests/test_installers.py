@@ -161,3 +161,110 @@ class StandaloneCommandTests(TempProject):
             result = CliRunner().invoke(cli.main, ["setup-path"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("standalone build", result.output)
+
+
+def py_install(prefix, exe="/env/bin/python", in_venv=True, has_pip=True, cfg=None, marker=None):
+    prefix = Path(prefix)
+    if cfg is not None:
+        (prefix / "pyvenv.cfg").write_text(cfg, encoding="utf-8")
+    if marker:
+        (prefix / marker).write_text("", encoding="utf-8")
+    return updater.PythonInstall(executable=exe, prefix=str(prefix), in_venv=in_venv, has_pip=has_pip)
+
+
+def with_tools(*names):
+    return lambda name: f"/bin/{name}" if name in names else None
+
+
+class UpdatePlanTests(TempProject):
+    def methods(self, install, *tools):
+        return [s.method for s in updater.update_plan(install, with_tools(*tools))]
+
+    def test_plain_pip_install_falls_back_to_uv(self):
+        install = py_install(self.root, in_venv=False)
+        self.assertEqual(self.methods(install, "uv"), ["pip", "uv pip"])
+        self.assertEqual(self.methods(install), ["pip"])
+
+    def test_uv_made_venv_prefers_uv_and_skips_missing_pip(self):
+        install = py_install(self.root, has_pip=False, cfg="home = /usr/bin\nuv = 0.13.1\n")
+        self.assertTrue(install.made_by_uv)
+        self.assertEqual(self.methods(install, "uv"), ["uv pip"])
+
+    def test_uv_tool_install(self):
+        install = py_install(self.root, marker="uv-receipt.toml")
+        self.assertEqual(self.methods(install, "uv"), ["uv tool", "uv pip", "pip"])
+
+    def test_uv_tool_detected_by_windows_path(self):
+        install = py_install(self.root, exe=r"C:\Users\me\AppData\Roaming\uv\data\tools\contextzip\Scripts\python.exe")
+        self.assertTrue(install.via_uv_tool)
+
+    def test_pipx_install(self):
+        install = py_install(self.root, marker="pipx_metadata.json")
+        self.assertEqual(self.methods(install, "pipx", "uv"), ["pipx", "pip", "uv pip"])
+
+    def test_uv_pip_targets_the_running_interpreter(self):
+        install = py_install(self.root, exe="/proj/.venv/bin/python", has_pip=False, cfg="uv = 0.13.1\n")
+        (step,) = updater.update_plan(install, with_tools("uv"))
+        self.assertEqual(step.cmd[:5], ("uv", "pip", "install", "--python", "/proj/.venv/bin/python"))
+
+
+class RunUpdateTests(TempProject):
+    def run_with(self, install, outcomes, versions, tools=("uv",)):
+        calls = []
+
+        def fake_run(cmd, timeout):
+            calls.append(cmd)
+            return outcomes.pop(0)
+
+        with mock.patch.object(updater, "_run", side_effect=fake_run), mock.patch.object(
+            updater, "_installed_version", side_effect=lambda exe: versions.pop(0)
+        ), mock.patch.object(updater, "binary_install", return_value=None):
+            result = updater.run_update(target="0.6.0", install=install, which=with_tools(*tools))
+        return result, calls
+
+    def test_falls_back_to_uv_when_pip_fails(self):
+        install = py_install(self.root)
+        result, calls = self.run_with(install, [(False, "No module named pip"), (True, "ok")], ["0.6.0"])
+        self.assertTrue(result.ok)
+        self.assertEqual(result.method, "uv pip")
+        self.assertEqual([a.step.method for a in result.attempts], ["pip", "uv pip"])
+
+    def test_exit_zero_without_new_version_is_not_success(self):
+        install = py_install(self.root)
+        result, _ = self.run_with(install, [(True, "Requirement already satisfied"), (True, "")], ["0.5.6", "0.6.0"])
+        self.assertTrue(result.ok)
+        self.assertEqual(result.method, "uv pip")
+        self.assertIn("still on 0.5.6", result.attempts[0].output)
+
+    def test_permission_error_retries_with_user_outside_venv(self):
+        install = py_install(self.root, in_venv=False)
+        result, calls = self.run_with(install, [(False, "[Errno 13] Permission denied"), (True, "")], ["0.6.0"], tools=())
+        self.assertTrue(result.ok)
+        self.assertEqual(result.method, "pip --user")
+        self.assertEqual(calls[-1][-1], "--user")
+
+    def test_externally_managed_gives_a_real_hint(self):
+        install = py_install(self.root, in_venv=False)
+        result, _ = self.run_with(
+            install, [(False, "error: externally-managed-environment"), (False, "externally managed")], []
+        )
+        self.assertFalse(result.ok)
+        self.assertIn("uv tool install contextzip", result.hint)
+
+    def test_cli_lists_every_attempt_on_failure(self):
+        newer = VersionCheck(current="0.5.6", latest="0.6.0")
+        failed = updater.UpdateResult(
+            ok=False, method="uv pip", output="boom",
+            attempts=[
+                updater.Attempt(updater.UpdateStep("pip", ("python", "-m", "pip")), False, "pip broke"),
+                updater.Attempt(updater.UpdateStep("uv pip", ("uv", "pip")), False, "uv broke"),
+            ],
+            hint="try something",
+        )
+        with mock.patch.object(updater, "binary_install", return_value=None), mock.patch.object(
+            updater, "check_latest_version", return_value=newer
+        ), mock.patch.object(updater, "run_update", return_value=failed):
+            result = CliRunner().invoke(cli.main, ["update", "--yes"])
+        self.assertEqual(result.exit_code, 1, result.output)
+        for text in ("pip broke", "uv broke", "try something", "then uv pip"):
+            self.assertIn(text, result.output)

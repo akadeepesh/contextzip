@@ -7,8 +7,9 @@ This module:
 
   1. Asks PyPI's JSON API for the latest published version.
   2. Compares it against the version actually running (contextzip.__version__).
-  3. If newer, re-invokes pip (or pipx, if that's how contextzip was
-     installed) to upgrade in place.
+  3. If newer, works out how contextzip was installed (pip, pipx, uv tool,
+     a uv-made venv) and tries each installer that could upgrade it, in
+     order, until one actually lands the new version.
 
 Never raises on network failure — a broken connection or PyPI hiccup
 should degrade to "couldn't check right now", not crash the CLI.
@@ -16,10 +17,14 @@ should degrade to "couldn't check right now", not crash the CLI.
 
 from __future__ import annotations
 
+import importlib.util
+import os
+import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from contextzip import __version__ as installed_version
 
@@ -108,19 +113,61 @@ def check_latest_version(timeout: float = _TIMEOUT_SECS) -> VersionCheck:
 # ---------------------------------------------------------------------------
 
 
-def _installed_via_pipx() -> bool:
-    """
-    Best-effort guess at whether this contextzip was installed with pipx
-    rather than plain pip — pipx installs live under a `pipx/venvs/...`
-    path, which shows up in the interpreter's own executable path.
-    """
-    exe = sys.executable.replace("\\", "/").lower()
-    return "pipx" in exe
+@dataclass(frozen=True)
+class PythonInstall:
+    """What we know about the interpreter that's running contextzip."""
+
+    executable: str
+    prefix: str
+    in_venv: bool
+    has_pip: bool
+
+    @property
+    def _exe(self) -> str:
+        return self.executable.replace("\\", "/").lower()
+
+    @property
+    def via_pipx(self) -> bool:
+        # pipx drops pipx_metadata.json in every venv it manages; the path
+        # check covers older pipx versions.
+        return (Path(self.prefix) / "pipx_metadata.json").exists() or "/pipx/" in self._exe
+
+    @property
+    def via_uv_tool(self) -> bool:
+        # `uv tool install` writes uv-receipt.toml into the tool's venv.
+        # Paths: ~/.local/share/uv/tools/... (Unix), %APPDATA%\uv\data\tools\... (Windows).
+        return (
+            (Path(self.prefix) / "uv-receipt.toml").exists()
+            or "/uv/tools/" in self._exe
+            or "/uv/data/tools/" in self._exe
+        )
+
+    @property
+    def made_by_uv(self) -> bool:
+        """A venv created by `uv venv` / `uv sync` — these have no pip in them."""
+        return self.in_venv and "uv" in _read_pyvenv_cfg(self.prefix)
 
 
-def _installed_via_uv_tool() -> bool:
-    exe = sys.executable.replace("\\", "/").lower()
-    return "/uv/tools/" in exe or "\\uv\\tools\\" in sys.executable.lower()
+def _read_pyvenv_cfg(prefix: str) -> dict[str, str]:
+    try:
+        text = (Path(prefix) / "pyvenv.cfg").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}
+    cfg: dict[str, str] = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            cfg[key.strip().lower()] = value.strip()
+    return cfg
+
+
+def current_install() -> PythonInstall:
+    return PythonInstall(
+        executable=sys.executable,
+        prefix=sys.prefix,
+        in_venv=sys.prefix != getattr(sys, "base_prefix", sys.prefix),
+        has_pip=importlib.util.find_spec("pip") is not None,
+    )
 
 
 RELEASES_URL = "https://github.com/akadeepesh/contextzip/releases/latest"
@@ -157,24 +204,133 @@ def binary_install(executable: str | None = None, frozen: bool | None = None) ->
     return BinaryInstall("a download", f"download the latest build from {RELEASES_URL}")
 
 
+@dataclass(frozen=True)
+class UpdateStep:
+    method: str
+    cmd: tuple[str, ...]
+
+    @property
+    def display(self) -> str:
+        return subprocess.list2cmdline(self.cmd) if os.name == "nt" else shlex.join(self.cmd)
+
+
+def update_plan(install: PythonInstall | None = None, which=shutil.which) -> list[UpdateStep]:
+    """
+    Every way we could upgrade this install, most likely to work first.
+
+    Each step targets the *running* interpreter — never a bare "pip" off
+    PATH, which could silently upgrade a different Python. pip-only
+    steps are left out when this interpreter has no pip (uv-made venvs).
+    """
+    install = install or current_install()
+    exe = install.executable
+    pip = UpdateStep("pip", (exe, "-m", "pip", "install", "--upgrade", "contextzip"))
+    uv_pip = UpdateStep("uv pip", ("uv", "pip", "install", "--python", exe, "--upgrade", "contextzip"))
+    has_uv = which("uv") is not None
+
+    steps: list[UpdateStep] = []
+    if install.via_pipx:
+        if which("pipx"):
+            steps.append(UpdateStep("pipx", ("pipx", "upgrade", "contextzip")))
+        steps.append(pip)
+        if has_uv:
+            steps.append(uv_pip)
+    elif install.via_uv_tool:
+        if has_uv:
+            steps += [UpdateStep("uv tool", ("uv", "tool", "upgrade", "contextzip")), uv_pip]
+        steps.append(pip)
+    elif install.made_by_uv:
+        if has_uv:
+            steps.append(uv_pip)
+        steps.append(pip)
+    else:
+        steps.append(pip)
+        if has_uv:
+            steps.append(uv_pip)
+
+    if not install.has_pip:
+        steps = [s for s in steps if s.method != "pip"]
+    return steps
+
+
+def manual_update_command(install: PythonInstall | None = None, which=shutil.which) -> str:
+    """The single command we'd tell someone to run by hand."""
+    binary = binary_install()
+    if binary is not None:
+        return binary.update_command
+    install = install or current_install()
+    plan = update_plan(install, which)
+    if plan:
+        return plan[0].display
+    # No pip and no uv on PATH: getting uv is the shortest way back.
+    return f"install uv (https://docs.astral.sh/uv/), then: uv pip install --python {install.executable} --upgrade contextzip"
+
+
+@dataclass
+class Attempt:
+    step: UpdateStep
+    ok: bool
+    output: str
+
+
 @dataclass
 class UpdateResult:
     ok: bool
     method: str
     output: str
+    attempts: list[Attempt] = field(default_factory=list)
+    hint: str | None = None
 
 
-def run_update(timeout: float = 120) -> UpdateResult:
+_PERMISSION_MARKERS = ("permission denied", "[errno 13]", "[winerror 5]", "access is denied")
+
+
+def _run(cmd: tuple[str, ...], timeout: float) -> tuple[bool, str]:
+    try:
+        proc = subprocess.run(list(cmd), capture_output=True, text=True, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001 — missing exe, timeout, etc.
+        return False, f"{type(exc).__name__}: {exc}"
+    return proc.returncode == 0, ((proc.stdout or "") + (proc.stderr or "")).strip()
+
+
+def _installed_version(executable: str) -> str | None:
+    """The contextzip version *executable* now sees, or None if we can't tell."""
+    ok, out = _run(
+        (executable, "-c", "from importlib.metadata import version; print(version('contextzip'))"),
+        timeout=30,
+    )
+    return out.splitlines()[-1].strip() if ok and out else None
+
+
+def _hint_for(attempts: list[Attempt], install: PythonInstall, has_uv: bool) -> str | None:
+    text = "\n".join(a.output for a in attempts).lower()
+    if "externally-managed-environment" in text or "externally managed" in text:
+        return (
+            "This Python is managed by your OS and refuses pip installs. Install contextzip "
+            "as an isolated tool instead: `uv tool install contextzip` or `pipx install contextzip`."
+        )
+    if any(m in text for m in _PERMISSION_MARKERS):
+        return "The install folder isn't writable. Re-run from an elevated (administrator / sudo) shell."
+    if not install.has_pip and not has_uv:
+        return (
+            "This Python has no pip (common in venvs made by uv). Install uv from "
+            "https://docs.astral.sh/uv/ or run `python -m ensurepip`, then try again."
+        )
+    if "still on" in text:
+        return "PyPI can take a few minutes to serve a fresh release everywhere — try again shortly."
+    return None
+
+
+def run_update(target: str | None = None, timeout: float = 120, install: PythonInstall | None = None,
+               which=shutil.which) -> UpdateResult:
     """
-    Upgrade the installed contextzip package to the latest PyPI release.
+    Upgrade contextzip, trying each step of `update_plan` until one works.
 
-    Picks the tool that matches how contextzip was installed:
-      - pipx, if this interpreter lives inside a pipx venv and the pipx
-        executable is on PATH
-      - uv tool, if this interpreter lives inside a uv tool install
-      - otherwise `python -m pip install --upgrade contextzip`, using
-        the *currently running* interpreter's pip — never a bare "pip"
-        off PATH, which could silently target the wrong Python.
+    A step only counts as success if the running interpreter actually sees
+    the new version afterwards (when *target* is given) — pip can exit 0
+    after upgrading nothing, and `uv tool upgrade` exits 0 when a version
+    constraint holds it back. Outside a venv, a pip permission error is
+    retried once with `--user`.
 
     A standalone build (see `binary_install`) is never updated here; the
     result carries the command to run instead.
@@ -182,24 +338,36 @@ def run_update(timeout: float = 120) -> UpdateResult:
     binary = binary_install()
     if binary is not None:
         return UpdateResult(ok=False, method=binary.manager, output=binary.update_command)
-    if _installed_via_pipx() and shutil.which("pipx"):
-        cmd = ["pipx", "upgrade", "contextzip"]
-        method = "pipx"
-    elif _installed_via_uv_tool() and shutil.which("uv"):
-        cmd = ["uv", "tool", "upgrade", "contextzip"]
-        method = "uv tool"
-    else:
-        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "contextzip"]
-        method = "pip"
 
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        output = (proc.stdout or "") + (proc.stderr or "")
-        return UpdateResult(ok=proc.returncode == 0, method=method, output=output.strip())
-    except Exception as exc:  # noqa: BLE001
-        return UpdateResult(ok=False, method=method, output=f"{type(exc).__name__}: {exc}")
+    install = install or current_install()
+    steps = update_plan(install, which)
+    attempts: list[Attempt] = []
+    i = 0
+    while i < len(steps):
+        step = steps[i]
+        i += 1
+        ok, output = _run(step.cmd, timeout)
+        if ok and target:
+            now = _installed_version(install.executable)
+            if now is not None and is_newer(target, now):
+                ok = False
+                output = f"{output}\n(finished, but contextzip is still on {now})".strip()
+        attempts.append(Attempt(step, ok, output))
+        if ok:
+            return UpdateResult(ok=True, method=step.method, output=output, attempts=attempts)
+        if (
+            step.method == "pip"
+            and not install.in_venv
+            and "--user" not in step.cmd
+            and any(m in output.lower() for m in _PERMISSION_MARKERS)
+        ):
+            steps.insert(i, UpdateStep("pip --user", step.cmd + ("--user",)))
+
+    last = attempts[-1] if attempts else None
+    return UpdateResult(
+        ok=False,
+        method=last.step.method if last else "none",
+        output=last.output if last else "No pip or uv available to run the update.",
+        attempts=attempts,
+        hint=_hint_for(attempts, install, which("uv") is not None),
+    )

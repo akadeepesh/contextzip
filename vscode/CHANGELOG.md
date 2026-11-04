@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.3] — Unreleased
+
+- Bundles the contextzip 0.5.7 CLI.
+
 ## [0.1.2] — 2026-10-24
 
 - Bundles the contextzip 0.5.6 CLI: `.gitignore` files in subfolders are respected (monorepos).

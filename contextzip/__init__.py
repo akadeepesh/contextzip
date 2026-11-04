@@ -1,6 +1,6 @@
 """contextzip — intelligent codebase packager for AI tools."""
 
-__version__ = "0.5.6"
+__version__ = "0.5.7"
 
 from contextzip.api import (
     FileCollection,

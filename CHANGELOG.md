@@ -1242,3 +1242,17 @@ This project uses [Semantic Versioning](https://semver.org/).
   being cut off: the reply's token budget now grows with the file cap.
 - **The Gemini API key is sent in the `x-goog-api-key` header** instead of
   the URL, so it can't show up in proxy logs or error messages.
+
+## [0.5.7] — 2026-11-04
+
+### Fixed
+- **`cz update` works with uv, pipx and virtual environments**, not just
+  plain pip. It detects how contextzip was installed (pip, pipx, `uv tool`,
+  or a venv made by uv, which has no pip) and tries each installer that
+  can upgrade the running Python in turn — pip, `uv pip`, `pipx upgrade`,
+  `uv tool upgrade` — until the new version is actually installed. Outside
+  a venv, a pip permission error is retried with `--user`.
+- When every attempt fails, `cz update` lists each command it ran with its
+  error, a hint for the likely cause (an OS-managed Python, a folder you
+  can't write to, no pip or uv available), and the exact command to run
+  by hand for your setup. It now exits non-zero on failure.

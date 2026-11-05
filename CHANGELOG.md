@@ -1284,3 +1284,21 @@ This project uses [Semantic Versioning](https://semver.org/).
   GitHub's newest Ubuntu runner has no Python 3.9. That job now runs on
   Ubuntu 24.04. No code changes from 0.6.0, so `pip install -U contextzip`
   brings everything in 0.5.7 and 0.6.0.
+
+## [0.6.2] — 2026-11-06
+
+### Security
+- **Secrets in Spring Boot config files are always redacted.**
+  `application.properties` and `application.yml` (with profile variants
+  such as `application-prod.yml`, and `bootstrap.*`) are included because
+  the AI needs your configuration, but they often hold live database
+  passwords and signing secrets as plain values that the opt-in
+  `limits.redact_secrets` scan didn't catch. Now, whatever that setting
+  says, the value of every password, secret, token, credentials, API-key
+  and private-key setting becomes `[REDACTED]`, as does a password inside
+  any URL (`jdbc:postgresql://app:[REDACTED]@db/app`, `?password=`).
+  `${ENV_VAR}` references are kept; a fallback such as
+  `${DB_PASSWORD:hunter2}` is redacted. Multi-line YAML values and
+  ISO-8859-1 `.properties` files are handled. This covers normal runs,
+  `--git-changes`, the MCP server and `contextzip watch`, and `apply-zip`
+  keeps your real values when the file comes back.

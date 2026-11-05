@@ -2,7 +2,7 @@
 
 ## [0.1.3] — Unreleased
 
-- Bundles the contextzip 0.6.1 CLI: Java, Kotlin and Spring Boot projects are detected and packaged.
+- Bundles the contextzip 0.6.2 CLI: Java, Kotlin and Spring Boot projects are detected and packaged, and secrets in Spring Boot config files are redacted.
 
 ## [0.1.2] — 2026-10-24
 

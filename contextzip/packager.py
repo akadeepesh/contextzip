@@ -77,7 +77,13 @@ from rich.progress import (
 )
 
 from contextzip.filters import ResolveResult
-from contextzip.redact import is_sensitive_path, redact_secrets, redact_sensitive_file
+from contextzip.redact import (
+    is_sensitive_path,
+    is_spring_config,
+    redact_secrets,
+    redact_sensitive_file,
+    redact_spring_config,
+)
 
 # Subdirectory of the workspace where generated ZIPs are written.
 _OUTPUT_DIRNAME = "output"
@@ -244,6 +250,20 @@ def _write_member(
             ) from None
         redacted_text, matched = redact_sensitive_file(rel, text)
         zf.writestr(rel.as_posix(), redacted_text.encode("utf-8"))
+        return matched
+
+    if is_spring_config(rel) and abs_path not in binary_paths:
+        # application.properties / application.yml: always redacted, like
+        # a deliberately included .env — see redact.redact_spring_config.
+        # Spring reads .properties as ISO-8859-1, so fall back to it rather
+        # than zipping a non-UTF-8 file unredacted; latin-1 decodes any bytes.
+        original_bytes = abs_path.read_bytes()
+        try:
+            encoding, text = "utf-8", original_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            encoding, text = "latin-1", original_bytes.decode("latin-1")
+        redacted_text, matched = redact_spring_config(rel, text)
+        zf.writestr(rel.as_posix(), redacted_text.encode(encoding) if matched else original_bytes)
         return matched
 
     if not redact_enabled or abs_path in binary_paths or abs_path in large_paths:

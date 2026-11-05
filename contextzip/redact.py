@@ -29,6 +29,13 @@ says):
   - A secret file that isn't UTF-8 text (a .p12, a .jks keystore) can't be
     redacted, so packager.py skips it instead of zipping it raw.
 
+Spring Boot config files
+────────────────────────
+application.properties / application.yml (and profile and bootstrap
+variants) are included like any project file but always redacted too, by
+key name and in URLs, whatever `limits.redact_secrets` says. See
+redact_spring_config.
+
 Design choices, deliberately conservative to match the rest of the project:
   - A curated list of high-precision patterns (known key/token formats,
     private-key blocks, JWTs, and a narrow generic key=value assignment
@@ -331,6 +338,236 @@ def redact_sensitive_file(rel: PurePath | str, text: str) -> tuple[str, list[str
     if is_env_file(rel):
         text, count = redact_env(text)
         names.extend([ENV_VALUE] * count)
+    text, matched = redact_secrets(text)
+    names.extend(matched)
+    return text, names
+
+
+# ---------------------------------------------------------------------------
+# Spring Boot config files: always redacted (see redact_spring_config)
+# ---------------------------------------------------------------------------
+
+# application.properties, application-prod.yml, bootstrap.yaml, ...
+_SPRING_CONFIG_NAME = re.compile(
+    r"^(?:application|bootstrap)(?:-[\w.-]+)?\.(?:properties|ya?ml)$", re.IGNORECASE
+)
+
+SPRING_VALUE = "Spring config value"
+
+# Words that make a key's value a secret, matched against the key's last
+# segment with '-' and '_' removed (key-store-password -> keystorepassword).
+_SPRING_SECRET_WORDS = (
+    "password", "passwd", "pwd", "passphrase", "secret", "token", "credential",
+    "apikey", "privatekey", "accesskey", "secretkey", "signingkey", "encryptionkey",
+    "masterkey", "clientkey", "authkey",
+)
+# ...unless the segment ends like a setting *about* the secret, not the
+# secret itself: token-uri, token-validity-seconds, secret-file, ...
+_SPRING_NOT_SECRET_ENDINGS = (
+    "uri", "url", "endpoint", "path", "header", "name", "expiration", "expiry",
+    "validity", "ttl", "seconds", "millis", "timeout", "length", "size", "enabled",
+    "required", "type", "algorithm", "prefix", "location", "file", "format", "mode",
+)
+
+# user:password@ in a URL, e.g. jdbc:postgresql://app:hunter2@db/app
+_URL_CREDENTIALS = re.compile(r"(\b[A-Za-z][\w+.\-]*://[^:/@\s'\"]+:)([^@/\s'\"]+)(@)")
+# ?password=... in a URL or connection string
+_URL_PASSWORD_PARAM = re.compile(r"(?i)([?&;](?:password|passwd|pwd)=)([^&;\s'\"]+)")
+
+_YAML_KEY_LINE = re.compile(
+    r"^(\s*)(-\s+)?([\w.\-\[\]/@$]+|\"[^\"]*\"|'[^']*')(\s*:)(?=\s|$)(\s*)(.*)$"
+)
+_YAML_BLOCK_SCALAR = re.compile(r"^[|>][-+0-9]*$")
+_PROPERTIES_LINE = re.compile(r"^(\s*)((?:\\.|[^=:\s\\])+)(\s*[=:]\s*|\s+)(.*)$")
+
+
+def is_spring_config(rel: PurePath | str) -> bool:
+    """True for Spring Boot config files: application[-profile].properties/.yml/.yaml, bootstrap*."""
+    return bool(_SPRING_CONFIG_NAME.match(PurePath(rel).name))
+
+
+def _is_secret_key(key: str) -> bool:
+    segments = [s for s in re.split(r"[.\[\]]", key.strip("'\"")) if s]
+    last = segments[-1] if segments else ""
+    norm = re.sub(r"[-_]", "", last).lower()
+    if norm == "key":
+        return True
+    if not any(w in norm for w in _SPRING_SECRET_WORDS):
+        return False
+    return not norm.endswith(_SPRING_NOT_SECRET_ENDINGS)
+
+
+def _redact_secret_value(value: str) -> tuple[str, bool]:
+    """
+    A secret key's value -> "[REDACTED]". A ${ENV_VAR} reference is kept,
+    since it points at a secret rather than holding one, but the fallback in
+    ${DB_PASSWORD:hunter2} is redacted. Placeholders like "changeme" are kept.
+    """
+    v = value.strip()
+    if not v:
+        return value, False
+    m = re.fullmatch(r"\$\{([^}:]+):(.*)\}", v, re.DOTALL)
+    if m:
+        default = m.group(2)
+        if not default.strip() or _looks_like_placeholder(default):
+            return value, False
+        return "${" + m.group(1) + ":" + REDACTED + "}", True
+    if _looks_like_placeholder(v):
+        return value, False
+    return REDACTED, True
+
+
+def _scrub_url_credentials(text: str) -> tuple[str, int]:
+    """Redact passwords embedded in URLs / connection strings anywhere in *text*."""
+    count = 0
+
+    def _sub(m: re.Match[str]) -> str:
+        nonlocal count
+        if _looks_like_placeholder(m.group(2)):
+            return m.group(0)
+        count += 1
+        return m.group(1) + REDACTED + (m.group(3) if m.re.groups >= 3 else "")
+
+    text = _URL_CREDENTIALS.sub(_sub, text)
+    text = _URL_PASSWORD_PARAM.sub(_sub, text)
+    return text, count
+
+
+def _continues(line: str) -> bool:
+    """A .properties line continues onto the next when it ends in an odd number of backslashes."""
+    trailing = len(line) - len(line.rstrip("\\"))
+    return trailing % 2 == 1
+
+
+def _redact_properties(text: str) -> tuple[str, int]:
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    count = 0
+    i = 0
+    while i < len(lines):
+        body, ending = _split_line_ending(lines[i])
+        i += 1
+        stripped = body.lstrip()
+        if not stripped or stripped[0] in "#!":
+            out.append(body + ending)
+            continue
+        m = _PROPERTIES_LINE.match(body)
+        if not m:
+            out.append(body + ending)
+            continue
+        prefix, key, value = m.group(1) + m.group(2) + m.group(3), m.group(2), m.group(4)
+
+        # Gather continuation lines into one logical value.
+        raw_lines = [body + ending]
+        logical = value
+        last = body
+        while _continues(last) and i < len(lines):
+            next_body, ending = _split_line_ending(lines[i])
+            i += 1
+            raw_lines.append(next_body + ending)
+            logical = logical[:-1] + next_body.lstrip()
+            last = next_body
+
+        if _is_secret_key(key):
+            new_value, changed = _redact_secret_value(logical)
+            if changed:
+                out.append(prefix + new_value + ending)
+                count += 1
+                continue
+        scrubbed, n = _scrub_url_credentials("".join(raw_lines))
+        out.append(scrubbed)
+        count += n
+    return "".join(out), count
+
+
+def _redact_yaml(text: str) -> tuple[str, int]:
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    count = 0
+    i = 0
+    while i < len(lines):
+        body, ending = _split_line_ending(lines[i])
+        i += 1
+        m = None if body.lstrip().startswith("#") else _YAML_KEY_LINE.match(body)
+        if m is None:
+            scrubbed, n = _scrub_url_credentials(body)
+            out.append(scrubbed + ending)
+            count += n
+            continue
+        indent, dash, key, colon, space, rest = m.groups()
+        head = indent + (dash or "") + key + colon + space
+        key_indent = len(indent) + len(dash or "")
+
+        if not _is_secret_key(key) or not rest or rest.startswith("#"):
+            scrubbed, n = _scrub_url_credentials(body)
+            out.append(scrubbed + ending)
+            count += n
+            continue
+
+        if rest[0] in "'\"":
+            quote = rest[0]
+            close = _closing_quote(rest, quote, 1)
+            inner = rest[1:close] if close != -1 else rest[1:]
+            tail = rest[close + 1:] if close != -1 else ""
+            new_inner, changed = _redact_secret_value(inner)
+            if changed:
+                out.append(head + quote + new_inner + quote + _safe_tail(tail) + ending)
+                count += 1
+            else:
+                out.append(body + ending)
+            continue
+
+        comment = re.search(r"\s+#.*$", rest)
+        value = rest[: comment.start()] if comment else rest
+        tail = comment.group(0) if comment else ""
+
+        if _YAML_BLOCK_SCALAR.match(value.strip()):
+            # A multi-line value (often a PEM key): drop its lines, keep one marker.
+            while i < len(lines):
+                next_body, _next_ending = _split_line_ending(lines[i])
+                next_indent = len(next_body) - len(next_body.lstrip())
+                if next_body.strip() and next_indent <= key_indent:
+                    break
+                i += 1
+            out.append(head + REDACTED + tail + ending)
+            count += 1
+            continue
+
+        new_value, changed = _redact_secret_value(value)
+        if changed:
+            out.append(head + new_value + tail + ending)
+            count += 1
+        else:
+            out.append(body + ending)
+    return "".join(out), count
+
+
+def redact_spring_config(rel: PurePath | str, text: str) -> tuple[str, list[str]]:
+    """
+    Redact a Spring Boot config file (see is_spring_config).
+
+    application.properties / application.yml are ordinary project files
+    that an AI tool needs to see, so they're included, but they routinely
+    hold live database passwords, JWT signing secrets and API keys as plain,
+    unquoted values that redact_secrets() doesn't catch. So, whatever
+    `limits.redact_secrets` says:
+
+      - The value of every key whose last segment names a secret
+        (password, secret, token, credentials, api-key, private-key, key,
+        ...) becomes "[REDACTED]". ${ENV_VAR} references are kept, but a
+        fallback such as ${DB_PASSWORD:hunter2} is redacted.
+      - A password embedded in any URL (jdbc:postgresql://app:pw@db/app,
+        ?password=pw) is redacted, whatever the key.
+      - Then the regular redact_secrets() scan runs over the result.
+
+    Keys, comments, structure and every other value are kept. Returns the
+    same shape as redact_secrets(), with one SPRING_VALUE entry per value.
+    """
+    if PurePath(rel).name.lower().endswith(".properties"):
+        text, count = _redact_properties(text)
+    else:
+        text, count = _redact_yaml(text)
+    names = [SPRING_VALUE] * count
     text, matched = redact_secrets(text)
     names.extend(matched)
     return text, names

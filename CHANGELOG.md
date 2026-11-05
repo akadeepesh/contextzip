@@ -1275,3 +1275,12 @@ This project uses [Semantic Versioning](https://semver.org/).
   "APPLICATION FAILED TO START" report, and compile errors from javac,
   kotlinc, Maven and Gradle. Framework frames are collapsed, and application
   frames are resolved to their source files through the class's package.
+
+## [0.6.1] — 2026-11-05
+
+### Fixed
+- **Published to PyPI.** 0.6.0 (and 0.5.7) reached npm, Homebrew, Scoop and
+  the release archives but not PyPI: the release's test run failed because
+  GitHub's newest Ubuntu runner has no Python 3.9. That job now runs on
+  Ubuntu 24.04. No code changes from 0.6.0, so `pip install -U contextzip`
+  brings everything in 0.5.7 and 0.6.0.

@@ -1256,3 +1256,22 @@ This project uses [Semantic Versioning](https://semver.org/).
   error, a hint for the likely cause (an OS-managed Python, a folder you
   can't write to, no pip or uv available), and the exact command to run
   by hand for your setup. It now exits non-zero on failure.
+
+## [0.6.0] — 2026-11-05
+
+### Added
+- **Java, Kotlin and Spring Boot support.** `pom.xml`, `build.gradle(.kts)`
+  and `settings.gradle(.kts)` are detected (Spring Boot from its parent POM
+  or Gradle plugin), and their build output is left out: `target/`,
+  `build/`, `.gradle/`, `*.class`, `*.jar`/`*.war`, the `mvnw`/`gradlew`
+  wrappers, Eclipse and IntelliJ files, JVM crash dumps and Spring
+  Initializr's `HELP.md`. Sources, build files and `application.*` config
+  are kept.
+- Modules declared in a Maven `<modules>` list or a Gradle
+  `settings.gradle` `include` are detected at any depth, like npm and Cargo
+  workspaces.
+- **`contextzip watch` understands JVM output:** stack traces with their
+  `Caused by:` chains (labelled with the root cause), Spring Boot's
+  "APPLICATION FAILED TO START" report, and compile errors from javac,
+  kotlinc, Maven and Gradle. Framework frames are collapsed, and application
+  frames are resolved to their source files through the class's package.

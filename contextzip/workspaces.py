@@ -10,6 +10,8 @@ their packages, so read those lists instead of guessing:
     lerna.json        "packages": [...]                             lerna
     Cargo.toml        [workspace] members = [...]                   cargo
     go.work           use ./a  /  use ( ./a ./b )                   go
+    pom.xml           <modules><module>a</module></modules>         maven
+    settings.gradle   include 'a', ':b:c'  /  include(":a")         gradle
 
 Parsed without YAML or TOML libraries (Python 3.9 has neither built in) —
 only the simple, list-of-globs shapes these files use in practice.
@@ -89,7 +91,48 @@ def _from_go_work(folder: Path) -> list[str]:
     return [o for o in out if o]
 
 
-_READERS = (_from_package_json, _from_pnpm, _from_lerna, _from_cargo, _from_go_work)
+def _from_maven(folder: Path) -> list[str]:
+    try:
+        text = (folder / "pom.xml").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    out: list[str] = []
+    for block in re.findall(r"<modules>(.*?)</modules>", text, re.DOTALL):
+        out += [m.strip() for m in re.findall(r"<module>([^<]+)</module>", block)]
+    return [o for o in out if o]
+
+
+def _from_gradle_settings(folder: Path) -> list[str]:
+    text = ""
+    for name in ("settings.gradle", "settings.gradle.kts"):
+        try:
+            text = (folder / name).read_text(encoding="utf-8")
+            break
+        except (OSError, UnicodeDecodeError):
+            continue
+    if not text:
+        return []
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    text = re.sub(r"//[^\n]*", "", text)
+    out: list[str] = []
+    # include 'app', ':libs:core'   /   include(":app", ":lib")   /   includeBuild("tools")
+    for kind, args in re.findall(r"\b(include|includeBuild)\b\s*\(?((?:\s*['\"][^'\"]+['\"]\s*,?)+)", text):
+        for name in re.findall(r"['\"]([^'\"]+)['\"]", args):
+            # Gradle project paths use ':' as the separator; includeBuild takes a folder.
+            out.append(name if kind == "includeBuild" else name.strip(":").replace(":", "/"))
+    return [o for o in out if o]
+
+
+_READERS = (
+    _from_package_json,
+    _from_pnpm,
+    _from_lerna,
+    _from_cargo,
+    _from_go_work,
+    _from_maven,
+    _from_gradle_settings,
+)
 
 
 def _expand(folder: Path, pattern: str, root: Path) -> list[Path]:

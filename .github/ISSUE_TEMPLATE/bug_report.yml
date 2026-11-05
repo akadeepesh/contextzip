@@ -50,6 +50,9 @@ body:
         - Rust
         - Go
         - Ruby
+        - Java
+        - Kotlin
+        - Spring Boot
         - Unknown / not detected
         - Other
     validations:

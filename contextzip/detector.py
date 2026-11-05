@@ -146,7 +146,37 @@ _RULES: list[_Rule] = [
         check=lambda p: _file_exists(p, "Gemfile"),
         weight=2,
     ),
+    # ── Spring Boot (must come before generic Java) ───────────────────────
+    _Rule(
+        name="Spring Boot",
+        module="java",
+        check=lambda p: _jvm_build_mentions(p, "spring-boot", "org.springframework.boot"),
+        weight=3,
+    ),
+    # ── Java (Maven / Gradle) ─────────────────────────────────────────────
+    _Rule(
+        name="Java",
+        module="java",
+        check=lambda p: any(_file_exists(p, f) for f in _JVM_BUILD_FILES),
+        weight=3,
+    ),
+    # ── Kotlin (on top of Java: same build tools, same rules) ─────────────
+    _Rule(
+        name="Kotlin",
+        module="java",
+        check=lambda p: _jvm_build_mentions(p, "kotlin"),
+        weight=2,
+    ),
 ]
+
+# Files that mark a Maven or Gradle project.
+_JVM_BUILD_FILES = (
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +343,21 @@ def _dep_present(project_dir: Path, dep: str) -> bool:
         return dep in all_deps
     except Exception:
         return False
+
+
+def _jvm_build_mentions(project_dir: Path, *needles: str) -> bool:
+    """Check if any of *needles* appears in pom.xml or a Gradle build script."""
+    for name in ("pom.xml", "build.gradle", "build.gradle.kts"):
+        f = project_dir / name
+        if not f.exists():
+            continue
+        try:
+            text = f.read_text(encoding="utf-8", errors="ignore").lower()
+            if any(n in text for n in needles):
+                return True
+        except OSError:
+            pass
+    return False
 
 
 def _dep_present_py(project_dir: Path, dep: str) -> bool:

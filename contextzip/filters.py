@@ -48,6 +48,7 @@ _RULE_REGISTRY: dict[str, str] = {
     "rust": "contextzip.rules.rust",
     "go": "contextzip.rules.go",
     "ruby": "contextzip.rules.ruby",
+    "java": "contextzip.rules.java",
 }
 
 # Files larger than this trigger a warning (but are still included)
@@ -83,6 +84,7 @@ _ALWAYS_PRUNED_DIRNAMES = frozenset(
         ".next",
         ".nuxt",
         ".cache",
+        ".gradle",
         "target",
         "vendor",
         "site-packages",

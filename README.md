@@ -35,7 +35,7 @@ Every AI coding session starts the same way. You hunt down the relevant files, s
 
 contextzip does all of that for you. Run it from your project root and it:
 
-1. **Detects your stack** (Node.js, Next.js, Python, Django, FastAPI, Rust, Go, Ruby, monorepos included).
+1. **Detects your stack** (Node.js, Next.js, Python, Django, FastAPI, Java, Kotlin, Spring Boot, Rust, Go, Ruby, monorepos included).
 2. **Excludes the noise**: dependencies, build output, caches, binaries, logs, and anything in your `.gitignore`.
 3. **Keeps secrets out**: `.env` files, private keys, cloud credentials and Terraform state are left out by default. If you include your `.env` on purpose, its values are redacted.
 4. **Puts the ZIP on your clipboard** as a real file, so you can paste it straight into Claude, ChatGPT, Gemini or any other upload box.
@@ -156,7 +156,7 @@ contextzip apply-zip                        # write the AI's changes back
 
 ### Smart packaging
 
-contextzip scans your project and recognises its stack from marker files such as `package.json`, `next.config.*`, `pyproject.toml`, `manage.py`, `Cargo.toml`, `go.mod` and `Gemfile`. It looks a couple of levels deep, so a monorepo with a Next.js frontend and a FastAPI backend gets **both** rule sets applied.
+contextzip scans your project and recognises its stack from marker files such as `package.json`, `next.config.*`, `pyproject.toml`, `manage.py`, `pom.xml`, `build.gradle(.kts)`, `Cargo.toml`, `go.mod` and `Gemfile`. It looks a couple of levels deep, so a monorepo with a React frontend and a Spring Boot backend gets **both** rule sets applied. Modules a Maven `pom.xml` or Gradle `settings.gradle` declares are found at any depth.
 
 | Ecosystem | Examples of what's excluded |
 |---|---|
@@ -165,6 +165,7 @@ contextzip scans your project and recognises its stack from marker files such as
 | **Rust** | `target/`, `Cargo.lock`, `*.rlib` |
 | **Go** | `vendor/`, `bin/`, `go.sum` |
 | **Ruby / Rails** | `vendor/bundle/`, `tmp/`, `log/`, `storage/`, built gems |
+| **Java / Kotlin / Spring Boot** | `target/`, `build/`, `.gradle/`, `*.class`, `*.jar`, `mvnw`/`gradlew` wrappers, IDE files (`*.iml`, `.classpath`, `.settings/`) |
 
 On top of the stack rules, contextzip also:
 
@@ -273,10 +274,11 @@ Every package is kept locally as a numbered **snapshot** (`#14`), so a reply can
 ```bash
 contextzip watch -- npm run dev
 contextzip watch -- python manage.py runserver
+contextzip watch -- ./mvnw spring-boot:run
 contextzip watch -- python -m pytest --tb=short
 ```
 
-contextzip runs your command and watches its output. When a stack trace appears (Python, Django and Node.js/Next.js errors are recognised), it asks whether to package debug context. Press `D` and you get `debug-context.zip` containing:
+contextzip runs your command and watches its output. When a stack trace appears (Python, Django, Node.js/Next.js and Java/Kotlin/Spring Boot errors are recognised, including Maven and Gradle compile errors), it asks whether to package debug context. Press `D` and you get `debug-context.zip` containing:
 
 - `prompt.txt`: an auto-generated description of the problem
 - `terminal-error.txt`: the error output with ANSI codes and noise stripped out

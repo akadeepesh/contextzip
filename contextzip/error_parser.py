@@ -65,14 +65,33 @@ def _load_patterns(ecosystems: list[str]) -> dict:
     ones on top.
 
     Returns a dict with keys: error_start, path, noise — each a list of
-    compiled re.Pattern objects.
+    compiled re.Pattern objects — plus refiners, labelers, extractors and
+    cleaners: the optional hook functions a module defines (refine_start,
+    error_type, extract_paths, clean_block — see rules/errors/java.py).
     """
     from contextzip.rules.errors import python as _py_rules
     from contextzip.rules.errors import node as _node_rules
+    from contextzip.rules.errors import java as _java_rules
 
     error_start: list[re.Pattern] = []
     path: list[re.Pattern] = []
     noise: list[re.Pattern] = []
+    hooks: dict[str, list] = {"refiners": [], "labelers": [], "extractors": [], "cleaners": []}
+    hook_names = {
+        "refiners": "refine_start",
+        "labelers": "error_type",
+        "extractors": "extract_paths",
+        "cleaners": "clean_block",
+    }
+
+    def _add(mod) -> None:
+        error_start.extend(getattr(mod, "ERROR_START_PATTERNS", []))
+        path.extend(getattr(mod, "PATH_PATTERNS", []))
+        noise.extend(getattr(mod, "NOISE_PATTERNS", []))
+        for key, attr in hook_names.items():
+            fn = getattr(mod, attr, None)
+            if callable(fn):
+                hooks[key].append(fn)
 
     # Map ecosystem names (from detector.py) to rule modules
     _ECOSYSTEM_MAP = {
@@ -82,6 +101,9 @@ def _load_patterns(ecosystems: list[str]) -> dict:
         "Node.js": _node_rules,
         "Next.js": _node_rules,
         "React": _node_rules,
+        "Java": _java_rules,
+        "Kotlin": _java_rules,
+        "Spring Boot": _java_rules,
     }
 
     loaded_modules: set[int] = set()  # avoid loading same module twice
@@ -91,18 +113,14 @@ def _load_patterns(ecosystems: list[str]) -> dict:
         if mod is None or id(mod) in loaded_modules:
             continue
         loaded_modules.add(id(mod))
-        error_start.extend(getattr(mod, "ERROR_START_PATTERNS", []))
-        path.extend(getattr(mod, "PATH_PATTERNS", []))
-        noise.extend(getattr(mod, "NOISE_PATTERNS", []))
+        _add(mod)
 
-    # If no ecosystem matched, load both as a best-effort fallback
+    # If no ecosystem matched, load them all as a best-effort fallback
     if not loaded_modules:
-        for mod in (_py_rules, _node_rules):
-            error_start.extend(getattr(mod, "ERROR_START_PATTERNS", []))
-            path.extend(getattr(mod, "PATH_PATTERNS", []))
-            noise.extend(getattr(mod, "NOISE_PATTERNS", []))
+        for mod in (_py_rules, _node_rules, _java_rules):
+            _add(mod)
 
-    return {"error_start": error_start, "path": path, "noise": noise}
+    return {"error_start": error_start, "path": path, "noise": noise, **hooks}
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +190,14 @@ def detect_error_block(
             start_idx = i
             error_type = _extract_error_type(line, ecosystems)
 
-            if re.match(
+            refined = None
+            for refine in patterns["refiners"]:
+                refined = refine(clean_lines, i)
+                if refined is not None:
+                    break
+            if refined is not None:
+                start_idx = refined
+            elif re.match(
                 r"^[A-Za-z][A-Za-z0-9_.]*(?:Error|Exception|Warning)\s*:", line
             ):
                 # Walk further back to find the Traceback / block header
@@ -217,6 +242,12 @@ def detect_error_block(
     if not block_lines:
         return None
 
+    for label in patterns["labelers"]:
+        better = label(block_lines)
+        if better:
+            error_type = better
+            break
+
     return "\n".join(block_lines), error_type
 
 
@@ -256,6 +287,8 @@ def _extract_error_type(line: str, ecosystems: list[str]) -> str:
         return "Python exception"
     if any(e in ecosystems for e in ("Node.js", "Next.js", "React")):
         return "JavaScript error"
+    if any(e in ecosystems for e in ("Java", "Kotlin", "Spring Boot")):
+        return "Java exception"
     return "Runtime error"
 
 
@@ -274,6 +307,9 @@ def strip_noise(error_block: str, ecosystems: list[str]) -> str:
     """
     patterns = _load_patterns(ecosystems)
     noise_patterns = patterns["noise"]
+
+    for clean in patterns["cleaners"]:
+        error_block = clean(error_block)
 
     cleaned_lines: list[str] = []
     for line in error_block.splitlines():
@@ -314,6 +350,8 @@ _PATH_BLOCKLIST: list[re.Pattern] = [
     re.compile(r"<unknown>"),
     re.compile(r"^internal/"),
     re.compile(r"^node:"),
+    re.compile(r"\.m2/repository"),
+    re.compile(r"/\.gradle/"),
 ]
 
 
@@ -347,6 +385,8 @@ def extract_paths(
                 raw = m.group(1).strip().strip("'\"")
                 if raw:
                     candidates.append(raw)
+        for extract in patterns["extractors"]:
+            candidates.extend(extract(line))
 
     resolved: list[Path] = []
     seen: set[Path] = set()

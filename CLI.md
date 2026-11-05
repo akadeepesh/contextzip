@@ -210,6 +210,7 @@ contextzip watch -- COMMAND [ARGS]…
 
 contextzip watch -- npm run dev
 contextzip watch -- python manage.py runserver
+contextzip watch -- ./gradlew bootRun
 contextzip watch -- python -m pytest --tb=short
 ```
 
@@ -223,7 +224,8 @@ On Ctrl+C, if nothing was packaged yet, you're offered one last chance to captur
 
 Notes:
 
-- Works best with dev servers that don't read stdin interactively (`npm run dev`, `manage.py runserver`, `cargo watch`, …).
+- Works best with dev servers that don't read stdin interactively (`npm run dev`, `manage.py runserver`, `mvn spring-boot:run`, `cargo watch`, …).
+- For JVM stack traces, frames from the JDK, Spring, Tomcat and other libraries are collapsed in `terminal-error.txt`, and each application frame (`at com.acme.UserService.find(UserService.java:42)`) is resolved to its file through the class's package, so `source-files.zip` gets `src/main/java/com/acme/UserService.java`.
 - On Windows, colour passthrough may be limited; Windows Terminal or the VS Code terminal work best.
 - No PTY emulation is used. If your process needs a real TTY to behave correctly, run it directly instead.
 

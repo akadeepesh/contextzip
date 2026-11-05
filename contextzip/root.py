@@ -167,7 +167,8 @@ def find_project_root(start: Path | None = None) -> ProjectRoot:
 # Files that mark a folder as a project of its own.
 _PROJECT_MARKERS = (
     "package.json", "pyproject.toml", "requirements.txt", "setup.py", "Pipfile",
-    "Cargo.toml", "go.mod", "Gemfile", "manage.py", "pom.xml", "build.gradle", "composer.json",
+    "Cargo.toml", "go.mod", "Gemfile", "manage.py", "pom.xml", "build.gradle",
+    "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "composer.json",
 )
 # Folders that usually hold many unrelated projects, not one monorepo.
 _GENERIC_PARENTS = {

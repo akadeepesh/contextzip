@@ -1347,6 +1347,13 @@ This project uses [Semantic Versioning](https://semver.org/).
 - An unrecognised project now prints "No known stack detected" where it
   said "Detected · unknown ecosystem".
 
+- **What you type on the command line always wins.** `contextzip exclude
+  docs/` left `docs/` in the ZIP when the project config listed it under
+  `always_include`. The order is now the same everywhere, including
+  `--git-changes` and the Python API: the command, then the project
+  config, then `.gitignore`, then the built-in rules. README and CLI.md
+  spell it out under "Which rule wins".
+
 ### Fixed
 - **A crash on Windows when output isn't a console.** In Git Bash, in a
   pipe or in a CI log, with Python 3.14 or older, the first "✓" raised

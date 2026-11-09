@@ -25,6 +25,7 @@ from contextzip.detector import detect
 from contextzip.filters import (
     build_spec,
     build_force_include_spec,
+    make_spec,
     resolve_files,
     resolve_files_from_git,
 )
@@ -1946,6 +1947,9 @@ def _package(
     # is a standing negation. Built once here so standard and --git-changes
     # runs honour project config identically.
     normalized_exclude = [normalize_pattern(p) for p in extra_exclude or []]
+    # What was typed on the command line outranks the project config, so an
+    # --exclude also beats the config's always_include.
+    command_exclude = make_spec(normalized_exclude) if normalized_exclude else None
     normalized_exclude += [normalize_pattern(p) for p in project_cfg.always_exclude]
     force_include = build_force_include_spec(
         [normalize_pattern(p) for p in project_cfg.always_include]
@@ -1980,6 +1984,7 @@ def _package(
                 extra_exclude=normalized_exclude if normalized_exclude else None,
                 include_only=include_only if include_only else None,
                 force_include=force_include,
+                command_exclude=command_exclude,
             )
 
     else:
@@ -2003,6 +2008,7 @@ def _package(
                 large_file_warn_bytes=int(
                     project_cfg.limits.max_file_size_mb * 1024 * 1024
                 ),
+                command_exclude=command_exclude,
             )
 
         # Snapshot the scan summary now — --prompt reassigns resolved.included

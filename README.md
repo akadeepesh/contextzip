@@ -375,6 +375,17 @@ This holds per-project settings. Edit it by hand or with `contextzip config --ui
 
 `.contextzip/` is fully gitignored by default. If your team wants to share these settings, commit the file explicitly with `git add -f .contextzip/config.json`.
 
+### Which rule wins
+
+When they disagree, the more specific source wins:
+
+1. **The command you typed.** `exclude` / `--exclude` always leaves a file out. `include` / `--include` scopes the run, and a file or folder you name is included even if it's a `.env`, is in `.gitignore`, or is excluded by the config.
+2. **The project config:** `always_include`, then `always_exclude`.
+3. **Your `.gitignore`.** A `!pattern` there brings back a file the built-in rules would drop, such as `!.env.example`.
+4. **The built-in rules** for the detected stack.
+
+Including a folder is a scope, not an override: `contextzip include src/` still leaves out `src/.env` and whatever `.gitignore` ignores inside `src/`. Name the file itself to bring it in. A secret file that ends up in the ZIP, by any of these routes, has its values redacted.
+
 ### Personal config
 
 Your Gemini API key and personal defaults live outside the project, so they're never committed:
@@ -395,7 +406,7 @@ The full option-by-option guide is at [contextzipcli.com/docs/configuration](htt
 
 ## What is always excluded
 
-These patterns apply to **every** project, whatever its stack or `.gitignore` says, and in `--git-changes` mode too:
+These patterns apply to **every** project, whatever its stack, and in `--git-changes` mode too:
 
 - **Secrets & credentials:** `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.ppk`, SSH private keys (`id_rsa`, `id_ed25519`, …), `.npmrc`, `.netrc`, `.pypirc`, `.pgpass`, Docker auth config, `.aws/credentials`, service-account and `*credentials*.json` files, kubeconfigs
 - **Infrastructure state:** `*.tfstate`, `.terraform/`
@@ -404,7 +415,7 @@ These patterns apply to **every** project, whatever its stack or `.gitignore` sa
 - **Binaries & media:** executables, shared libraries, images, video, audio, fonts and archives
 - **Project boilerplate:** `CHANGELOG`, `LICENSE`, `CONTRIBUTING`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, GitHub issue/PR templates
 
-To bring one back, name it explicitly with `contextzip include .env`, list it under `always_include` in the project config, or tick it in `contextzip config --ui`. `--exclude` and `.gitignore` can't bring them back, and naming a folder like `src/` doesn't pull in the secret files inside it.
+To bring one back, name it explicitly with `contextzip include .env`, list it under `always_include` in the project config, tick it in `contextzip config --ui`, or un-ignore it in `.gitignore` (`!.env.example`). Naming a folder like `src/` doesn't pull in the secret files inside it. See [Which rule wins](#which-rule-wins).
 
 **Secret files you include on purpose are always redacted.** If you include your `.env` so the AI can see which variables your app expects, every key and comment is kept but every value becomes `[REDACTED]`:
 

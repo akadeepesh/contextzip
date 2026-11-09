@@ -18,6 +18,14 @@ Git mode:
     and CLI --include/--exclude behave identically with and without
     --git-changes.
 
+Who wins, highest first:
+  1. The command: `--exclude` / `contextzip exclude` always leaves a file
+     out; `--include` / `contextzip include` scopes the run, and a path it
+     names is included even if a rule, .gitignore or the config excludes it.
+  2. The project config: always_include, then always_exclude.
+  3. .gitignore (a `!pattern` there brings back a file the built-in rules drop).
+  4. The built-in rules for the detected stacks.
+
 Force-include (Phase 7):
   - build_force_include_spec() turns a project config's "always_include"
     patterns into a PathSpec. resolve_files() and resolve_files_from_git()
@@ -362,9 +370,14 @@ def resolve_files(
     include_only: list[str] | None = None,
     force_include: pathspec.PathSpec | None = None,
     large_file_warn_bytes: int = LARGE_FILE_WARN_BYTES,
+    command_exclude: pathspec.PathSpec | None = None,
 ) -> ResolveResult:
     """
     Walk *project_dir* and classify every file.
+
+    *command_exclude* holds the patterns typed on the command line
+    (`--exclude`, `contextzip exclude`). They have the last word: a match
+    is left out even if the project config's always_include names it.
 
     *force_include*, if given, is checked before exclusion: a file (or any
     of its parent directories) matching it is treated as not excluded, even
@@ -387,8 +400,11 @@ def resolve_files(
     result = ResolveResult()
     named = [_clean_include_path(p) for p in include_only or []]
 
-    def add(abs_path: Path, rel_str: str, excluded: bool, forced: bool, size: int | None) -> None:
+    def add(abs_path: Path, rel_str: str, excluded: bool, forced: bool, size: int | None, dropped: bool = False) -> None:
         """Classify one file whose exclusion by the rules is already known."""
+        if dropped:  # excluded on the command line: nothing brings it back
+            result.excluded.append(abs_path)
+            return
         if not forced:
             if excluded and named and _explicit_include_override_str(rel_str, named, spec):
                 # ── Explicitly named on --include: brings it back ────────────
@@ -446,9 +462,12 @@ def resolve_files(
             force_include.match_file(rel_str) or _any_parent_excluded(rel, force_include)
         )
         excluded = not forced and (_any_parent_excluded(rel, spec) or spec.match_file(rel_str))
-        add(real, rel_str, excluded, forced, None)
+        dropped = command_exclude is not None and (
+            command_exclude.match_file(rel_str) or _any_parent_excluded(rel, command_exclude)
+        )
+        add(real, rel_str, excluded, forced, None, dropped)
 
-    def walk(directory: str, prefix: str, dir_excluded: bool, dir_forced: bool) -> None:
+    def walk(directory: str, prefix: str, dir_excluded: bool, dir_forced: bool, dir_dropped: bool = False) -> None:
         """
         One directory, in path order. Whether a parent folder is excluded (or
         force-included) is worked out once per folder and handed down, so a
@@ -472,6 +491,7 @@ def resolve_files(
                         as_dir,
                         dir_excluded or spec.match_file(as_dir),
                         dir_forced or (force_include is not None and force_include.match_file(as_dir)),
+                        dir_dropped or (command_exclude is not None and command_exclude.match_file(as_dir)),
                     )
                     continue
                 if not entry.is_file(follow_symlinks=False):
@@ -479,15 +499,16 @@ def resolve_files(
             except OSError:
                 continue
 
+            dropped = dir_dropped or (command_exclude is not None and command_exclude.match_file(rel_str))
             forced = dir_forced or (force_include is not None and force_include.match_file(rel_str))
             excluded = not forced and (dir_excluded or spec.match_file(rel_str))
             size: int | None = None
-            if forced or not excluded:
+            if not dropped and (forced or not excluded):
                 try:
                     size = entry.stat(follow_symlinks=False).st_size
                 except OSError:
                     size = None  # add() retries and records the failure
-            add(Path(entry.path), rel_str, excluded, forced, size)
+            add(Path(entry.path), rel_str, excluded, forced, size, dropped)
 
     walk(str(project_dir), "", False, False)
     return result
@@ -500,6 +521,7 @@ def resolve_files_from_git(
     extra_exclude: list[str] | None = None,
     include_only: list[str] | None = None,
     force_include: pathspec.PathSpec | None = None,
+    command_exclude: pathspec.PathSpec | None = None,
 ) -> ResolveResult:
     """
     Build a :class:`ResolveResult` from a pre-selected list of files reported
@@ -570,6 +592,13 @@ def resolve_files_from_git(
             continue
 
         rel_str = rel.as_posix()
+
+        # ── Excluded on the command line: nothing brings it back ────────────
+        if command_exclude is not None and (
+            command_exclude.match_file(rel_str) or _any_parent_excluded(rel, command_exclude)
+        ):
+            result.excluded.append(abs_path)
+            continue
 
         # ── force_include (config always_include) short-circuits exclusion ───
         forced = force_include is not None and (

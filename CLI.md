@@ -59,6 +59,17 @@ These flags work on the main command **and** on `include` and `exclude`. Flags g
 
 `--include` and `--exclude` (and the `include` / `exclude` subcommands) also work together with `--git-changes`, and are combined with `always_include` / `always_exclude` from `.contextzip/config.json`.
 
+## Which rule wins
+
+When they disagree, the more specific source wins:
+
+1. **The command you typed.** `exclude` / `--exclude` always leaves a file out. `include` / `--include` scopes the run, and a file or folder you name is included even if it's a `.env`, is in `.gitignore`, or is excluded by the config.
+2. **The project config:** `always_include`, then `always_exclude`.
+3. **Your `.gitignore`.** A `!pattern` there brings back a file the built-in rules would drop, such as `!.env.example`.
+4. **The built-in rules** for the detected stack.
+
+Including a folder is a scope, not an override: `contextzip include src/` still leaves out `src/.env` and whatever `.gitignore` ignores inside `src/`. Name the file itself to bring it in. A secret file that ends up in the ZIP, by any of these routes, has its values redacted.
+
 ## Project root
 
 Every command works from the **project root**, wherever you run it from, like git does. Run `cz` inside `frontend/` of a monorepo and the workspace stays at the root (no `frontend/.contextzip/`), the ZIP's paths are root-relative, and `apply-zip` puts files back in the right place.

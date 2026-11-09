@@ -143,6 +143,54 @@ class ApplyJsonTests(CliTestCase):
         self.assertEqual([s["id"] for s in data["snapshots"]], [1])
 
 
+class StacksCommandTests(CliTestCase):
+    def test_lists_every_stack(self):
+        from contextzip import stacks
+
+        code, data = self.run_json("stacks")
+        self.assertEqual(code, 0)
+        self.assertEqual([s["name"] for s in data["stacks"]], [s.name for s in stacks.STACKS])
+        laravel = next(s for s in data["stacks"] if s["slug"] == "laravel")
+        self.assertEqual(laravel["manifests"], ["composer.json"])
+        self.assertIn("vendor/", laravel["excludes"])
+
+    def test_one_stack_by_name_or_slug(self):
+        for name in ("Laravel", "laravel", "c#/.net", "csharp-net"):
+            code, data = self.run_json("stacks", name)
+            self.assertEqual(code, 0, name)
+            self.assertIn(data["stack"]["name"], ("Laravel", "C#/.NET"))
+
+    def test_unknown_stack_fails_with_a_pointer(self):
+        code, data = self.run_json("stacks", "cobol")
+        self.assertNotEqual(code, 0)
+        self.assertIn("cobol", data["error"])
+
+    def test_text_output_lists_names_in_full(self):
+        result = CliRunner().invoke(cli.main, ["stacks"], catch_exceptions=False)
+        self.assertEqual(result.exit_code, 0)
+        for name in ("React Native", "Unreal Engine", "Spring Boot"):
+            self.assertIn(name, result.stdout)
+
+
+class DetectionOutputTests(CliTestCase):
+    def test_file_type_detection_is_reported(self):
+        (self.root / "package.json").unlink()
+        for name in ("a.py", "b.py", "c.py"):
+            self.write(name, "print(1)\n")
+        code, data = self.run_json("--dry-run")
+        self.assertEqual(code, 0)
+        self.assertEqual(data["detection"]["by_file_type"], ["Python"])
+        self.assertEqual(data["detection"]["confidence"], "low")
+        self.assertIn("python", data["detection"]["rules"])
+
+        result = CliRunner().invoke(cli.main, ["--dry-run"], catch_exceptions=False)
+        self.assertIn("from file types", result.stdout)
+
+    def test_marker_detection_has_no_file_type_guess(self):
+        code, data = self.run_json("--dry-run")
+        self.assertEqual(data["detection"]["by_file_type"], [])
+
+
 class PrintableStreamTests(TempProject):
     """A check mark must never crash a run on a stream that can't encode it."""
 

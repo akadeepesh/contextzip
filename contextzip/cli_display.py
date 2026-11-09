@@ -132,7 +132,7 @@ def print_root_notice(project_root, *, here: bool = False, packaging: bool = Fal
 def print_detection(detection, *, con: Console = console) -> None:
     """One line: what was detected and how confident contextzip is."""
     if detection.is_unknown:
-        ok("Detected", "unknown ecosystem, base rules only", con=con)
+        ok("No known stack detected", "universal rules only", con=con)
         info(
             "Don't see your language? Request it: https://www.contextzipcli.com/request-language",
             con=con,
@@ -147,6 +147,9 @@ def print_detection(detection, *, con: Console = console) -> None:
         else:
             parts.append(name)
     ecosystem_str = " + ".join(parts)
+    if getattr(detection, "by_file_type", None):
+        ok(f"Detected {ecosystem_str}", "from file types, no project file found", con=con)
+        return
     ok(f"Detected {ecosystem_str}", f"{detection.confidence} confidence", con=con)
 
 

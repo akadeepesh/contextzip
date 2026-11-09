@@ -29,27 +29,13 @@ Force-include (Phase 7):
 
 from __future__ import annotations
 
-import importlib
 import os
 from pathlib import Path
 from dataclasses import dataclass, field
 
 import pathspec
 
-
-# ---------------------------------------------------------------------------
-# Rule registry
-# ---------------------------------------------------------------------------
-
-_RULE_REGISTRY: dict[str, str] = {
-    "base": "contextzip.rules.base",
-    "node": "contextzip.rules.node",
-    "python": "contextzip.rules.python",
-    "rust": "contextzip.rules.rust",
-    "go": "contextzip.rules.go",
-    "ruby": "contextzip.rules.ruby",
-    "java": "contextzip.rules.java",
-}
+from contextzip import stacks
 
 # Files larger than this trigger a warning (but are still included)
 LARGE_FILE_WARN_BYTES = 1 * 1024 * 1024  # 1 MB
@@ -173,18 +159,21 @@ def build_spec(
     """
     Combine patterns from *rule_modules*, an optional *.gitignore* file,
     and any *extra_exclude* CLI patterns into a single PathSpec.
+
+    *rule_modules* are rule keys from stacks.py: a rule set ("node"), or a
+    stack's own patterns, optionally scoped to the folder the stack was
+    found in ("laravel-extra@apps/api"). Unknown keys are ignored.
     """
     patterns: list[str] = []
 
     for key in rule_modules:
-        module_path = _RULE_REGISTRY.get(key)
-        if not module_path:
-            continue
-        try:
-            mod = importlib.import_module(module_path)
-            patterns.extend(getattr(mod, "PATTERNS", []))
-        except ImportError:
-            pass
+        _name, _, folder = key.partition("@")
+        found = stacks.patterns_for(key)
+        if folder:
+            # A path ("/public/", "storage/logs/") means that folder's; a bare
+            # name ("*.apk", ".expo/") is distinctive enough to apply anywhere.
+            found = [_rebase_gitignore_pattern(p, folder) if "/" in p.rstrip("/") else p for p in found]
+        patterns.extend(found)
 
     # Respect the project's own .gitignore if present, and the ones in its
     # subfolders (apps/web/.gitignore in a monorepo), rebased onto the root

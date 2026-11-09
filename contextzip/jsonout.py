@@ -138,6 +138,7 @@ def detection_data(detection) -> dict:
         "confidence": detection.confidence,
         "rules": list(detection.rule_modules),
         "sources": dict(detection.sources),
+        "by_file_type": list(getattr(detection, "by_file_type", [])),
     }
 
 

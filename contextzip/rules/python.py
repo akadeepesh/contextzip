@@ -33,4 +33,33 @@ PATTERNS = [
     "migrations/",  # Django migrations (auto-generated)
     "staticfiles/",  # Django collected static
     "media/",  # Django uploaded media
+    # More environment and build tooling
+    ".eggs/",
+    ".nox/",
+    ".pytype/",
+    ".pyre/",
+    "__pypackages__/",
+    ".pdm-build/",
+    ".pdm-python",
+    "pdm.lock",
+    "Pipfile.lock",
+    # Notebooks and experiment tracking
+    ".ipynb_checkpoints/",
+    "wandb/",
+    "mlruns/",
+    "lightning_logs/",
+    # Model weights and array dumps
+    "*.pt",
+    "*.pth",
+    "*.ckpt",
+    "*.safetensors",
+    "*.onnx",
+    "*.h5",
+    "*.hdf5",
+    "*.npy",
+    "*.npz",
+    "*.pkl",
+    "*.pickle",
+    "*.parquet",
+    "*.feather",
 ]

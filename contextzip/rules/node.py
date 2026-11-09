@@ -26,4 +26,32 @@ PATTERNS = [
     ".storybook/",
     "*.d.ts",  # generated type declarations
     "tsconfig.tsbuildinfo",
+    "*.tsbuildinfo",
+    # More lockfiles
+    "bun.lockb",
+    "bun.lock",
+    "npm-shrinkwrap.json",
+    # Framework build output and caches
+    ".svelte-kit/",
+    ".astro/",
+    ".angular/",
+    ".output/",
+    ".vinxi/",
+    ".vite/",
+    ".parcel-cache/",
+    ".docusaurus/",
+    ".vitepress/cache/",
+    ".vitepress/dist/",
+    ".wrangler/",
+    ".serverless/",
+    ".nx/",
+    ".eslintcache",
+    ".stylelintcache",
+    "*.js.map",
+    "*.css.map",
+    # Test output
+    "playwright-report/",
+    "test-results/",
+    "cypress/videos/",
+    "cypress/screenshots/",
 ]

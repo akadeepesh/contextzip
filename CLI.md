@@ -8,12 +8,14 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 
 - [Quick reference](#quick-reference)
 - [Run flags](#run-flags)
+- [Which rule wins](#which-rule-wins) — the command, the config, `.gitignore`, the built-in rules
 - [`contextzip`](#contextzip) — package the project
 - [Remote repositories](#remote-repositories) — package a GitHub, GitLab or Bitbucket repo without cloning it
 - [`contextzip include`](#contextzip-include) / [`exclude`](#contextzip-exclude)
 - [`contextzip apply-zip`](#contextzip-apply-zip)
 - [`contextzip watch`](#contextzip-watch)
 - [`contextzip config`](#contextzip-config)
+- [`contextzip stacks`](#contextzip-stacks) — the languages and frameworks it recognises
 - [`contextzip update`](#contextzip-update)
 - [`contextzip setup-path`](#contextzip-setup-path)
 - [Global flags](#global-flags)

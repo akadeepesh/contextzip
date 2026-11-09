@@ -241,6 +241,62 @@ class _MainGroup(click.Group):
                 break
         return super().parse_args(ctx, args)
 
+    def main(self, *args, **kwargs):
+        _printable_streams()
+        try:
+            return super().main(*args, **kwargs)
+        except OSError:
+            # `cz -v | head`: the reader went away. Click exits quietly on
+            # EPIPE; Windows reports the same thing as EINVAL instead.
+            import sys
+
+            if os.name != "nt" or not _stdout_closed():
+                raise
+            try:
+                sys.stdout = open(os.devnull, "w")  # nothing left to flush at exit
+            except OSError:
+                pass
+            sys.exit(1)
+
+
+def _stdout_closed() -> bool:
+    import sys
+
+    try:
+        sys.stdout.write("")
+        sys.stdout.flush()
+    except (OSError, ValueError):
+        return True
+    return False
+
+
+def _printable_streams() -> None:
+    """
+    Make sure "✓", "→" and "≈" can be printed. On Windows before Python
+    3.15, output that isn't a real console (Git Bash, a pipe, a CI log) is
+    encoded with the ANSI code page, which has no check mark, so the first
+    line of output raised UnicodeEncodeError. There the stream switches to
+    UTF-8; anywhere else a character the terminal can't show becomes "?".
+    """
+    import sys
+
+    for stream in (sys.stdout, sys.stderr):
+        encoding = getattr(stream, "encoding", None)
+        if not encoding:
+            continue
+        try:
+            "✓→≈…·↓".encode(encoding)
+            continue
+        except (UnicodeEncodeError, LookupError):
+            pass
+        try:
+            if os.name == "nt":
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            else:
+                stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
 
 @click.group(
     cls=_MainGroup,

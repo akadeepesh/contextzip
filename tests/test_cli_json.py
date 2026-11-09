@@ -143,6 +143,32 @@ class ApplyJsonTests(CliTestCase):
         self.assertEqual([s["id"] for s in data["snapshots"]], [1])
 
 
+class PrintableStreamTests(TempProject):
+    """A check mark must never crash a run on a stream that can't encode it."""
+
+    def run_with_stdout(self, encoding: str):
+        import io
+        import sys
+
+        raw = io.BytesIO()
+        stream = io.TextIOWrapper(raw, encoding=encoding)
+        with mock.patch.object(sys, "stdout", stream), mock.patch.object(sys, "stderr", stream):
+            cli._printable_streams()
+            stream.write("✓ ok → ≈")
+            stream.flush()
+        return raw.getvalue()
+
+    def test_legacy_code_page_no_longer_raises(self):
+        out = self.run_with_stdout("cp1252")
+        if os.name == "nt":
+            self.assertEqual(out.decode("utf-8"), "✓ ok → ≈")
+        else:
+            self.assertIn(b" ok ", out)
+
+    def test_utf8_stream_is_left_alone(self):
+        self.assertEqual(self.run_with_stdout("utf-8").decode("utf-8"), "✓ ok → ≈")
+
+
 class TokenTests(TempProject):
     def test_estimate_and_format(self):
         self.assertEqual(estimate_tokens(0), 0)

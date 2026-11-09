@@ -1302,3 +1302,59 @@ This project uses [Semantic Versioning](https://semver.org/).
   ISO-8859-1 `.properties` files are handled. This covers normal runs,
   `--git-changes`, the MCP server and `contextzip watch`, and `apply-zip`
   keeps your real values when the file comes back.
+
+## [Unreleased]
+
+### Added
+- **Many more stacks.** contextzip now recognises 62 languages and
+  frameworks, up from 11. New ecosystems: C#/.NET, Unity, PHP (Laravel,
+  Symfony, WordPress), C/C++ (CMake, Meson, Autotools, MSBuild, Conan,
+  vcpkg), Bazel, Swift (Xcode, SwiftPM, CocoaPods), Dart and Flutter,
+  Android, Elixir and Phoenix, Erlang, Scala, Clojure, Deno, Bun,
+  Terraform, Zig, Nim, Haskell, OCaml, R, Julia, Lua, Perl, Foundry,
+  Hardhat, Godot, Unreal Engine, Hugo and Jekyll. New frameworks on
+  ecosystems that were already supported: Nuxt, SvelteKit, Astro, Remix,
+  Gatsby, Angular, Expo, React Native, Electron, Tauri, NestJS, Vue, Svelte,
+  Vite, Flask and Rails. Each leaves out its own build output, dependency
+  folders, lockfiles and generated code.
+- **`contextzip stacks`** lists every stack and what marks a project as
+  one; `contextzip stacks laravel` shows the patterns it leaves out.
+  `--json` prints the same as data.
+- **Projects with no project file are recognised by their file types.** A
+  folder of `.py` scripts with no `requirements.txt` used to get only the
+  universal rules, so `__pycache__` went into the ZIP. It's now detected as
+  Python "from file types". `detection.by_file_type` reports this under
+  `--json`.
+- **A framework's own exclusions apply to its own folder.** In a monorepo,
+  Laravel's `storage/framework/` or Gatsby's `public/` is left out of that
+  app only, not out of every package.
+- More binary types are left out of every project: `.tgz`, `.bz2`, `.xz`,
+  `.7z`, `.webp`, `.avif`, `.bmp`, `.tiff`, `.mov`, `.webm`, `.wav` and font
+  files. For Python: model weights and array dumps (`.pt`, `.safetensors`,
+  `.onnx`, `.npy`, `.parquet` and similar), `.ipynb_checkpoints/` and
+  experiment-tracking folders. For Node.js: more framework caches
+  (`.svelte-kit/`, `.astro/`, `.angular/`, `.output/`), `bun.lock`, source
+  maps and Playwright/Cypress output.
+
+### Changed
+- **Scanning is much faster.** contextzip no longer looks at every file
+  inside a folder it has already left out. On a project with 20,000 files
+  in `node_modules` and a virtualenv, a dry run went from 2.9 s to 0.45 s.
+  What ends up in the ZIP is unchanged.
+- **Cross-platform apps are named once.** A Flutter, React Native or Expo
+  project is reported as that, not also as the Swift, Android and C++
+  runner projects it scaffolds.
+- An unrecognised project now prints "No known stack detected" where it
+  said "Detected · unknown ecosystem".
+
+### Fixed
+- **A crash on Windows when output isn't a console.** In Git Bash, in a
+  pipe or in a CI log, with Python 3.14 or older, the first "✓" raised
+  `UnicodeEncodeError` and nothing was packaged. Output there is now UTF-8.
+- **A folder your `.gitignore` leaves out no longer decides the stack.** A
+  scratch folder with its own `package.json` made the whole project
+  "Node.js" although none of it was packaged.
+- **A Visual Studio C++ solution is no longer taken for .NET.** A `.sln`
+  only counts as .NET when it lists a `.csproj`, `.fsproj` or `.vbproj`.
+- `contextzip -v | head` on Windows ended with a traceback when the reader
+  closed the pipe. It now exits quietly, as it does on macOS and Linux.

@@ -268,6 +268,22 @@ contextzip snapshots [--json]
 
 Every package is kept as a numbered snapshot in `.contextzip/snapshots/` (local, never uploaded): a copy of the ZIP plus a manifest of what was sent. Each ZIP's `CONTEXTZIP.md` names its snapshot, e.g. `Snapshot: 14-k3f9a2`. Snapshots are kept while they're among the newest `snapshots.keep` (10), younger than `snapshots.max_age_days` (14), or still awaited by a reply in the inbox.
 
+## `contextzip stacks`
+
+List the languages and frameworks contextzip recognises, and what marks a project as each one.
+
+```bash
+contextzip stacks [STACK] [--json]
+```
+
+```bash
+contextzip stacks              # every stack and its marker files
+contextzip stacks laravel      # the patterns Laravel leaves out, on top of the universal rules
+contextzip stacks --json       # the same as data
+```
+
+A stack is recognised by a marker file (`Cargo.toml`, `*.csproj`), by a dependency in its manifest (`next` in `package.json`), or, when a project has no project file at all, by its file types. A framework's own exclusions apply from the folder it was found in, so one app's `storage/` or `public/` doesn't affect the rest of a monorepo. Missing a stack? [Request it](https://www.contextzipcli.com/request-language).
+
 ## `CONTEXTZIP.md`
 
 A short file added to every ZIP for the AI that receives it: the project, the snapshot ID, and how to reply so `apply-zip` can put the answer back cleanly — only changed files, complete contents, the same paths, `[REDACTED]` values left alone, and moves or deletions listed under **Changes** (`moved: a -> b`, `deleted: x`). Turn it off per project with `"zip_guide": false` or in `contextzip config --ui`.
@@ -364,7 +380,7 @@ It never adds the folder twice. Open a new terminal afterwards. `python -m conte
 
 ## JSON output
 
-Add `--json` to `contextzip`, `include`, `exclude`, `apply-zip` or `snapshots` and contextzip prints exactly one JSON object on stdout instead of terminal output, for editors, scripts and CI. It never prompts, and the exit code matches `ok`: 0 when it's `true`, non-zero when it's `false`.
+Add `--json` to `contextzip`, `include`, `exclude`, `apply-zip`, `snapshots` or `stacks` and contextzip prints exactly one JSON object on stdout instead of terminal output, for editors, scripts and CI. It never prompts, and the exit code matches `ok`: 0 when it's `true`, non-zero when it's `false`.
 
 ```bash
 contextzip --json --no-clipboard
@@ -379,6 +395,9 @@ Every object has `ok`, `command`, `version`, `warnings` (strings) and `log` (eac
 | `contextzip`, `include`, `exclude` | `mode`, `dry_run`, `project` (`root`, `kind`), `remote` (with `--from`), `detection`, `files` (counts, `included_bytes`, `estimated_tokens`, `included_files`, warnings; `excluded_files` with `--verbose`), `ai` (with `--prompt`), `zip` (path, sizes, `estimated_tokens`, `snapshot`, `redacted`; `null` on a dry run), `report`, `clipboard` |
 | `apply-zip` | `project`, `plan` (`snapshot`, `remap`, `needs_decision`, `counts`, and `files`: each with `path`, `source`, `status`, `safe`, `reason`, `moved_from`, …), `result` (`written`, `skipped`, `removed`, `zip_kept`, `archived_to`; `null` when nothing was written), `report` |
 | `snapshots` | `project`, `snapshots` (`id`, `token`, `label`, `mode`, `files`, `status`, `created`) |
+| `stacks` | `stacks`, or `stack` when one is named (`name`, `slug`, `rules`, `markers`, `dependencies`, `manifests`, `extensions`, `excludes`) |
+
+`detection` has `ecosystems`, `display`, `confidence`, `rules`, `sources` (the folder each stack was found in) and `by_file_type` (stacks recognised only from file types, because the project has no project file).
 
 When `--from` can't fetch a repository, the result also has `error_kind`: `invalid`, `not_found`, `private`, `too_big`, `rate_limited`, `auth` or `unavailable`.
 

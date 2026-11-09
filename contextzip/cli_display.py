@@ -195,7 +195,7 @@ def print_git_verbose_files(changes, *, con: Console = console) -> None:
 def scan_label_and_detail(resolved, git_mode: bool = False) -> tuple[str, str | None]:
     """Build the (label, detail) pair used by print_scan_and_pack for the standard scan."""
     total = len(resolved.included) + len(resolved.excluded)
-    included_size = sum(p.stat().st_size for p in resolved.included if p.exists())
+    included_size = sum(resolved.size_of(p) for p in resolved.included)
 
     if git_mode:
         return f"Checked {len(resolved.included)} files", human_size(included_size)
@@ -218,7 +218,7 @@ def print_scan_summary(
     """Scan-only line, used when no packaging happens (dry runs)."""
     label, detail = scan_label_and_detail(resolved, git_mode=git_mode)
     binary = set(resolved.binary_files)
-    text_bytes = sum(p.stat().st_size for p in resolved.included if p not in binary and p.exists())
+    text_bytes = sum(resolved.size_of(p) for p in resolved.included if p not in binary)
     tokens = format_tokens(estimate_tokens(text_bytes))
     ok(label, f"{detail}, {tokens}" if detail else tokens, con=con)
 
@@ -227,7 +227,7 @@ def print_scan_summary(
 
     if verbose and resolved.included:
         for p in sorted(resolved.included):
-            size_str = human_size(p.stat().st_size) if p.exists() else "?"
+            size_str = human_size(resolved.size_of(p))
             rel = p.relative_to(project_dir).as_posix()
             con.print(f"  [green]·[/] {rel}  [dim]{size_str}[/]")
 

@@ -145,7 +145,7 @@ def files_data(resolved, project_dir: Path, *, verbose: bool, git_mode: bool) ->
     from contextzip.tokens import estimate_tokens
 
     binary = set(resolved.binary_files)
-    sizes = {p: (p.stat().st_size if p.exists() else 0) for p in resolved.included}
+    sizes = {p: resolved.size_of(p) for p in resolved.included}
     out: dict = {
         "included": len(resolved.included),
         "included_bytes": sum(sizes.values()),

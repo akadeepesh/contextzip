@@ -109,6 +109,19 @@ class ResolveResult:
     # explicit --include / `contextzip include` path named them (see
     # _explicit_include_override). Also present in `included`.
     explicitly_included: list[Path] = field(default_factory=list)
+    # Size in bytes of every included file, read during the scan so nothing
+    # downstream has to stat the file again.
+    sizes: dict[Path, int] = field(default_factory=dict)
+
+    def size_of(self, path: Path) -> int:
+        """Size of an included file (0 if it has vanished since the scan)."""
+        size = self.sizes.get(path)
+        if size is None:
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
+        return size
 
 
 # ---------------------------------------------------------------------------
@@ -383,79 +396,111 @@ def resolve_files(
     Returns a :class:`ResolveResult` with included/excluded/skipped/large/binary lists.
     """
     result = ResolveResult()
+    named = [_clean_include_path(p) for p in include_only or []]
 
-    for original_path in sorted(project_dir.rglob("*")):
-        abs_path = original_path
-        # ── Resolve symlinks safely ──────────────────────────────────────────
-        if abs_path.is_symlink():
+    def add(abs_path: Path, rel_str: str, excluded: bool, forced: bool, size: int | None) -> None:
+        """Classify one file whose exclusion by the rules is already known."""
+        if not forced:
+            if excluded and named and _explicit_include_override_str(rel_str, named, spec):
+                # ── Explicitly named on --include: brings it back ────────────
+                result.explicitly_included.append(abs_path)
+                excluded = False
+            if excluded:
+                result.excluded.append(abs_path)
+                return
+
+        # ── Apply --include filter (exact prefix, not substring) ─────────────
+        if named and not _under_any(rel_str, named):
+            result.excluded.append(abs_path)
+            return
+
+        # ── Readability check ────────────────────────────────────────────────
+        if size is None:
             try:
-                real = abs_path.resolve(strict=True)
-                if not real.is_file():
-                    continue  # symlink to a dir or missing — skip silently
-                abs_path = real
-            except (OSError, RuntimeError):
-                # Dangling symlink or resolution loop
-                result.skipped.append((abs_path, "dangling symlink"))
-                continue
+                size = abs_path.stat().st_size
+            except OSError as e:
+                result.skipped.append((abs_path, f"stat failed: {e}"))
+                return
 
-        if not abs_path.is_file():
-            continue
+        # ── Large file warning ───────────────────────────────────────────────
+        if size >= large_file_warn_bytes:
+            result.large_files.append((abs_path, size))
 
-        # ── Guard: file must still be under project_dir after symlink resolve ─
+        # ── Binary file detection (flagged, still included) ──────────────────
+        if _is_binary(abs_path):
+            result.binary_files.append(abs_path)
+
+        result.included.append(abs_path)
+        result.sizes[abs_path] = size
+
+    def add_symlink(original_path: Path) -> None:
+        """A symlink is rare, so it takes the slow road: resolve it, then match its real path."""
         try:
-            rel = abs_path.relative_to(project_dir)
+            real = original_path.resolve(strict=True)
+            if not real.is_file():
+                return  # symlink to a dir or missing — skip silently
+        except (OSError, RuntimeError):
+            # Dangling symlink or resolution loop
+            result.skipped.append((original_path, "dangling symlink"))
+            return
+        try:
+            rel = real.relative_to(project_dir)
         except ValueError:
-            # Symlink pointed outside the project tree — use the original
-            # (pre-resolve) path to compute a meaningful relative path
+            # Points outside the project tree — match it where the link sits
             try:
                 rel = original_path.relative_to(project_dir)
             except ValueError:
                 result.skipped.append((original_path, "outside project tree"))
-                continue
-
+                return
         rel_str = rel.as_posix()
-
-        # ── force_include short-circuits the exclusion checks below ─────────
         forced = force_include is not None and (
-            force_include.match_file(rel_str)
-            or _any_parent_excluded(rel, force_include)
+            force_include.match_file(rel_str) or _any_parent_excluded(rel, force_include)
         )
+        excluded = not forced and (_any_parent_excluded(rel, spec) or spec.match_file(rel_str))
+        add(real, rel_str, excluded, forced, None)
 
-        if not forced:
-            excluded = _any_parent_excluded(rel, spec) or spec.match_file(rel_str)
-            if excluded and include_only:
-                # ── Explicitly named on --include: brings it back ────────────
-                if _explicit_include_override(rel, include_only, spec):
-                    result.explicitly_included.append(abs_path)
-                    excluded = False
-            if excluded:
-                result.excluded.append(abs_path)
-                continue
-
-        # ── Apply --include filter (exact prefix, not substring) ─────────────
-        if include_only:
-            if not _matches_any_prefix(rel_str, include_only):
-                result.excluded.append(abs_path)
-                continue
-
-        # ── Readability check ────────────────────────────────────────────────
+    def walk(directory: str, prefix: str, dir_excluded: bool, dir_forced: bool) -> None:
+        """
+        One directory, in path order. Whether a parent folder is excluded (or
+        force-included) is worked out once per folder and handed down, so a
+        file inside node_modules/ costs no pattern matching at all.
+        """
         try:
-            file_size = abs_path.stat().st_size
-        except OSError as e:
-            result.skipped.append((abs_path, f"stat failed: {e}"))
-            continue
+            with os.scandir(directory) as it:
+                entries = sorted(it, key=_entry_sort_key)
+        except OSError:
+            return
+        for entry in entries:
+            rel_str = prefix + entry.name
+            try:
+                if entry.is_symlink():
+                    add_symlink(Path(entry.path))
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    as_dir = rel_str + "/"
+                    walk(
+                        entry.path,
+                        as_dir,
+                        dir_excluded or spec.match_file(as_dir),
+                        dir_forced or (force_include is not None and force_include.match_file(as_dir)),
+                    )
+                    continue
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+            except OSError:
+                continue
 
-        # ── Large file warning ───────────────────────────────────────────────
-        if file_size >= large_file_warn_bytes:
-            result.large_files.append((abs_path, file_size))
+            forced = dir_forced or (force_include is not None and force_include.match_file(rel_str))
+            excluded = not forced and (dir_excluded or spec.match_file(rel_str))
+            size: int | None = None
+            if forced or not excluded:
+                try:
+                    size = entry.stat(follow_symlinks=False).st_size
+                except OSError:
+                    size = None  # add() retries and records the failure
+            add(Path(entry.path), rel_str, excluded, forced, size)
 
-        # ── Binary file detection ────────────────────────────────────────────
-        if _is_binary(abs_path):
-            result.binary_files.append(abs_path)
-            # Still include — caller can decide; we just flag it
-
-        result.included.append(abs_path)
-
+    walk(str(project_dir), "", False, False)
     return result
 
 
@@ -575,6 +620,7 @@ def resolve_files_from_git(
             result.binary_files.append(abs_path)
 
         result.included.append(abs_path)
+        result.sizes[abs_path] = file_size
 
     return result
 
@@ -655,6 +701,11 @@ def _any_parent_excluded(rel: Path, spec: pathspec.PathSpec) -> bool:
     return False
 
 
+def _entry_sort_key(entry: os.DirEntry) -> str:
+    """Sorts a folder's entries the way pathlib orders paths (case-insensitive on Windows)."""
+    return os.path.normcase(entry.name)
+
+
 def _clean_include_path(p: str) -> str:
     """`./src/`, `.\\src\\` and `src` all become `src`."""
     p = p.replace("\\", "/")
@@ -678,9 +729,16 @@ def _explicit_include_override(
     `dist/node_modules/`), matched relative to the named folder. Secret
     files brought back this way are still redacted by the packager.
     """
-    rel_str = rel.as_posix()
-    for raw in include_only:
-        named = _clean_include_path(raw)
+    return _explicit_include_override_str(
+        rel.as_posix(), [_clean_include_path(raw) for raw in include_only], spec
+    )
+
+
+def _explicit_include_override_str(
+    rel_str: str, named_paths: list[str], spec: pathspec.PathSpec
+) -> bool:
+    """:func:`_explicit_include_override` for an already-cleaned list of named paths."""
+    for named in named_paths:
         if not named or not (rel_str == named or rel_str.startswith(named + "/")):
             continue
 
@@ -695,7 +753,7 @@ def _explicit_include_override(
         if rel_str == named:
             return True
 
-        inner = rel.relative_to(named_path)
+        inner = Path(rel_str[len(named) + 1 :])
         if not _any_parent_excluded(inner, spec):
             return True
     return False
@@ -716,6 +774,11 @@ def _matches_any_prefix(rel_str: str, prefixes: list[str]) -> bool:
         if rel_str.startswith(p + "/"):
             return True
     return False
+
+
+def _under_any(rel_str: str, cleaned: list[str]) -> bool:
+    """:func:`_matches_any_prefix` for prefixes already through :func:`_clean_include_path`."""
+    return any(rel_str == p or rel_str.startswith(p + "/") for p in cleaned)
 
 
 def _is_binary(path: Path) -> bool:

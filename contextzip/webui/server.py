@@ -188,12 +188,17 @@ def _make_handler(state: _ConfigUIState):
             self, always_include: list[str], always_exclude: list[str]
         ) -> dict:
             classified = state.classify(always_include, always_exclude)
+            # Suggestions are worked out as if nothing had been left out by
+            # hand, so one that has been applied stays on screen (to undo)
+            # instead of vanishing with the files it removed.
+            before_excludes = classified if not always_exclude else state.classify(always_include, [])
 
             root: dict = {"name": "", "path": "", "type": "dir", "children": {}}
             included_count = 0
             excluded_count = 0
             included_bytes = 0
             included_for_suggestions: list[tuple[str, int]] = []
+            still_included: list[tuple[str, int]] = []
 
             for abs_path, size in state.all_files:
                 rel = self._rel(abs_path)
@@ -217,26 +222,36 @@ def _make_handler(state: _ConfigUIState):
                             "size": size if is_last else 0,
                             "included": is_included if is_last else None,
                         }
+                        if is_last and size >= _suggestions.LARGE_FILE_BYTES:
+                            children[part]["large"] = True
                     node = children[part]
 
+                if before_excludes.get(abs_path, True):
+                    included_for_suggestions.append((rel, size))
                 if is_included:
                     included_count += 1
                     included_bytes += size
-                    included_for_suggestions.append((rel, size))
+                    still_included.append((rel, size))
                 else:
                     excluded_count += 1
 
             def rollup(node: dict) -> tuple[int, int]:
                 if node["type"] == "file":
+                    node["includedSize"] = node["size"] if node["included"] else 0
                     return (1 if node["included"] else 0, 1)
                 included = total = 0
-                size_sum = 0
+                size_sum = included_size = 0
                 for child in node["children"].values():
                     ci, ct = rollup(child)
                     included += ci
                     total += ct
                     size_sum += child["size"]
+                    included_size += child["includedSize"]
                 node["size"] = size_sum
+                # What a folder row shows: how much of it is going into the ZIP.
+                node["includedSize"] = included_size
+                node["files"] = total
+                node["includedFiles"] = included
                 if total == 0:
                     node["included"] = True
                 elif included == total:
@@ -269,6 +284,8 @@ def _make_handler(state: _ConfigUIState):
                     "excludedCount": excluded_count,
                     "includedBytes": included_bytes,
                     "totalCount": included_count + excluded_count,
+                    # Bytes still going into the ZIP that a suggestion covers.
+                    "suggestedBytes": _suggestions.covered_bytes(still_included),
                 },
                 "suggestions": suggestions,
             }

@@ -1347,6 +1347,16 @@ This project uses [Semantic Versioning](https://semver.org/).
 - An unrecognised project now prints "No known stack detected" where it
   said "Detected · unknown ecosystem".
 
+- **`contextzip config --ui`: picking files is easier.** Each row now has
+  two separate controls, an arrow that opens a folder and a checkbox that
+  decides whether it goes in the ZIP; before, a near miss on the small
+  arrow flipped the whole folder. Folder rows show how many of their files
+  are going in and how big they are. Suggestions moved from a row of grey
+  chips to a panel above the tree that says how much of the ZIP they
+  account for ("9.3 MB of this ZIP is probably not code"), with one click
+  to leave them all out, and an applied suggestion stays visible so it can
+  be undone. Large files are tagged in the tree, the tree uses the height
+  of the window, and "Open all" / "Close all" were added.
 - **What you type on the command line always wins.** `contextzip exclude
   docs/` left `docs/` in the ZIP when the project config listed it under
   `always_include`. The order is now the same everywhere, including

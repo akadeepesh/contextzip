@@ -68,6 +68,10 @@ class ReleaseFilesTests(TempProject):
             self.assertIn(t["os"], {"win32", "darwin", "linux"})
             self.assertIn(t["cpu"], {"x64", "arm64"})
 
+    def test_only_the_package_itself_is_installed(self):
+        text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('include = ["contextzip*"]', text, "tests/ and installers/ must not ship in the wheel")
+
     def test_pyproject_version_matches(self):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn(f'version = "{__version__}"', text)

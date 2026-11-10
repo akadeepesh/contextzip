@@ -1375,3 +1375,11 @@ This project uses [Semantic Versioning](https://semver.org/).
   only counts as .NET when it lists a `.csproj`, `.fsproj` or `.vbproj`.
 - `contextzip -v | head` on Windows ended with a traceback when the reader
   closed the pipe. It now exits quietly, as it does on macOS and Linux.
+
+## [Unreleased]
+
+### Fixed
+- **The wheel no longer installs `tests` and `installers` packages.** Every
+  release so far put those two folders into site-packages next to
+  `contextzip`, where a top-level `tests` package can shadow your own. Only
+  `contextzip` is installed now.

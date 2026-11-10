@@ -7,8 +7,8 @@ lines from cli_display.py are collected instead of printed, nothing ever
 prompts, and the command prints exactly one object when it finishes —
 whether it succeeded or not:
 
-    {"ok": true,  "command": "package", "version": "0.6.2", ..., "warnings": [], "log": [...]}
-    {"ok": false, "command": "package", "version": "0.6.2", "error": "…", "warnings": [], "log": [...]}
+    {"ok": true,  "command": "package", "version": "0.7.0", ..., "warnings": [], "log": [...]}
+    {"ok": false, "command": "package", "version": "0.7.0", "error": "…", "warnings": [], "log": [...]}
 
 The exit code matches "ok": 0 when it's true, non-zero when it's false.
 

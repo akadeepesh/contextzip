@@ -1303,7 +1303,7 @@ This project uses [Semantic Versioning](https://semver.org/).
   `--git-changes`, the MCP server and `contextzip watch`, and `apply-zip`
   keeps your real values when the file comes back.
 
-## [Unreleased]
+## [0.7.0] — 2026-11-10
 
 ### Added
 - **Many more stacks.** contextzip now recognises 62 languages and

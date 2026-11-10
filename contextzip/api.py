@@ -44,6 +44,7 @@ from contextzip.filters import (
     ResolveResult,
     build_force_include_spec,
     build_spec,
+    make_spec,
     normalize_pattern,
     resolve_files,
     resolve_files_from_git,
@@ -295,6 +296,7 @@ def get_files(
         include_only=include or None,
         force_include=cfg_kwargs["force_include"],
         large_file_warn_bytes=cfg_kwargs["large_file_warn_bytes"],
+        command_exclude=cfg_kwargs["command_exclude"],
     )
 
     return _resolve_result_to_collection(resolved, project_dir, detection)
@@ -533,19 +535,24 @@ def _config_kwargs(cfg, extra_exclude: list[str] | None = None) -> dict:
     """
     Translate a ProjectConfig (or None) into the shared filter inputs:
     extra_exclude (caller patterns + always_exclude), force_include
-    (always_include) and large_file_warn_bytes (limits.max_file_size_mb).
+    (always_include), command_exclude (the caller's own patterns, which
+    outrank the config's always_include, as on the command line) and
+    large_file_warn_bytes (limits.max_file_size_mb).
     """
     from contextzip.filters import LARGE_FILE_WARN_BYTES
 
     patterns = [normalize_pattern(p) for p in extra_exclude or []]
+    command_exclude = make_spec(patterns) if patterns else None
     if cfg is None:
         return {
             "extra_exclude": patterns or None,
             "force_include": None,
+            "command_exclude": command_exclude,
             "large_file_warn_bytes": LARGE_FILE_WARN_BYTES,
         }
     patterns += [normalize_pattern(p) for p in cfg.always_exclude]
     return {
+        "command_exclude": command_exclude,
         "extra_exclude": patterns or None,
         "force_include": build_force_include_spec(
             [normalize_pattern(p) for p in cfg.always_include]

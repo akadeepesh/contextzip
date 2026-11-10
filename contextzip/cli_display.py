@@ -132,7 +132,7 @@ def print_root_notice(project_root, *, here: bool = False, packaging: bool = Fal
 def print_detection(detection, *, con: Console = console) -> None:
     """One line: what was detected and how confident contextzip is."""
     if detection.is_unknown:
-        ok("Detected", "unknown ecosystem, base rules only", con=con)
+        ok("No known stack detected", "universal rules only", con=con)
         info(
             "Don't see your language? Request it: https://www.contextzipcli.com/request-language",
             con=con,
@@ -147,6 +147,9 @@ def print_detection(detection, *, con: Console = console) -> None:
         else:
             parts.append(name)
     ecosystem_str = " + ".join(parts)
+    if getattr(detection, "by_file_type", None):
+        ok(f"Detected {ecosystem_str}", "from file types, no project file found", con=con)
+        return
     ok(f"Detected {ecosystem_str}", f"{detection.confidence} confidence", con=con)
 
 
@@ -195,7 +198,7 @@ def print_git_verbose_files(changes, *, con: Console = console) -> None:
 def scan_label_and_detail(resolved, git_mode: bool = False) -> tuple[str, str | None]:
     """Build the (label, detail) pair used by print_scan_and_pack for the standard scan."""
     total = len(resolved.included) + len(resolved.excluded)
-    included_size = sum(p.stat().st_size for p in resolved.included if p.exists())
+    included_size = sum(resolved.size_of(p) for p in resolved.included)
 
     if git_mode:
         return f"Checked {len(resolved.included)} files", human_size(included_size)
@@ -218,7 +221,7 @@ def print_scan_summary(
     """Scan-only line, used when no packaging happens (dry runs)."""
     label, detail = scan_label_and_detail(resolved, git_mode=git_mode)
     binary = set(resolved.binary_files)
-    text_bytes = sum(p.stat().st_size for p in resolved.included if p not in binary and p.exists())
+    text_bytes = sum(resolved.size_of(p) for p in resolved.included if p not in binary)
     tokens = format_tokens(estimate_tokens(text_bytes))
     ok(label, f"{detail}, {tokens}" if detail else tokens, con=con)
 
@@ -227,7 +230,7 @@ def print_scan_summary(
 
     if verbose and resolved.included:
         for p in sorted(resolved.included):
-            size_str = human_size(p.stat().st_size) if p.exists() else "?"
+            size_str = human_size(resolved.size_of(p))
             rel = p.relative_to(project_dir).as_posix()
             con.print(f"  [green]·[/] {rel}  [dim]{size_str}[/]")
 

@@ -7,8 +7,8 @@ lines from cli_display.py are collected instead of printed, nothing ever
 prompts, and the command prints exactly one object when it finishes —
 whether it succeeded or not:
 
-    {"ok": true,  "command": "package", "version": "0.6.2", ..., "warnings": [], "log": [...]}
-    {"ok": false, "command": "package", "version": "0.6.2", "error": "…", "warnings": [], "log": [...]}
+    {"ok": true,  "command": "package", "version": "0.7.0", ..., "warnings": [], "log": [...]}
+    {"ok": false, "command": "package", "version": "0.7.0", "error": "…", "warnings": [], "log": [...]}
 
 The exit code matches "ok": 0 when it's true, non-zero when it's false.
 
@@ -138,6 +138,7 @@ def detection_data(detection) -> dict:
         "confidence": detection.confidence,
         "rules": list(detection.rule_modules),
         "sources": dict(detection.sources),
+        "by_file_type": list(getattr(detection, "by_file_type", [])),
     }
 
 
@@ -145,7 +146,7 @@ def files_data(resolved, project_dir: Path, *, verbose: bool, git_mode: bool) ->
     from contextzip.tokens import estimate_tokens
 
     binary = set(resolved.binary_files)
-    sizes = {p: (p.stat().st_size if p.exists() else 0) for p in resolved.included}
+    sizes = {p: resolved.size_of(p) for p in resolved.included}
     out: dict = {
         "included": len(resolved.included),
         "included_bytes": sum(sizes.values()),

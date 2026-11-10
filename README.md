@@ -1,168 +1,211 @@
 <div align="center">
 
+<img src="https://raw.githubusercontent.com/akadeepesh/contextzip/main/assets/logo.svg" width="72" height="72" alt="">
+
 # contextzip
 
-**Package exactly the right parts of your codebase for any AI tool, in one command.**
+### Send your codebase to any AI chat. Get the changes back.
 
-[![PyPI](https://img.shields.io/pypi/v/contextzip?color=blue)](https://pypi.org/project/contextzip/)
-[![npm](https://img.shields.io/npm/v/@contextzip/cli?color=blue&label=npm)](https://www.npmjs.com/package/@contextzip/cli)
-[![VS Code](https://img.shields.io/visual-studio-marketplace/v/contextzip.contextzip?label=VS%20Code&color=blue)](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip)
-[![Python](https://img.shields.io/pypi/pyversions/contextzip)](https://pypi.org/project/contextzip/)
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/contextzip?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/contextzip)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/akadeepesh/contextzip/blob/main/LICENSE)
+One command zips the right files for Claude or ChatGPT.<br>
+Another writes the AI's reply into your project, without losing your own edits.
 
-[Website](https://www.contextzipcli.com) ·
-[Documentation](https://www.contextzipcli.com/docs/getting-started) ·
-[CLI reference](https://github.com/akadeepesh/contextzip/blob/main/CLI.md) ·
-[Changelog](https://github.com/akadeepesh/contextzip/blob/main/CHANGELOG.md) ·
-[Report a bug](https://github.com/akadeepesh/contextzip/issues/new/choose)
+[![PyPI](https://img.shields.io/pypi/v/contextzip?color=3fb950&label=pypi)](https://pypi.org/project/contextzip/)
+[![npm](https://img.shields.io/npm/v/@contextzip/cli?color=3fb950&label=npm)](https://www.npmjs.com/package/@contextzip/cli)
+[![VS Code](https://img.shields.io/badge/vs%20code-extension-3fb950)](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip)
+[![Tests](https://img.shields.io/github/actions/workflow/status/akadeepesh/contextzip/tests.yml?branch=main&label=tests)](https://github.com/akadeepesh/contextzip/actions/workflows/tests.yml)
+[![Downloads](https://static.pepy.tech/personalized-badge/contextzip?period=total&units=INTERNATIONAL_SYSTEM&left_color=GREY&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/contextzip)
+[![License: MIT](https://img.shields.io/badge/license-MIT-3fb950.svg)](https://github.com/akadeepesh/contextzip/blob/main/LICENSE)
 
-</div>
-
-https://github.com/user-attachments/assets/91913ad6-6161-430d-9075-b0fa76498021
-
-<div align="center">
-
-**[▶ Watch the 72-second walkthrough on YouTube](https://youtu.be/9FnYfyB3qd8)**: package a project with `cz`, paste it into Claude, and write the reply back with `cz apply-zip`.
+**[Try it in your browser](https://www.contextzipcli.com)** &nbsp;·&nbsp;
+[Docs](https://www.contextzipcli.com/docs/getting-started) &nbsp;·&nbsp;
+[CLI reference](https://github.com/akadeepesh/contextzip/blob/main/CLI.md) &nbsp;·&nbsp;
+[Changelog](https://github.com/akadeepesh/contextzip/blob/main/CHANGELOG.md)
 
 </div>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/akadeepesh/contextzip/main/assets/readme-demo.svg" width="100%" alt="Three steps. Pack: cz scans 37,949 files and packs the 62 that matter. Paste: attach the ZIP in an AI chat and get a ZIP of changes back. Apply: cz apply-zip merges them into your project and keeps your own edits.">
+</p>
+
+```bash
+pip install contextzip      # or: npm i -g @contextzip/cli  ·  brew install akadeepesh/tap/contextzip
+cz                          # zip the right files and put the ZIP on your clipboard
+cz apply-zip                # write the AI's reply back into your project
+```
+
+<p align="center">
+  Nothing to install? <a href="https://www.contextzipcli.com">Drop a folder on contextzipcli.com</a>. It's packed in your browser and never uploaded.<br>
+  <a href="https://youtu.be/9FnYfyB3qd8">▶ Watch the whole loop in 72 seconds</a>
+</p>
 
 ---
 
-## Why contextzip?
+## Why
 
-Every AI coding session starts the same way. You hunt down the relevant files, skip `node_modules` and build output by hand, zip it all, find the zip and upload it. Next session, you do it again.
+Every AI coding session in a web chat starts the same way: hunt down the relevant files, leave out `node_modules` by hand, zip, upload. Then the slow part: copy the AI's edits back file by file, into the right folders, and hope you didn't overwrite something you changed in the meantime.
 
-contextzip does all of that for you. Run it from your project root and it:
+contextzip does both directions.
 
-1. **Detects your stack**: 62 languages and frameworks, from Next.js, Django and Spring Boot to .NET, Laravel, Flutter, Swift and C++, monorepos included.
-2. **Excludes the noise**: dependencies, build output, caches, binaries, logs, and anything in your `.gitignore`.
-3. **Keeps secrets out**: `.env` files, private keys, cloud credentials and Terraform state are left out by default. If you include your `.env` on purpose, its values are redacted, and passwords and secrets in Spring Boot's `application.properties` / `application.yml` are always redacted.
-4. **Puts the ZIP on your clipboard** as a real file, so you can paste it straight into Claude, ChatGPT, Gemini or any other upload box.
+| | |
+|---|---|
+| **Knows your stack** | 62 languages and frameworks, from Next.js, Django and Spring Boot to .NET, Laravel, Flutter and C++. Each brings its own rules for what to leave out, and monorepos get all that apply. |
+| **Leaves out the noise** | Dependencies, build output, caches, lockfiles, binaries and everything in your `.gitignore`. On this project's website repo that is 37,887 of 37,949 files. |
+| **Never sends secrets** | `.env`, private keys, cloud credentials and Terraform state stay out. Include a `.env` on purpose and its keys are kept while every value becomes `[REDACTED]`. |
+| **Pastes as a file** | The ZIP goes on your clipboard as a real file, folders intact. Ctrl+V in Claude, ChatGPT or Gemini attaches it. |
+| **Brings the changes back** | `cz apply-zip` finds where each returned file belongs and three-way merges it against a snapshot of what you sent. Conflicts and cut-off files wait for your decision. |
+| **Stays on your machine** | No telemetry. Packaging and applying make no network requests. |
 
-When the AI sends changed files back, `contextzip apply-zip` writes them into your project safely, and warns you before touching anything you've edited since.
+## How it compares
 
-It works where you do: in the terminal, on a GitHub, GitLab or Bitbucket link without cloning, [in your browser](https://www.contextzipcli.com) with nothing to install, in [VS Code](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip), and for AI agents over MCP.
+Other tools turn a repository into one text file for an AI to read. contextzip sends the real files, and its main job is the way back.
 
-## Table of contents
+| | contextzip | [repomix](https://github.com/yamadashy/repomix) | [gitingest](https://github.com/coderamp-labs/gitingest) | [code2prompt](https://github.com/mufeedvh/code2prompt) |
+|---|---|---|---|---|
+| Output | ZIP of the real files | One text file (XML, Markdown, JSON) | One text digest | One templated prompt |
+| Applies the AI's changes back | **Yes**, three-way merge | No | No | No |
+| Reply to a repo as a pull request | **Yes** | No | No | No |
+| What it leaves out | Rules for 62 stacks, plus `.gitignore` | One default list, plus `.gitignore` | `.gitignore` and your patterns | `.gitignore` and your globs |
+| Secrets | Excluded, or redacted if included | Suspicious files are skipped | Not covered in its docs | Not covered in its docs |
+| Remote repos without cloning | GitHub, GitLab, Bitbucket | GitHub | GitHub | Not covered in its docs |
+| Runs in | Terminal, browser, VS Code, MCP | Terminal, browser, MCP | Terminal, browser | Terminal, MCP |
 
-- [Installation](#installation)
-  - ["`cz` is not recognized"](#cz-is-not-recognized--command-not-found)
-- [Quick start](#quick-start)
-- [Features](#features)
-  - [Smart packaging](#smart-packaging)
-  - [Package only what changed](#package-only-what-changed)
-  - [Package a GitHub, GitLab or Bitbucket repo](#package-a-github-gitlab-or-bitbucket-repo)
-  - [In your browser](#in-your-browser)
-  - [VS Code extension](#vs-code-extension)
-  - [MCP server for AI agents](#mcp-server-for-ai-agents)
-  - [AI-powered file selection](#ai-powered-file-selection)
-  - [Applying AI changes back](#applying-ai-changes-back)
-  - [Terminal error watcher](#terminal-error-watcher)
-  - [Visual config UI](#visual-config-ui)
-- [Command reference](#command-reference)
-- [Configuration](#configuration)
-- [What is always excluded](#what-is-always-excluded)
-- [Where files go](#where-files-go)
-- [Python API](#python-api)
-- [Privacy & security](#privacy--security)
-- [Platform support](#platform-support)
-- [Contributing](#contributing)
-- [License](#license)
+If you only want an AI to *read* a repository, any of them works, and a single text file pastes into more places than a ZIP does. repomix also counts tokens exactly and can compress code down to its signatures, which contextzip doesn't do yet. If you want the AI's edits back in your code, that is what contextzip is for.
+
+<sub>The other columns come from each project's own documentation as of October 2026. <a href="https://github.com/akadeepesh/contextzip/issues/new/choose">Corrections are welcome.</a></sub>
 
 ## Installation
 
-**With Python** (3.9 or newer):
-
 ```bash
-pip install contextzip
+pip install contextzip                    # Python 3.9+   (also: pipx install, uv tool install)
+npm install -g @contextzip/cli            # no Python needed, any OS
+brew install akadeepesh/tap/contextzip    # macOS, Linux
 ```
 
-Installing with [pipx](https://pipx.pypa.io/) or [uv](https://docs.astral.sh/uv/) keeps it isolated from your projects:
+Every method installs two commands that do the same thing: `contextzip` and the shorter `cz`. To update later, run `contextzip update`.
+
+<details>
+<summary><b>More ways to install</b>: Scoop, direct download, VS Code, MCP, or try it without installing</summary>
+
+<br>
 
 ```bash
-pipx install contextzip
-# or
-uv tool install contextzip
-```
-
-**Without Python.** These install a standalone build of the same tool:
-
-```bash
-npm install -g @contextzip/cli                 # Node.js 16+, any OS
-brew install akadeepesh/tap/contextzip         # macOS / Linux (Homebrew)
+# Windows (Scoop)
 scoop bucket add contextzip https://github.com/akadeepesh/scoop-bucket
-scoop install contextzip                       # Windows (Scoop)
+scoop install contextzip
+
+# Try it once, nothing stays installed
+npx @contextzip/cli
+uvx contextzip
+pipx run contextzip
 ```
 
-Or download an archive for your platform from the [latest release](https://github.com/akadeepesh/contextzip/releases/latest), unpack it, and put the `contextzip` folder on your PATH. Builds are made for Windows x64, macOS (Apple Silicon and Intel) and Linux x64/arm64 (glibc 2.35 or newer).
+- **Direct download:** grab an archive from the [latest release](https://github.com/akadeepesh/contextzip/releases/latest), unpack it, and put the `contextzip` folder on your PATH. Builds exist for Windows x64, macOS (Apple Silicon and Intel) and Linux x64/arm64 (glibc 2.35 or newer).
+- **VS Code:** install [contextzip from the Marketplace](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip), or run `code --install-extension contextzip.contextzip`. It bundles the CLI.
+- **AI agents:** `pip install "contextzip[mcp]"` and register `contextzip mcp` as an MCP server (Python 3.10+).
+- **No install:** [contextzipcli.com](https://www.contextzipcli.com).
 
-**In VS Code**, install [contextzip from the Marketplace](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip) (or run `code --install-extension contextzip.contextzip`). It bundles the CLI, so there's nothing else to install. See [VS Code extension](#vs-code-extension).
+</details>
 
-**For AI agents:** `pip install "contextzip[mcp]"` and register `contextzip mcp` as an MCP server (Python 3.10+). See [CLI.md](https://github.com/akadeepesh/contextzip/blob/main/CLI.md#contextzip-mcp).
+<details>
+<summary><b>"<code>cz</code> is not recognized" / "command not found"</b></summary>
 
-**No install at all:** drop a folder or paste a repo link on [contextzipcli.com](https://www.contextzipcli.com).
+<br>
 
-**Just trying the CLI?** Nothing stays installed with these:
-
-```bash
-npx @contextzip/cli          # Node.js
-uvx contextzip               # uv
-pipx run contextzip          # pipx
-```
-
-Every method installs two commands that do the same thing: `contextzip` and the shorter `cz`.
-
-To update later, run `contextzip update`. It works out whether you installed with pip, pipx or uv and upgrades the right one. A standalone build tells you the npm, Homebrew or Scoop command to run instead.
-
-### "`cz` is not recognized" / "command not found"
-
-pip installed contextzip, but put the `cz` command in a folder your terminal doesn't search. This is common with Python from the Microsoft Store or the Python install manager on Windows, and with `pip install --user` on macOS and Linux. Look for pip's `WARNING: The scripts cz.exe and contextzip.exe are installed in '…' which is not on PATH.`
-
-Python itself always works, so run contextzip through it and let it fix PATH for you:
+pip installed contextzip, but put the `cz` command in a folder your terminal doesn't search. This is common with Python from the Microsoft Store on Windows, and with `pip install --user` on macOS and Linux. Python itself always works, so let contextzip fix PATH for you:
 
 ```bash
 python -m contextzip setup-path     # macOS / Linux: python3 -m contextzip setup-path
 ```
 
-On Windows this adds the folder to your user PATH (no admin needed). On macOS and Linux it adds one line to your shell's startup file. Open a new terminal and `cz` works. Until then, `python -m contextzip` does everything `cz` does.
+On Windows this adds the folder to your user PATH (no admin needed). On macOS and Linux it adds one line to your shell's startup file. Open a new terminal and `cz` works. Until then, `python -m contextzip` does everything `cz` does. If you installed with pipx, run `pipx ensurepath`; with uv, `uv tool update-shell`.
 
-If you installed with pipx, run `pipx ensurepath`. With uv, run `uv tool update-shell`.
+</details>
 
 ## Quick start
 
 ```bash
 cd ~/projects/my-app
-contextzip
+cz
 ```
 
-You don't need any flags. contextzip detects your framework, excludes the noise, writes `codebase.zip` into `.contextzip/output/codebase/` and copies it to your clipboard. Paste it into your AI tool.
-
-Some other common runs:
+No flags needed. contextzip detects your framework, leaves out the noise, writes `codebase.zip` and copies it to your clipboard. Paste it into your AI tool, ask for what you want, and when it sends files back:
 
 ```bash
-contextzip --dry-run --verbose              # preview every included/excluded file, write nothing
-contextzip --git-changes                    # only what you've changed
-contextzip --prompt "fix the login redirect bug"   # let AI pick the relevant files
-contextzip include src/ app/                # only these folders
-contextzip include src/ .env                # .env too, values redacted
-contextzip --here                           # only the folder you're in (monorepos)
-contextzip github.com/user/repo             # a GitHub/GitLab/Bitbucket repo, without cloning it
-contextzip exclude tests/ '*.snap'          # everything except these
-contextzip apply-zip                        # write the AI's changes back
+cz apply-zip
 ```
 
-## Features
+The commands you'll use most:
 
-### Smart packaging
+```bash
+cz --dry-run --verbose              # preview every included and excluded file, write nothing
+cz --git-changes                    # only what you've changed
+cz include src/ app/                # only these folders
+cz exclude tests/ '*.snap'          # everything except these
+cz include src/ .env                # .env too, with its values redacted
+cz --prompt "fix the login redirect bug"    # let AI pick the relevant files
+cz github.com/user/repo             # a GitHub, GitLab or Bitbucket repo, without cloning it
+cz --here                           # only the folder you're in (monorepos)
+cz stacks                           # the languages and frameworks it recognises
+```
 
-contextzip scans your project and recognises its stack from marker files such as `package.json`, `next.config.*`, `pyproject.toml`, `pom.xml`, `*.csproj`, `composer.json`, `pubspec.yaml`, `Cargo.toml` and `go.mod`, and from the dependencies those files list. It looks a couple of levels deep, so a monorepo with a React frontend and a Spring Boot backend gets **both** rule sets applied. Packages a workspace file declares (npm, pnpm, Cargo, Go, Maven, Gradle) are found at any depth. A project with no project file at all, such as a folder of scripts, is recognised by its file types.
+## Applying AI changes back
+
+```bash
+cz apply-zip              # picks up a ZIP from .contextzip/inbox/
+cz apply-zip fix.zip      # or point at one directly
+cz apply-zip --dry-run    # preview without writing anything
+```
+
+AI tools return ZIPs in every shape: wrapped in an extra folder, relative to a subfolder, flattened, with Windows separators. `apply-zip` matches each file to its real place in your project anyway.
+
+Every ZIP contextzip makes is kept as a local **snapshot** (never uploaded). When a reply comes back, three versions of each file are compared: what you sent, what's on disk now, and what came back.
+
+| Status | Meaning | Default |
+|---|---|---|
+| **New** / **Modified** | New file, or only the AI changed it | Written |
+| **Merged** | You both changed it, in different places | Written (three-way merge) |
+| **Unchanged** | Already matches, including changes you already applied | Skipped |
+| **Conflict** | You both changed the same or neighbouring lines | Needs your call |
+| **Partial** | The AI returned a cut-down file (`// ... rest unchanged`) | Needs your call |
+| **Moved** | The AI moved or renamed it | Written at the new path; the old file is kept unless you say otherwise |
+| **Drifted** / **Deleted** / **Untracked** / **Ambiguous** / **Delete requested** | Can't be applied safely without you | Needs your call |
+
+When something needs a decision you choose: apply the safe changes now, review side by side in your browser (`--review`), resolve in VS Code's merge editor (`--editor`), or apply everything. Line endings never count as a change, redacted secrets are never overwritten with placeholders, and files are only removed with your explicit OK.
+
+Each ZIP also carries a short `CONTEXTZIP.md` telling the AI how to reply so the answer applies cleanly: complete files, same paths, moves and deletions listed.
+
+## Secrets
+
+Secret files are excluded from every project, whatever its stack: `.env` and `.env.*`, `*.pem`, `*.key`, keystores, SSH private keys, `.npmrc`, `.netrc`, cloud credential files, kubeconfigs and Terraform state.
+
+When the AI needs to see which settings exist, include the file on purpose. Keys and comments are kept; values are not:
+
+```bash
+# .env on disk                          # .env in the ZIP
+DATABASE_URL=postgres://u:pw@db/app     DATABASE_URL=[REDACTED]
+export API_KEY="sk-live-…"  # prod      export API_KEY="[REDACTED]"  # prod
+```
+
+Spring Boot's `application.properties` and `application.yml` are always redacted the same way, because they are config the AI needs and routinely hold live passwords:
+
+```bash
+# application.properties on disk                       # in the ZIP
+spring.datasource.url=jdbc:postgresql://app:pw@db/app   spring.datasource.url=jdbc:postgresql://app:[REDACTED]@db/app
+spring.datasource.password=hunter2                      spring.datasource.password=[REDACTED]
+jwt.secret=${JWT_SECRET:dev-secret}                     jwt.secret=${JWT_SECRET:[REDACTED]}
+```
+
+When the file comes back, `apply-zip` keeps your real values. Set `limits.redact_secrets: true` to also mask API keys, tokens and private-key blocks hardcoded in ordinary files. Before sharing a sensitive project, `cz --dry-run --verbose` shows exactly what will go in.
+
+## Stacks
+
+contextzip recognises a stack from marker files (`package.json`, `pyproject.toml`, `pom.xml`, `*.csproj`, `composer.json`, `pubspec.yaml`, `Cargo.toml`, `go.mod`) and the dependencies they list. It looks a couple of levels deep and reads workspace files, so a monorepo with a React frontend and a Spring Boot backend gets both rule sets. A folder of scripts with no project file is recognised by its file types.
 
 | Ecosystem | Frameworks recognised | Examples of what's excluded |
 |---|---|---|
-| **JavaScript / TypeScript** | Next.js, Nuxt, SvelteKit, Astro, Remix, Gatsby, Angular, Vue, Svelte, Vite, NestJS, Expo, React Native, Electron, Tauri, Bun, Deno | `node_modules/`, `.next/`, `.nuxt/`, `.svelte-kit/`, `dist/`, `build/`, `coverage/`, lockfiles, `*.min.js` |
+| **JavaScript / TypeScript** | Next.js, Nuxt, SvelteKit, Astro, Remix, Gatsby, Angular, Vue, Svelte, Vite, NestJS, Expo, React Native, Electron, Tauri, Bun, Deno | `node_modules/`, `.next/`, `.nuxt/`, `.svelte-kit/`, `dist/`, `coverage/`, lockfiles, `*.min.js` |
 | **Python** | Django, FastAPI, Flask, Jupyter | `__pycache__/`, `.venv/`, `*.pyc`, `.pytest_cache/`, `*.egg-info/`, model weights |
-| **Java / Kotlin / Scala / Clojure** | Spring Boot, Android | `target/`, `build/`, `.gradle/`, `*.class`, `*.jar`, `mvnw`/`gradlew` wrappers, IDE files |
+| **Java / Kotlin / Scala / Clojure** | Spring Boot, Android | `target/`, `build/`, `.gradle/`, `*.class`, `*.jar`, build wrappers, IDE files |
 | **C# / .NET** | Unity | `bin/`, `obj/`, `.vs/`, `*.nupkg`; for Unity: `Library/`, `*.meta`, scenes and prefabs |
 | **PHP** | Laravel, Symfony, WordPress | `vendor/`, `composer.lock`, `storage/framework/`, `var/`, WordPress core and `wp-config.php` |
 | **Swift / Dart** | Xcode, SwiftPM, CocoaPods, Flutter | `.build/`, `DerivedData/`, `Pods/`, `*.pbxproj`, `.dart_tool/`, `*.g.dart` |
@@ -171,56 +214,35 @@ contextzip scans your project and recognises its stack from marker files such as
 | **Ruby** | Rails, Jekyll | `vendor/bundle/`, `tmp/`, `log/`, `storage/`, `_site/` |
 | **Elixir / Erlang** | Phoenix | `_build/`, `deps/`, `mix.lock`, `*.beam` |
 | **Haskell, OCaml, R, Julia, Lua, Perl** | | `dist-newstyle/`, `_build/`, `renv/library/`, `Manifest.toml` |
-| **Other** | Terraform, Foundry, Hardhat, Godot, Unreal Engine, Hugo | `*.tfvars`, `.terraform.lock.hcl`, `out/`, `artifacts/`, `.godot/`, `Intermediate/`, `public/` |
+| **Other** | Terraform, Foundry, Hardhat, Godot, Unreal Engine, Hugo | `*.tfvars`, `.terraform.lock.hcl`, `out/`, `artifacts/`, `.godot/`, `Intermediate/` |
 
-Run `contextzip stacks` for the full list, and `contextzip stacks laravel` for everything one stack leaves out.
+`cz stacks` lists all 62, and `cz stacks laravel` shows everything one leaves out. Missing yours? [Request it](https://www.contextzipcli.com/request-language), or [add it](https://github.com/akadeepesh/contextzip/blob/main/CONTRIBUTING.md#adding-a-new-language-or-framework): one table entry and one test case.
 
-On top of the stack rules, contextzip also:
-
-- respects your `.gitignore` files, including ones in subfolders like `apps/web/.gitignore` (turn this off with `--no-gitignore`),
-- flags large files (1 MB or more by default) and binary files before packaging,
-- skips dangling symlinks and unreadable files, and tells you why,
-- writes a plain-text report next to every ZIP listing what went in and what was left out,
-- estimates the token count of what it packed (`≈ 46k tokens`), so you know whether it'll fit before you upload.
-
-### Package only what changed
-
-```bash
-contextzip --git-changes
-```
-
-This packages only the files git reports as **staged, modified or untracked**. It's ideal for code review or "here's what I changed, what's wrong?" prompts. Deleted files, submodules and monorepo roots are handled for you, and the secret-exclusion rules still apply to files git tracks.
-
-### Package a GitHub, GitLab or Bitbucket repo
-
-```bash
-contextzip github.com/pallets/click
-contextzip https://github.com/pallets/click/tree/main/src     # one branch, one folder
-contextzip gh:you/private-repo --ref dev
-contextzip gitlab.com/group/project                           # or gl:group/project
-contextzip bitbucket.org/team/repo                            # or bb:team/repo
-```
-
-No clone and no git needed: contextzip downloads one commit through the host's API into a local cache and packages it like any other project, with the same stack detection, exclusions and redaction. `include` and `exclude` work as usual, and a link to a branch's folder packages just that folder.
-
-- **Private repos:** set `GITHUB_TOKEN` (or sign in with `gh auth login`), `GITLAB_TOKEN` or `BITBUCKET_TOKEN`. A token is only ever sent to its own host's API.
-- **Send the reply back as a pull request:** for a GitHub repo, `contextzip apply-zip reply.zip --pr` commits the AI's changes on top of the commit you packaged and opens a pull request, forking first if you can't push. No clone needed.
-- **Cache:** a commit is downloaded once and reused. Override the location with `CONTEXTZIP_CACHE_DIR`; downloads over 250 MB are refused unless you raise `CONTEXTZIP_REMOTE_MAX_MB`.
+## More ways to use it
 
 ### In your browser
 
-[contextzipcli.com](https://www.contextzipcli.com) runs contextzip in your browser, with the same rules as the CLI:
+[contextzipcli.com](https://www.contextzipcli.com) runs the same code as the CLI, in the page.
 
-- **Drop a folder** (or choose one) and it's packaged right in the page. Your files never leave your machine.
-- **Paste a GitHub, GitLab or Bitbucket link** to package a public repository. Shortcut: put `contextzipcli.com/` in front of a repo URL, as in `contextzipcli.com/github.com/user/repo`.
+- **Drop a folder** and it's packaged locally. Your files never leave your machine.
+- **Paste a repo link** to package a public repository. Shortcut: put `contextzipcli.com/` in front of a repo URL, as in `contextzipcli.com/github.com/user/repo`.
 - **Apply the AI's reply** to your folder (Chrome and Edge): pick the folder and the ZIP, review the plan, and the safe changes are written for you.
+
+### A repository, without cloning it
+
+```bash
+cz github.com/pallets/click
+cz https://github.com/pallets/click/tree/main/src     # one branch, one folder
+cz gh:you/private-repo --ref dev
+cz gitlab.com/group/project                           # or gl:group/project
+cz bitbucket.org/team/repo                            # or bb:team/repo
+```
+
+contextzip downloads one commit through the host's API and packages it like any other project. Private repos use `GITHUB_TOKEN` (or your `gh` login), `GITLAB_TOKEN` or `BITBUCKET_TOKEN`; a token is only ever sent to its own host. For a GitHub repo, `cz apply-zip reply.zip --pr` commits the AI's changes and **opens a pull request**, forking first if you can't push.
 
 ### VS Code extension
 
-[contextzip for VS Code](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip) bundles the CLI, so it works without Python.
-
-- **Package for AI** from the Explorer's right-click menu, the status bar or the command palette: the whole project, selected files and folders, git changes, the files for a task, or a GitHub repo. The ZIP goes on your clipboard.
-- **Apply the reply:** when an AI's ZIP lands in your Downloads, the extension offers to apply it. Every file's status shows in the **AI Changes** view, safe changes apply in one step, and conflicts open in VS Code's three-way merge editor.
+[contextzip for VS Code](https://marketplace.visualstudio.com/items?itemName=contextzip.contextzip) bundles the CLI, so it works without Python. Package the project, a selection, your git changes or a GitHub repo from the Explorer's right-click menu. When an AI's ZIP lands in your Downloads, the extension offers to apply it: every file's status shows in the **AI Changes** view, safe changes apply in one step, and conflicts open in the three-way merge editor.
 
 ### MCP server for AI agents
 
@@ -228,101 +250,64 @@ No clone and no git needed: contextzip downloads one commit through the host's A
 pip install "contextzip[mcp]"      # Python 3.10+
 ```
 
-Then register it in your MCP client:
-
 ```json
 {"mcpServers": {"contextzip": {"command": "contextzip", "args": ["mcp"]}}}
 ```
 
-An agent can then package a project or a repository, preview and apply a reply, list snapshots and open a pull request. Each tool returns the same JSON as `--json`. See [CLI.md](https://github.com/akadeepesh/contextzip/blob/main/CLI.md#contextzip-mcp) for every tool.
+An agent can then package a project or a repository, preview and apply a reply, list snapshots and open a pull request. See [CLI.md](https://github.com/akadeepesh/contextzip/blob/main/CLI.md#contextzip-mcp) for every tool.
 
-### AI-powered file selection
-
-```bash
-contextzip --prompt "add rate limiting to the login endpoint"
-```
-
-Describe your task in plain language and [Gemini](https://ai.google.dev/) picks only the files that matter. The ZIP also includes a `prompt.txt` describing the task, so the AI tool you paste it into knows what you want.
-
-- **Setup:** you need a free Gemini API key. contextzip walks you through it the first time you use `--prompt`, or you can set the `GEMINI_API_KEY` environment variable.
-- **What is sent:** only the list of file **paths and sizes** that already passed the exclusion rules, plus your prompt. File contents never leave your machine.
-- **Fallback:** if Gemini is rate-limited, a local keyword-based selector takes over, so `--prompt` keeps working. Other errors (a bad key, no network) stop with a clear message.
-- **Model:** `gemini-2.5-flash-lite` by default.
-
-### Applying AI changes back
+### Let AI pick the files
 
 ```bash
-contextzip apply-zip              # picks up a ZIP from .contextzip/inbox/
-contextzip apply-zip fix.zip      # or point at one directly
-contextzip apply-zip --dry-run    # preview without writing anything
+cz --prompt "add rate limiting to the login endpoint"
 ```
 
-AI tools return ZIPs in every shape: wrapped in an extra folder, relative to a subfolder, flattened, with Windows separators. `apply-zip` matches each file to its real place in your project anyway, and new files follow their siblings.
+Describe the task and [Gemini](https://ai.google.dev/) picks only the files that matter; the ZIP also gets a `prompt.txt` describing the task. It needs a free Gemini API key, which contextzip walks you through the first time. Only file **paths and sizes** plus your prompt are sent, never file contents. If Gemini is rate-limited, a local keyword-based selector takes over.
 
-Every ZIP contextzip makes gets a **local snapshot** (a hash of each file, never uploaded). `apply-zip` picks the snapshot that best matches the returned ZIP and compares three versions of each file: what you sent, what's on disk now, and what came back.
-
-| Status | Meaning | Default |
-|---|---|---|
-| **New** / **Modified** | New file, or only the AI changed it | Written |
-| **Merged** | You both changed it, in different places | Written (three-way merge) |
-| **Unchanged** | Already matches — including changes you already applied | Skipped |
-| **Conflict** | You both changed the same or neighbouring lines | Needs your call |
-| **Partial** | The AI returned a cut-down file (`// ... rest unchanged`) | Needs your call |
-| **Moved** | The AI moved or renamed it | Written at the new path; the old file is kept unless you say otherwise |
-| **Drifted** / **Deleted** / **Untracked** / **Ambiguous** / **Delete requested** | Can't be applied safely without you | Needs your call |
-
-When something needs a decision you choose: apply the safe changes now, **review side by side in your browser** (`--review`), **resolve in VS Code's merge editor** (`--editor`), or apply everything. Line endings never count as a change, redacted secrets are never overwritten with placeholders, and **files are only removed with your explicit OK** — never one you've changed since.
-
-### Snapshots and CONTEXTZIP.md
-
-Every package is kept locally as a numbered **snapshot** (`#14`), so a reply can be merged against exactly what you sent, even after you've packaged again. Each ZIP also carries a short **`CONTEXTZIP.md`** for the AI: the snapshot ID, and how to reply so the answer applies cleanly (complete files, same paths, secrets left as `[REDACTED]`, moves and deletions listed). When the reply echoes it back, `apply-zip` knows the exact snapshot. `contextzip snapshots` lists them; turn the file off with `"zip_guide": false`.
-
-### Terminal error watcher
+### Choose files visually
 
 ```bash
-contextzip watch -- npm run dev
-contextzip watch -- python manage.py runserver
-contextzip watch -- ./mvnw spring-boot:run
-contextzip watch -- python -m pytest --tb=short
+cz config --ui
 ```
 
-contextzip runs your command and watches its output. When a stack trace appears (Python, Django, Node.js/Next.js and Java/Kotlin/Spring Boot errors are recognised, including Maven and Gradle compile errors), it asks whether to package debug context. Press `D` and you get `debug-context.zip` containing:
+<p align="center">
+  <img src="https://raw.githubusercontent.com/akadeepesh/contextzip/main/assets/config-ui.png" width="820" alt="The config UI: a panel says 4.4 MB of this ZIP is probably not code and offers to leave out large files, PDFs, database files and more; below it, a checkbox tree of the project with file counts and sizes per folder.">
+</p>
 
-- `prompt.txt`: an auto-generated description of the problem
-- `terminal-error.txt`: the error output with ANSI codes and noise stripped out
-- `source-files.zip`: the source files named in the stack trace
+A local browser tab where you tick what goes in the ZIP. It shows how big each folder is, points out what is probably not code, and saves your choices to `.contextzip/config.json`. The server binds to `127.0.0.1` only, needs a one-time session token and shuts itself down when you're done.
 
-If you press Ctrl+C before packaging anything, you get one last chance to capture the whole session.
-
-### Visual config UI
+### Package the moment something breaks
 
 ```bash
-contextzip config --ui
+cz watch -- npm run dev
 ```
 
-This opens a local browser tab where you can tick files and folders to always include or exclude, with a live preview of what the ZIP will contain. It saves to `.contextzip/config.json`. The server binds to `127.0.0.1` only, needs a random one-time session token and shuts itself down when you're done.
+contextzip runs your command and watches its output. When a stack trace appears (Python, Node.js and Java/Kotlin errors are recognised), press `D` to get a ZIP with the error, a ready-made prompt and the source files named in the trace.
 
 ## Command reference
 
 | Command | What it does |
 |---|---|
-| `contextzip` | Detect the stack, exclude noise and package the project |
-| `contextzip github.com/user/repo` | Package a GitHub, GitLab or Bitbucket repository without cloning it |
-| `contextzip include PATH…` | Package **only** these paths |
-| `contextzip exclude PATTERN…` | Package everything **except** these patterns |
-| `contextzip --prompt "task"` | Let Gemini pick only the files relevant to a task |
-| `contextzip --git-changes` | Package only modified, staged and untracked files |
-| `contextzip apply-zip [ZIP]` | Write an AI-returned ZIP back into your project, safely |
-| `contextzip watch -- COMMAND` | Run a command and package debug context when an error appears |
-| `contextzip apply-zip ZIP --pr` | Send an AI's reply to a GitHub repo back as a pull request |
-| `contextzip snapshots` | List what you've sent, so a reply can be merged against it |
-| `contextzip stacks` | List the languages and frameworks contextzip recognises, and what each leaves out |
-| `contextzip mcp` | Run the MCP server for AI agents |
-| `contextzip config …` | Gemini key, workspace location and the visual config UI |
-| `contextzip update` | Update to the latest release (or print the npm, Homebrew or Scoop command for a standalone build) |
-| `contextzip setup-path` | Put `cz` on your PATH when pip didn't |
+| `cz` | Detect the stack, leave out the noise and package the project |
+| `cz include PATH…` | Package **only** these paths |
+| `cz exclude PATTERN…` | Package everything **except** these patterns |
+| `cz --git-changes` | Package only modified, staged and untracked files |
+| `cz --prompt "task"` | Let Gemini pick only the files relevant to a task |
+| `cz github.com/user/repo` | Package a GitHub, GitLab or Bitbucket repository without cloning it |
+| `cz apply-zip [ZIP]` | Write an AI-returned ZIP back into your project, safely |
+| `cz apply-zip ZIP --pr` | Send an AI's reply to a GitHub repo back as a pull request |
+| `cz snapshots` | List what you've sent, so a reply can be merged against it |
+| `cz stacks` | List the languages and frameworks contextzip recognises |
+| `cz watch -- COMMAND` | Run a command and package debug context when an error appears |
+| `cz config …` | Gemini key, workspace location and the visual config UI |
+| `cz mcp` | Run the MCP server for AI agents |
+| `cz update` | Update to the latest release |
+| `cz setup-path` | Put `cz` on your PATH when pip didn't |
 
-**Run flags** work on `contextzip`, `include` and `exclude`:
+<details>
+<summary><b>Run flags</b> (work on <code>cz</code>, <code>include</code> and <code>exclude</code>)</summary>
+
+<br>
 
 | Flag | Short | Description |
 |---|---|---|
@@ -335,21 +320,18 @@ This opens a local browser tab where you can tick files and folders to always in
 | `--no-clipboard` | | Don't copy the ZIP to the clipboard. |
 | `--no-gitignore` | | Ignore `.gitignore` and use only the built-in rules. |
 | `--verbose` | `-v` | List every included and excluded file. |
-| `--from REPO` | | Package a remote repository instead of the local project (or just put the repo first: `contextzip github.com/user/repo`). |
+| `--here` | | Only package the folder you're in. |
+| `--from REPO` | | Package a remote repository (or just put the repo first: `cz github.com/user/repo`). |
 | `--ref REF` | | Branch, tag or commit for `--from`. |
-| `--json` | | Print one JSON object instead of terminal output, for editors and scripts. Also on `apply-zip` and `snapshots`. |
+| `--json` | | Print one JSON object instead of terminal output, for editors and scripts. |
 
-Every command supports `-h` / `--help`, and `contextzip --version` prints the installed version.
+</details>
 
-For every flag of every subcommand (`apply-zip`, `snapshots`, `watch`, `mcp`, `config`, `update`), see **[CLI.md](https://github.com/akadeepesh/contextzip/blob/main/CLI.md)** or the [online CLI reference](https://www.contextzipcli.com/docs/cli).
+Every command supports `-h`. For every flag of every subcommand, see **[CLI.md](https://github.com/akadeepesh/contextzip/blob/main/CLI.md)** or the [online reference](https://www.contextzipcli.com/docs/cli).
 
 ## Configuration
 
-contextzip has two config files, and both are optional.
-
-### Project config: `.contextzip/config.json`
-
-This holds per-project settings. Edit it by hand or with `contextzip config --ui`. Every key is optional:
+Both config files are optional. Per-project settings live in `.contextzip/config.json`; edit it by hand or with `cz config --ui`.
 
 ```jsonc
 {
@@ -363,17 +345,14 @@ This holds per-project settings. Edit it by hand or with `contextzip config --ui
   },
   "limits": {
     "max_file_size_mb": 1,                     // threshold for "large file" warnings
-    "redact_secrets": false                    // scan included files and mask secret-looking values
+    "redact_secrets": false                    // also mask secret-looking values in ordinary files
   },
-  "applied_zip_retention": 1,                  // past apply-zip archives to keep
-  "cleanup": { "enabled": true, "keep_recent": 1 },
   "snapshots": { "keep": 10, "max_age_days": 14 },  // history apply-zip merges against
-  "zip_guide": true,                           // add CONTEXTZIP.md to every ZIP
-  "webui": { "auto_open": true, "port": null }
+  "zip_guide": true                            // add CONTEXTZIP.md to every ZIP
 }
 ```
 
-`.contextzip/` is fully gitignored by default. If your team wants to share these settings, commit the file explicitly with `git add -f .contextzip/config.json`.
+`.contextzip/` is git-ignored by default. To share these settings with your team, commit the file explicitly: `git add -f .contextzip/config.json`. Your Gemini API key and personal defaults live outside the project (`~/.config/contextzip/` or `%APPDATA%\contextzip\`), so they're never committed. The full guide is at [contextzipcli.com/docs/configuration](https://www.contextzipcli.com/docs/configuration).
 
 ### Which rule wins
 
@@ -384,29 +363,14 @@ When they disagree, the more specific source wins:
 3. **Your `.gitignore`.** A `!pattern` there brings back a file the built-in rules would drop, such as `!.env.example`.
 4. **The built-in rules** for the detected stack.
 
-Including a folder is a scope, not an override: `contextzip include src/` still leaves out `src/.env` and whatever `.gitignore` ignores inside `src/`. Name the file itself to bring it in. A secret file that ends up in the ZIP, by any of these routes, has its values redacted.
+Including a folder is a scope, not an override: `cz include src/` still leaves out `src/.env` and whatever `.gitignore` ignores inside `src/`. Name the file itself to bring it in. A secret file that ends up in the ZIP, by any of these routes, has its values redacted.
 
-### Personal config
+<details>
+<summary><b>What is always excluded</b></summary>
 
-Your Gemini API key and personal defaults live outside the project, so they're never committed:
+<br>
 
-| OS | Location |
-|---|---|
-| Linux / macOS | `~/.config/contextzip/config.json` (or `$XDG_CONFIG_HOME/contextzip/`) |
-| Windows | `%APPDATA%\contextzip\config.json` |
-
-```bash
-contextzip config                          # show the current configuration
-contextzip config --reset-key              # clear the Gemini key and set it up again
-contextzip config --set-workspace cwd      # put .contextzip/ in the current directory
-contextzip config --show-key-path          # print the config file location
-```
-
-The full option-by-option guide is at [contextzipcli.com/docs/configuration](https://www.contextzipcli.com/docs/configuration).
-
-## What is always excluded
-
-These patterns apply to **every** project, whatever its stack, and in `--git-changes` mode too:
+These apply to **every** project, whatever its stack, and in `--git-changes` mode too:
 
 - **Secrets & credentials:** `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.ppk`, SSH private keys (`id_rsa`, `id_ed25519`, …), `.npmrc`, `.netrc`, `.pypirc`, `.pgpass`, Docker auth config, `.aws/credentials`, service-account and `*credentials*.json` files, kubeconfigs
 - **Infrastructure state:** `*.tfstate`, `.terraform/`
@@ -415,134 +379,87 @@ These patterns apply to **every** project, whatever its stack, and in `--git-cha
 - **Binaries & media:** executables, shared libraries, images, video, audio, fonts and archives
 - **Project boilerplate:** `CHANGELOG`, `LICENSE`, `CONTRIBUTING`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, GitHub issue/PR templates
 
-To bring one back, name it explicitly with `contextzip include .env`, list it under `always_include` in the project config, tick it in `contextzip config --ui`, or un-ignore it in `.gitignore` (`!.env.example`). Naming a folder like `src/` doesn't pull in the secret files inside it. See [Which rule wins](#which-rule-wins).
+To bring one back, name it with `cz include .env`, list it under `always_include`, tick it in `cz config --ui`, or un-ignore it in `.gitignore` (`!.env.example`).
 
-**Secret files you include on purpose are always redacted.** If you include your `.env` so the AI can see which variables your app expects, every key and comment is kept but every value becomes `[REDACTED]`:
+</details>
 
-```bash
-# .env on disk                          # .env in the ZIP
-DATABASE_URL=postgres://u:pw@db/app     DATABASE_URL=[REDACTED]
-export API_KEY="sk-live-…"  # prod      export API_KEY="[REDACTED]"  # prod
-```
+<details>
+<summary><b>Where files go</b></summary>
 
-Other secret files (private keys, credential files) get a secret-pattern scan. Binary ones like `.p12` can't be redacted, so they're left out. All of this happens whatever your other settings say.
+<br>
 
-**Spring Boot config is always redacted too.** `application.properties` and `application.yml` (plus profile variants like `application-prod.yml`, and `bootstrap.*`) are included, because the AI needs to see your configuration, but the value of every password, secret, token, credentials, API-key and private-key setting becomes `[REDACTED]`, and so does a password inside any URL. `${ENV_VAR}` references are kept; a fallback like `${DB_PASSWORD:hunter2}` is not:
-
-```bash
-# application.properties on disk                       # in the ZIP
-spring.datasource.url=jdbc:postgresql://app:pw@db/app   spring.datasource.url=jdbc:postgresql://app:[REDACTED]@db/app
-spring.datasource.password=hunter2                      spring.datasource.password=[REDACTED]
-jwt.secret=${JWT_SECRET:dev-secret}                     jwt.secret=${JWT_SECRET:[REDACTED]}
-server.port=8080                                        server.port=8080
-```
-
-When the AI sends the file back, `apply-zip` keeps your real values.
-
-For extra safety, set `limits.redact_secrets: true` to also mask API keys, tokens, JWTs and private-key blocks hardcoded inside ordinary files that get included. Every run's report lists what was redacted.
-
-> **Tip:** before sharing a sensitive project, run `contextzip --dry-run --verbose` to see exactly what will go into the ZIP.
-
-## Where files go
-
-contextzip keeps everything in a `.contextzip/` folder at your git root (change this with `contextzip config --set-workspace`):
+contextzip keeps everything in a `.contextzip/` folder at your git root (change this with `cz config --set-workspace`):
 
 ```text
 .contextzip/
 ├── output/
-│   ├── codebase/      codebase.zip + manifest + report   (contextzip)
+│   ├── codebase/      codebase.zip + manifest + report   (cz)
 │   ├── git-changes/   changes.zip + manifest + report    (--git-changes)
 │   ├── prompt/        vibe.zip + manifest + report       (--prompt)
-│   └── watch/         debug-context.zip                  (contextzip watch)
-├── snapshots/         numbered copies of what you sent   (contextzip snapshots)
+│   └── watch/         debug-context.zip                  (cz watch)
+├── snapshots/         numbered copies of what you sent   (cz snapshots)
 ├── inbox/             drop AI-returned ZIPs here for apply-zip
 └── config.json        project config (optional)
 ```
 
-Old outputs are cleaned up automatically: `output/` keeps the latest ZIP per mode (`cleanup`), and `snapshots/` keeps the newest 10 or anything under 14 days old (`snapshots`) — never one a reply in the inbox is waiting on.
+Old outputs are cleaned up automatically: `output/` keeps the latest ZIP per mode, and `snapshots/` keeps the newest 10 or anything under 14 days old, never one a reply in the inbox is waiting on.
+
+</details>
 
 ## Python API
 
 contextzip is also a library. The functions behave like the CLI but return plain Python objects and raise exceptions instead of printing.
 
 ```python
-from contextzip import get_files, get_git_changes, create_zip, apply_zip, detect_ecosystem, fetch_remote
+from contextzip import get_files, get_git_changes, create_zip, apply_zip, fetch_remote
 
-# All project files, filtered by .gitignore and the built-in rules
-collection = get_files(include=["src/"], exclude=["*.log"])
-for path in collection.files:          # plain pathlib.Path objects
-    print(path)
-
-# Only git-changed files, zipped
-changes = get_git_changes()
-pkg = create_zip(changes, output="/tmp/changes.zip")
+collection = get_files(include=["src/"], exclude=["*.log"])   # filtered like the CLI
+pkg = create_zip(get_git_changes(), output="/tmp/changes.zip")
 print(f"Packed {pkg.file_count} files → {pkg.zip_path}")
 
-# What stack is this?
-print(detect_ecosystem("."))
-
-# A remote repository, without cloning it
-repo = fetch_remote("github.com/pallets/click")
+repo = fetch_remote("github.com/pallets/click")               # a repository, without cloning it
 pkg = create_zip(get_files(repo.project_dir), output=repo.zip_path)
 ```
 
-| Function | Returns |
-|---|---|
-| `get_files(path=None, *, include=None, exclude=None, …)` | `FileCollection` of all project files after filtering |
-| `get_git_changes(path=None, *, use_project_config=True)` | `FileCollection` of staged, modified and untracked files |
-| `create_zip(collection, output=…)` | `PackageResult` with the ZIP path, file count and sizes |
-| `apply_zip(zip_path=None, …)` | `ApplyResult` describing what was written |
-| `detect_ecosystem(path=None)` | Detected ecosystem information |
-| `fetch_remote(target, ref=None)` | `FetchedRemote`: a GitHub, GitLab or Bitbucket repo unpacked into the cache (`project_dir`, `sha`, `zip_path`) |
-| `web.run(args, cwd=None)` | Any CLI command's `--json` result as a dict, without printing or prompting (used in the browser via Pyodide, and on servers) |
-
-All exceptions inherit from `ContextzipError`: `NotARepositoryError`, `GitNotFoundError`, `GitCommandError`, `NoFilesError`, `ZipNotFoundError` and `RemoteFetchError`.
-
-For full signatures, see [contextzipcli.com/cli#python-api](https://www.contextzipcli.com/docs/cli#python-api).
+All exceptions inherit from `ContextzipError`. Full signatures are in the [API reference](https://www.contextzipcli.com/docs/cli#python-api).
 
 ## Privacy & security
 
 - **Local by default.** Packaging, `apply-zip`, `watch` and the config UI never make network requests.
-- **Network use is opt-in and limited to three features:**
-  - `--prompt` sends file paths, sizes and your prompt to the Gemini API. File contents are never sent.
-  - Packaging a remote repo (`contextzip github.com/user/repo`) downloads it from that host, and `apply-zip --pr` opens a pull request on GitHub. A token, if any, is sent only to its own host's API.
-  - `contextzip update` asks PyPI for the latest version number.
+- **Network use is opt-in and limited to three features:** `--prompt` sends file paths, sizes and your prompt to the Gemini API, never file contents. Packaging a remote repo downloads it from that host, and `apply-zip --pr` opens a pull request on GitHub. `cz update` asks PyPI for the latest version number.
 - **No telemetry.** Nothing is collected or phoned home.
-- **Manifests stay local.** `apply-zip` manifests are written next to the ZIP and never inside it.
-- **Secrets are excluded or redacted.** See [What is always excluded](#what-is-always-excluded).
+- **Secrets are excluded or redacted.** See [Secrets](#secrets).
 
-Found a vulnerability? Please follow [SECURITY.md](https://github.com/akadeepesh/contextzip/blob/main/SECURITY.md) and report it privately rather than in a public issue.
+Found a vulnerability? Please follow [SECURITY.md](https://github.com/akadeepesh/contextzip/blob/main/SECURITY.md) and report it privately.
 
 ## Platform support
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
 | Packaging, `apply-zip`, config | ✅ | ✅ | ✅ |
-| ZIP copied to clipboard as a file | ✅ native (`CF_HDROP`) | ✅ via Finder | ✅ built-in X11 owner (works under XWayland), or `wl-copy` / `xclip` |
-| `contextzip watch` | ✅ (best in Windows Terminal / VS Code) | ✅ | ✅ |
-| Standalone build (no Python: npm, Homebrew, Scoop, download) | ✅ x64 | ✅ Apple Silicon and Intel | ✅ x64 and arm64, glibc 2.35+ |
+| ZIP copied to clipboard as a file | ✅ native | ✅ via Finder | ✅ X11 (works under XWayland), `wl-copy` or `xclip` |
+| `cz watch` | ✅ | ✅ | ✅ |
+| Standalone build (no Python) | ✅ x64 | ✅ Apple Silicon and Intel | ✅ x64 and arm64, glibc 2.35+ |
 
-If the clipboard can't be used, contextzip opens the output folder with the ZIP selected and tells you why. Use `--no-clipboard` to skip this step entirely.
+If the clipboard can't be used, contextzip opens the output folder with the ZIP selected and tells you why.
 
 ## Contributing
 
-Contributions are welcome, especially **new framework rule sets** and edge-case fixes. Not up for writing code? [Request a feature](https://www.contextzipcli.com/request-feature) or [request your language](https://www.contextzipcli.com/request-language). Both turn into GitHub issues ranked by 👍. To set up a local copy:
+Contributions are welcome, especially **new languages and frameworks**: one entry in `contextzip/stacks.py`, a `PATTERNS` list and one test case. [CONTRIBUTING.md](https://github.com/akadeepesh/contextzip/blob/main/CONTRIBUTING.md) walks through it. Not up for writing code? [Request a feature](https://www.contextzipcli.com/request-feature) or [request your language](https://www.contextzipcli.com/request-language); both become GitHub issues ranked by 👍.
 
 ```bash
 git clone https://github.com/akadeepesh/contextzip
 cd contextzip
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e .
-contextzip --version
+pip install -e . pytest
+python -m pytest
 ```
 
-Adding a new language takes three small steps: a `PATTERNS` list in `contextzip/rules/`, one entry in `contextzip/stacks.py` and one test case. [CONTRIBUTING.md](https://github.com/akadeepesh/contextzip/blob/main/CONTRIBUTING.md) walks through it, along with PR conventions. Please open an issue before starting a large PR.
+If contextzip saves you time, a ⭐ helps other people find it.
 
 ## License
 
 [MIT](https://github.com/akadeepesh/contextzip/blob/main/LICENSE) © Deepesh
-
----
 
 <p align="center"><sub>
   Built by <a href="https://akadeepesh.com?ref=github">Deepesh Kumar</a>

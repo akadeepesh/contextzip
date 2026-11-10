@@ -68,9 +68,9 @@ def write_scan_report(
     w("")
 
     total = len(resolved.included) + len(resolved.excluded)
-    included_size = sum(p.stat().st_size for p in resolved.included if p.exists())
+    included_size = sum(resolved.size_of(p) for p in resolved.included)
     binary = set(resolved.binary_files)
-    text_size = sum(p.stat().st_size for p in resolved.included if p not in binary and p.exists())
+    text_size = sum(resolved.size_of(p) for p in resolved.included if p not in binary)
     w("Files")
     if mode != "git-changes":
         w(f"  scanned  : {total + len(resolved.skipped)}")
@@ -92,7 +92,7 @@ def write_scan_report(
     for p in sorted(resolved.included):
         try:
             rel = p.relative_to(project_dir).as_posix()
-            size = human_size(p.stat().st_size) if p.exists() else "?"
+            size = human_size(resolved.size_of(p))
         except ValueError:
             rel, size = str(p), "?"
         w(f"  {rel:<60} {size}")

@@ -18,11 +18,16 @@ no build step, no CDN fetches) rather than a directory of static assets:
     CDN-fetched face, even though that means giving up pixel-perfect
     control over exactly which fonts render.
 
-Visual language: every file row and every include/exclude pattern reads
-as a diff hunk (a solid gutter + "+"/"-" mark, monospace paths) rather
-than a generic checkbox list — deliberately borrowed from git, since
-that's the mental model this whole tool already runs on (--git-changes,
-apply-zip's manifest diffing, etc).
+The Files tab is a checkbox tree. A row has two separate controls with
+their own hit areas: the caret opens a folder, the checkbox decides
+whether it goes in the ZIP. Clicking a folder's name opens it; clicking a
+file's name ticks it. (They used to be one "+" mark beside a 10px caret,
+where a near miss on the caret flipped the whole folder.) Folder rows
+show how much of the folder is going in, so it's clear where the bulk is.
+
+Suggestions ("9.3 MB of this ZIP is probably not code") sit in an amber
+panel above the tree, sized by how much each would save, and stay visible
+once applied so they can be undone.
 
 Five tabs share one page: Files (the tree + always_include/exclude —
 the original single-pane UI), AI selection, Workspace, Advanced, and a
@@ -60,6 +65,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --rem: #e2686c;
     --rem-dim: #4a2c2d;
     --rem-bg: rgba(226, 104, 108, 0.08);
+    --warn: #e6b450;
+    --warn-dim: #5c4a1f;
+    --warn-bg: rgba(230, 180, 80, 0.07);
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
       Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas,
@@ -106,43 +114,64 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   .window-body { padding: 26px 28px 0; }
 
-  .head { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 20px; border-bottom: 1px solid var(--border-soft); }
-  .head-left h1 { margin: 0 0 6px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
-  .head-left p { margin: 0; font-family: var(--mono); font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; padding-bottom: 20px; border-bottom: 1px solid var(--border-soft); }
+  .head-left { min-width: 0; }
+  .head-title { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .head-title h1 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .head-left p { margin: 0; font-family: var(--mono); font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .badge {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 11px; font-weight: 500; color: #8fd6a8;
+    display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap;
+    font-size: 11.5px; font-weight: 500; color: #8fd6a8;
     background: var(--add-bg); border: 1px solid var(--add-dim);
-    padding: 2px 8px 2px 6px; border-radius: 20px; font-family: var(--sans);
+    padding: 3px 10px 3px 8px; border-radius: 20px; font-family: var(--sans);
   }
+  .badge[hidden] { display: none; }
   .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--add); display: inline-block; }
 
-  .stats { display: flex; gap: 28px; }
+  .stats { display: flex; gap: 30px; flex: none; }
   .stat { text-align: right; }
-  .stat .num { font-family: var(--mono); font-size: 22px; font-weight: 600; line-height: 1; }
+  .stat .num { font-family: var(--mono); font-size: 22px; font-weight: 600; line-height: 1; white-space: nowrap; }
   .stat .num.included { color: var(--add); }
-  .stat .num.excluded { color: var(--rem); }
-  .stat .label { margin-top: 6px; font-size: 10px; letter-spacing: 0.08em; color: var(--muted-2); text-transform: uppercase; font-weight: 600; }
+  .stat .num.excluded { color: var(--muted); }
+  .stat .label { margin-top: 7px; font-size: 10px; letter-spacing: 0.08em; color: var(--muted-2); text-transform: uppercase; font-weight: 600; white-space: nowrap; }
 
-  .suggestions { padding: 16px 0; border-bottom: 1px solid var(--border-soft); }
-  .suggestions-label { margin: 0 0 10px; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); font-weight: 600; }
-  .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
-  .empty-suggestions { font-size: 12.5px; color: var(--muted); }
-  .chip {
-    display: flex; align-items: center; gap: 9px;
-    background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 7px 8px 7px 12px;
-    font-size: 12.5px;
+  /* ---- suggestions: what is probably not worth sending ---- */
+  .trim {
+    margin-bottom: 22px; border: 1px solid var(--warn-dim); border-left: 3px solid var(--warn);
+    background: var(--warn-bg); border-radius: 10px; padding: 16px 18px 18px;
   }
-  .chip.applied { border-color: var(--add-dim); background: var(--add-bg); }
-  .chip-meta { color: var(--muted-2); font-family: var(--mono); font-size: 11px; }
-  .chip button {
-    font-family: var(--sans); font-size: 10.5px; font-weight: 600;
-    border: 1px solid var(--border); background: var(--field); color: var(--muted);
-    padding: 3px 9px; border-radius: 6px; cursor: pointer;
+  .trim[hidden] { display: none; }
+  .trim.done { border-color: var(--add-dim); border-left-color: var(--add); background: var(--add-bg); }
+  .trim-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
+  .trim-head h2 { margin: 0 0 4px; font-size: 15.5px; font-weight: 600; letter-spacing: -0.005em; }
+  .trim-head h2 b { color: var(--warn); font-family: var(--mono); font-weight: 600; }
+  .trim.done .trim-head h2 b { color: var(--add); }
+  .trim-head p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  .trim-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; }
+  .sug {
+    display: flex; align-items: center; gap: 12px; text-align: left; width: 100%;
+    font-family: var(--sans); color: var(--text); cursor: pointer;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 9px;
+    padding: 10px 12px; position: relative; overflow: hidden;
   }
-  .chip button:hover { color: var(--text); border-color: var(--muted-2); }
-  .chip.applied button { color: var(--add); border-color: var(--add-dim); }
+  .sug:hover { border-color: var(--warn); }
+  .sug.applied { border-color: var(--add-dim); }
+  .sug.applied:hover { border-color: var(--add); }
+  .sug-box {
+    width: 18px; height: 18px; flex: none; border-radius: 5px; border: 1.5px solid var(--warn);
+    display: inline-flex; align-items: center; justify-content: center; color: #0a1f12;
+  }
+  .sug.applied .sug-box { background: var(--add); border-color: var(--add); }
+  .sug-box svg { display: none; }
+  .sug.applied .sug-box svg { display: block; }
+  .sug-body { flex: 1; min-width: 0; }
+  .sug-label { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sug.applied .sug-label { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--muted-2); }
+  .sug-meta { display: block; margin-top: 2px; font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sug-size { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--warn); flex: none; }
+  .sug.applied .sug-size { color: var(--muted-2); }
+  .sug-bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--warn); opacity: 0.75; }
+  .sug.applied .sug-bar { background: var(--add); opacity: 0.4; }
 
   /* ---- tabs ---- */
   .tabs { display: flex; gap: 2px; padding-top: 18px; border-bottom: 1px solid var(--border-soft); }
@@ -179,36 +208,63 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .search-box input::placeholder { color: var(--muted-2); }
   .search-box input:focus { outline: none; border-color: var(--muted-2); background: var(--field-hover); }
 
+  .tree-tools { display: flex; gap: 8px; margin-bottom: 10px; }
+  .tree-tools .search-box { flex: 1; margin-bottom: 0; }
+  .btn-small {
+    font-family: var(--sans); font-size: 12px; font-weight: 500; white-space: nowrap;
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 8px; padding: 0 11px; cursor: pointer;
+  }
+  .btn-small:hover { color: var(--text); border-color: var(--muted-2); }
+
   .tree {
     border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2);
-    max-height: 390px; overflow-y: auto; font-family: var(--mono); font-size: 12.5px;
+    max-height: max(420px, calc(100vh - 380px)); overflow-y: auto; font-family: var(--mono); font-size: 12.5px;
   }
   .tree-empty { padding: 24px 14px; color: var(--muted); font-size: 12.5px; }
+  .tree-help { margin: 9px 2px 0; font-size: 11.5px; color: var(--muted-2); }
   .node-row {
-    display: flex; align-items: center; gap: 0; padding: 6px 12px 6px 4px;
-    cursor: pointer; border-bottom: 1px solid var(--border-soft); position: relative;
+    display: flex; align-items: center; min-height: 34px; padding: 0 14px 0 6px;
+    cursor: pointer; border-bottom: 1px solid var(--border-soft);
   }
-  .node-row:hover { background: rgba(255,255,255,0.02); }
-  .children { border-bottom: none; }
+  .node-row:hover { background: rgba(255,255,255,0.03); }
   .node:last-child > .node-row { border-bottom: none; }
 
-  .gutter { width: 3px; align-self: stretch; margin-right: 10px; border-radius: 2px; flex: none; background: var(--border); }
-  .node-row:not(.excluded) .gutter { background: var(--add); }
-
-  .diffmark { width: 13px; flex: none; text-align: center; font-weight: 700; font-size: 13px; }
-  .node-row:not(.excluded) .diffmark { color: var(--add); }
-  .node-row.excluded .diffmark { color: var(--muted-2); }
-  .diffmark.partial { color: #d9b35f; }
-
-  .caret { width: 16px; flex: none; color: var(--muted-2); display: inline-flex; align-items: center; justify-content: center; transition: transform 0.12s ease; }
-  .caret.open { transform: rotate(90deg); }
+  /* Two controls, two hit areas: the caret opens, the box includes. */
+  .caret {
+    width: 26px; height: 26px; flex: none; padding: 0; border: none; background: none; cursor: pointer;
+    color: var(--muted); border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .caret svg { transition: transform 0.12s ease; }
+  .caret.open svg { transform: rotate(90deg); }
+  .caret:hover { background: var(--field-hover); color: var(--text); }
   .caret.leaf { visibility: hidden; }
 
-  .node-name { flex: 1; color: var(--text); padding-left: 2px; }
-  .node-row.excluded .node-name { color: var(--muted); }
-  .node-name.dir { color: var(--muted); font-weight: 500; }
-  .node-size { color: var(--muted-2); font-size: 11.5px; margin-left: 10px; }
-  .children { margin-left: 21px; border-left: 1px dashed var(--border-soft); }
+  .check {
+    width: 30px; height: 30px; flex: none; padding: 0; margin: 0 6px 0 4px; border: none; background: none; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; border-radius: 6px;
+  }
+  .check i {
+    width: 17px; height: 17px; border-radius: 5px; border: 1.5px solid var(--muted-2);
+    display: inline-flex; align-items: center; justify-content: center; color: #0a1f12;
+  }
+  .check:hover { background: var(--field-hover); }
+  .check:hover i { border-color: var(--text); }
+  .check.on i { background: var(--add); border-color: var(--add); }
+  .check.partial i { background: var(--warn); border-color: var(--warn); }
+  .caret:focus-visible, .check:focus-visible, .sug:focus-visible, .btn-small:focus-visible { outline: 2px solid var(--add); outline-offset: 1px; }
+
+  .node-name { flex: 1; min-width: 0; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .node-name.dir { font-weight: 600; }
+  .node-row.excluded .node-name { color: var(--muted-2); }
+  .node-meta { color: var(--muted-2); font-size: 11.5px; margin-left: 14px; white-space: nowrap; flex: none; }
+  .node-meta b { color: var(--muted); font-weight: 500; }
+  .node-meta.heavy b { color: var(--warn); }
+  .tag-large {
+    font-family: var(--sans); font-size: 10px; font-weight: 600; letter-spacing: 0.03em; flex: none;
+    color: var(--warn); border: 1px solid var(--warn-dim); border-radius: 4px; padding: 1px 6px; margin-left: 10px;
+  }
+  .children { margin-left: 18px; border-left: 1px solid var(--border-soft); }
 
   .pane-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
   .pane-title span:first-child { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); font-weight: 600; }
@@ -224,9 +280,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .pattern-group h3.exclude::before { background: var(--rem); }
   .pattern-group h3.include { color: var(--add); }
   .pattern-group h3.include::before { background: var(--add); }
+  .pattern-group h3 code { font-family: var(--mono); font-size: 10.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted-2); margin-left: 4px; }
 
   .pattern-list { display: flex; flex-direction: column; gap: 5px; }
-  .pattern-empty { font-size: 12px; color: var(--muted-2); font-style: italic; padding: 6px 2px; display: block; }
+  .pattern-empty { font-size: 12px; color: var(--muted-2); line-height: 1.5; padding: 4px 2px; display: block; }
   .pattern-pill {
     display: flex; align-items: center; justify-content: space-between; gap: 9px;
     font-family: var(--mono); font-size: 12.5px;
@@ -263,6 +320,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .btn-primary:disabled { opacity: 0.6; cursor: default; }
   .btn-ghost { background: transparent; border-color: var(--border); color: var(--muted); }
   .btn-ghost:hover { color: var(--text); border-color: var(--muted-2); }
+  .btn-warn { background: var(--warn); color: #241a02; white-space: nowrap; flex: none; }
+  .btn-warn:hover { background: #f0c468; }
+  .btn-warn.undo { background: transparent; border-color: var(--border); color: var(--muted); }
+  .btn-warn.undo:hover { color: var(--text); border-color: var(--muted-2); }
 
   .json-block {
     margin-top: 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
@@ -328,9 +389,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     display: flex; align-items: center; justify-content: space-between;
     margin: 0 -28px; padding: 16px 28px; border-top: 1px solid var(--border-soft); background: var(--panel-2);
   }
-  .foot-path { font-size: 12px; color: var(--muted); }
+  .foot { gap: 24px; }
+  .foot-path { font-size: 12px; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .foot-path b { font-family: var(--mono); color: var(--text); font-weight: 500; }
-  .foot-actions { display: flex; gap: 10px; }
+  .foot-actions { display: flex; gap: 10px; flex: none; }
+  .foot-actions .btn { white-space: nowrap; }
 
   .below-note {
     text-align: center; padding: 14px; font-size: 11.5px; color: var(--muted-2);
@@ -382,29 +445,25 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <div class="window-body">
       <div class="head">
         <div class="head-left">
-          <h1 id="project-name">Loading project…</h1>
+          <div class="head-title">
+            <h1 id="project-name">Loading project…</h1>
+            <span class="badge" id="project-stack" hidden></span>
+          </div>
           <p id="project-path">&nbsp;</p>
         </div>
         <div class="stats">
           <div class="stat">
             <div class="num included" id="stat-included">–</div>
-            <div class="label">included</div>
+            <div class="label">files in the ZIP</div>
           </div>
           <div class="stat">
             <div class="num excluded" id="stat-excluded">–</div>
-            <div class="label">excluded</div>
+            <div class="label">left out</div>
           </div>
           <div class="stat">
             <div class="num" id="stat-size">–</div>
-            <div class="label">packed size</div>
+            <div class="label">size before zipping</div>
           </div>
-        </div>
-      </div>
-
-      <div class="suggestions" id="suggestions-wrap">
-        <p class="suggestions-label">Suggested excludes</p>
-        <div class="chip-row" id="chip-row">
-          <span class="empty-suggestions">Scanning…</span>
         </div>
       </div>
 
@@ -418,37 +477,53 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
       <!-- FILES -->
       <div class="tab-panel" id="panel-files">
+        <section class="trim" id="trim" hidden aria-live="polite">
+          <div class="trim-head">
+            <div>
+              <h2 id="trim-title"></h2>
+              <p id="trim-sub"></p>
+            </div>
+            <button class="btn btn-warn" id="trim-all" type="button">Leave all out</button>
+          </div>
+          <div class="trim-list" id="trim-list"></div>
+        </section>
+
         <div class="grid">
           <div class="pane">
-            <div class="pane-title"><span>File tree</span><span class="hint" id="tree-hint"></span></div>
-            <div class="search-box">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <input id="search-input" type="text" placeholder="Filter files…" autocomplete="off" spellcheck="false" />
+            <div class="pane-title"><span>What goes in the ZIP</span><span class="hint" id="tree-hint"></span></div>
+            <div class="tree-tools">
+              <div class="search-box">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input id="search-input" type="text" placeholder="Filter files…" autocomplete="off" spellcheck="false" />
+              </div>
+              <button class="btn-small" id="expand-all" type="button">Open all</button>
+              <button class="btn-small" id="collapse-all" type="button">Close all</button>
             </div>
             <div class="tree" id="tree-root">
               <div class="tree-empty">Scanning your project…</div>
             </div>
+            <p class="tree-help">Tick what the AI should see. The arrow, or a folder's name, opens the folder.</p>
           </div>
 
           <div class="pane side">
-            <div class="pane-title"><span>Working config</span></div>
+            <div class="pane-title"><span>Your rules for this project</span></div>
 
             <div class="pattern-group">
-              <h3 class="exclude">always_exclude</h3>
+              <h3 class="exclude">Always leave out <code>always_exclude</code></h3>
               <div class="pattern-list" id="exclude-list"></div>
             </div>
 
             <div class="pattern-group">
-              <h3 class="include">always_include</h3>
+              <h3 class="include">Always include <code>always_include</code></h3>
               <div class="pattern-list" id="include-list"></div>
             </div>
 
             <div class="add-row">
-              <select id="add-kind">
-                <option value="exclude">exclude</option>
+              <select id="add-kind" aria-label="Kind of rule">
+                <option value="exclude">leave out</option>
                 <option value="include">include</option>
               </select>
-              <input id="add-pattern" type="text" placeholder="e.g. *.snap or docs/internal/" spellcheck="false" />
+              <input id="add-pattern" type="text" placeholder="e.g. *.snap or docs/internal/" spellcheck="false" aria-label="Pattern" />
               <button class="btn btn-primary" id="add-btn" type="button" style="padding:8px 14px;">Add</button>
             </div>
           </div>
@@ -562,7 +637,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
       <div class="foot">
         <div class="foot-path">
-          Will write to <b id="config-path-inline">.contextzip/config.json</b>
+          Saves to <b id="config-path-inline">.contextzip/config.json</b>
           <div class="unsaved-note" id="unsaved-note">Unsaved changes</div>
         </div>
         <div class="foot-actions">
@@ -599,6 +674,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     always_include: [],
     always_exclude: [],
     tree: [],
+    suggestions: [],
     expanded: new Set(["__root__"]),
     filter: "",
     activeTab: "files",
@@ -699,45 +775,117 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   // ---- rendering: header / stats ----
+  function shortPath(full) {
+    var parts = String(full).split(/[\\/]/);
+    return parts.slice(-2).join("/");
+  }
+
   function renderHeader(data) {
     document.getElementById("project-name").textContent = data.project.name;
     document.getElementById("window-title").textContent = "contextzip config — " + data.project.name;
-    document.getElementById("project-path").innerHTML =
-      data.project.path + '<span class="badge"><span class="pulse"></span>' + data.project.ecosystem + "</span>";
-    document.getElementById("config-path-inline").textContent = data.configPath;
+    var pathEl = document.getElementById("project-path");
+    pathEl.textContent = data.project.path;
+    pathEl.title = data.project.path;
+    var stack = document.getElementById("project-stack");
+    stack.innerHTML = '<span class="pulse"></span>';
+    stack.appendChild(document.createTextNode(data.project.ecosystem));
+    stack.hidden = false;
+    var inline = document.getElementById("config-path-inline");
+    inline.textContent = shortPath(data.configPath);
+    inline.title = data.configPath;
     document.getElementById("overlay-path").textContent = data.configPath;
     document.getElementById("raw-config-path").textContent = data.configPath;
+  }
+
+  function plural(n, word) {
+    return n + " " + word + (n === 1 ? "" : "s");
   }
 
   function renderStats(stats) {
     document.getElementById("stat-included").textContent = stats.includedCount;
     document.getElementById("stat-excluded").textContent = stats.excludedCount;
     document.getElementById("stat-size").textContent = formatBytes(stats.includedBytes);
-    document.getElementById("tree-hint").textContent = stats.includedCount + " / " + stats.totalCount + " files included";
+    document.getElementById("tree-hint").textContent = stats.includedCount + " of " + plural(stats.totalCount, "file");
     document.getElementById("tab-files-count").textContent = stats.includedCount + "/" + stats.totalCount;
   }
 
   // ---- rendering: suggestions ----
-  function renderSuggestions(suggestions) {
-    var row = document.getElementById("chip-row");
-    row.innerHTML = "";
+  var CHECK_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  var DASH_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><path d="M5 12h14"/></svg>';
+
+  function renderSuggestions(suggestions, stats) {
+    state.suggestions = suggestions;
+    var panel = document.getElementById("trim");
+    var list = document.getElementById("trim-list");
+    list.innerHTML = "";
     if (!suggestions.length) {
-      row.innerHTML = '<span class="empty-suggestions">Nothing unusual found — looks clean already.</span>';
+      panel.hidden = true;
       return;
     }
+    panel.hidden = false;
+
+    var left = stats.suggestedBytes || 0;
+    var allApplied = suggestions.every(isSuggestionApplied);
+    var title = document.getElementById("trim-title");
+    var sub = document.getElementById("trim-sub");
+    panel.classList.toggle("done", left === 0);
+    title.innerHTML = "";
+    if (left > 0) {
+      var share = stats.includedBytes ? Math.round((left / stats.includedBytes) * 100) : 0;
+      var b = document.createElement("b");
+      b.textContent = formatBytes(left);
+      title.appendChild(b);
+      title.appendChild(document.createTextNode(" of this ZIP is probably not code"));
+      sub.textContent = "That's " + share + "% of its size. An AI rarely needs these, and they can push a ZIP past the upload limit. Leave out what it doesn't need.";
+    } else {
+      var d = document.createElement("b");
+      d.textContent = "Trimmed.";
+      title.appendChild(d);
+      title.appendChild(document.createTextNode(" Nothing else looks out of place"));
+      sub.textContent = "Click a suggestion again to bring those files back.";
+    }
+    var all = document.getElementById("trim-all");
+    all.textContent = allApplied ? "Undo all" : "Leave all out";
+    all.classList.toggle("undo", allApplied);
+
+    var biggest = Math.max.apply(null, suggestions.map(function (s) { return s.bytes; })) || 1;
     suggestions.forEach(function (s) {
       var applied = isSuggestionApplied(s);
-      var chip = document.createElement("div");
-      chip.className = "chip" + (applied ? " applied" : "");
-      var meta = s.count + (s.count === 1 ? " file" : " files") + " · " + formatBytes(s.bytes);
-      chip.innerHTML =
-        '<span>' + s.label + '</span><span class="chip-meta">' + meta + "</span>";
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.textContent = applied ? "Undo" : "Exclude";
-      btn.addEventListener("click", function () { toggleSuggestion(s, applied); });
-      chip.appendChild(btn);
-      row.appendChild(chip);
+      var card = document.createElement("button");
+      card.type = "button";
+      card.className = "sug" + (applied ? " applied" : "");
+      card.setAttribute("aria-pressed", applied ? "true" : "false");
+      card.title = applied ? "Left out. Click to bring back." : "Click to leave these out of the ZIP.";
+
+      var box = document.createElement("span");
+      box.className = "sug-box";
+      box.innerHTML = CHECK_SVG;
+      card.appendChild(box);
+
+      var body = document.createElement("span");
+      body.className = "sug-body";
+      var label = document.createElement("span");
+      label.className = "sug-label";
+      label.textContent = s.label;
+      var meta = document.createElement("span");
+      meta.className = "sug-meta";
+      meta.textContent = applied ? plural(s.count, "file") + " left out" : plural(s.count, "file") + (s.pattern ? " · " + s.pattern : "");
+      body.appendChild(label);
+      body.appendChild(meta);
+      card.appendChild(body);
+
+      var size = document.createElement("span");
+      size.className = "sug-size";
+      size.textContent = formatBytes(s.bytes);
+      card.appendChild(size);
+
+      var bar = document.createElement("span");
+      bar.className = "sug-bar";
+      bar.style.width = Math.max(4, Math.round((s.bytes / biggest) * 100)) + "%";
+      card.appendChild(bar);
+
+      card.addEventListener("click", function () { toggleSuggestion(s, applied); });
+      list.appendChild(card);
     });
   }
 
@@ -747,12 +895,24 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return false;
   }
 
-  function toggleSuggestion(s, applied) {
+  function setSuggestion(s, on) {
     var targets = s.pattern ? [s.pattern] : (s.paths || []);
     targets.forEach(function (p) {
-      if (applied) removeExact(state.always_exclude, p);
-      else addUnique(state.always_exclude, p);
+      if (on) addUnique(state.always_exclude, p);
+      else removeExact(state.always_exclude, p);
     });
+  }
+
+  function toggleSuggestion(s, applied) {
+    setSuggestion(s, !applied);
+    markDirty();
+    renderPatterns();
+    schedulePreview();
+  }
+
+  function toggleAllSuggestions() {
+    var allApplied = state.suggestions.every(isSuggestionApplied);
+    state.suggestions.forEach(function (s) { setSuggestion(s, !allApplied); });
     markDirty();
     renderPatterns();
     schedulePreview();
@@ -763,7 +923,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var el = document.getElementById(elId);
     el.innerHTML = "";
     if (!list.length) {
-      el.innerHTML = '<span class="pattern-empty">none yet</span>';
+      el.innerHTML = '<span class="pattern-empty">' + (elId === "exclude-list"
+        ? "Nothing yet. Untick a file or folder in the tree, or add a pattern below."
+        : "Nothing yet. Tick something the rules leave out to bring it back.") + "</span>";
       return;
     }
     var sign = elId === "exclude-list" ? "\u2212" : "+";
@@ -843,39 +1005,77 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var isDir = node.type === "dir";
     var isOpen = query ? true : state.expanded.has(node.path);
 
-    var gutter = document.createElement("span");
-    gutter.className = "gutter";
-    row.appendChild(gutter);
-
-    var caret = document.createElement("span");
+    // Opens or closes a folder. Its own button, well clear of the checkbox.
+    var caret = document.createElement("button");
+    caret.type = "button";
     caret.className = "caret" + (isDir ? (isOpen ? " open" : "") : " leaf");
-    caret.innerHTML = isDir ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 6 6 6-6 6"/></svg>' : "";
+    if (isDir) {
+      caret.setAttribute("aria-label", (isOpen ? "Close " : "Open ") + node.path);
+      caret.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      caret.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
+      caret.addEventListener("click", function (e) {
+        e.stopPropagation();
+        toggleExpand(node.path);
+      });
+    } else {
+      caret.tabIndex = -1;
+      caret.setAttribute("aria-hidden", "true");
+    }
     row.appendChild(caret);
 
-    var mark = document.createElement("span");
-    var markState = node.included === true ? "+" : (node.included === "partial" ? "~" : "\u2212");
-    mark.className = "diffmark" + (node.included === "partial" ? " partial" : "");
-    mark.textContent = markState;
-    row.appendChild(mark);
+    // Decides whether this file or folder goes in the ZIP.
+    var check = document.createElement("button");
+    check.type = "button";
+    var partial = node.included === "partial";
+    check.className = "check" + (node.included === true ? " on" : (partial ? " partial" : ""));
+    check.setAttribute("role", "checkbox");
+    check.setAttribute("aria-checked", node.included === true ? "true" : (partial ? "mixed" : "false"));
+    check.setAttribute("aria-label", "Include " + node.path);
+    check.title = node.included === true ? "In the ZIP. Click to leave out." : (partial ? "Partly in the ZIP. Click to include all of it." : "Left out. Click to include.");
+    check.innerHTML = "<i>" + (node.included === true ? CHECK_SVG : (partial ? DASH_SVG : "")) + "</i>";
+    check.addEventListener("click", function (e) {
+      e.stopPropagation();
+      toggleNode(node);
+    });
+    row.appendChild(check);
 
     var name = document.createElement("span");
     name.className = "node-name" + (isDir ? " dir" : "");
-    name.textContent = node.name;
+    name.textContent = node.name + (isDir ? "/" : "");
+    name.title = node.path;
     row.appendChild(name);
 
-    if (!isDir) {
-      var size = document.createElement("span");
-      size.className = "node-size";
-      size.textContent = formatBytes(node.size || 0);
-      row.appendChild(size);
-    }
-
-    row.addEventListener("click", function (e) {
-      if (isDir && (e.target === caret || caret.contains(e.target))) {
-        toggleExpand(node.path);
-        return;
+    var meta = document.createElement("span");
+    meta.className = "node-meta";
+    if (isDir) {
+      if (node.included === false) {
+        meta.textContent = plural(node.files, "file") + " left out";
+      } else {
+        var count = node.includedFiles === node.files ? plural(node.files, "file") : node.includedFiles + " of " + plural(node.files, "file");
+        var size = document.createElement("b");
+        size.textContent = formatBytes(node.includedSize || 0);
+        if ((node.includedSize || 0) >= 1024 * 1024) meta.className += " heavy";
+        meta.appendChild(document.createTextNode(count + " · "));
+        meta.appendChild(size);
       }
-      toggleNode(node);
+    } else {
+      var fsize = document.createElement("b");
+      fsize.textContent = formatBytes(node.size || 0);
+      if (node.large && node.included !== false) meta.className += " heavy";
+      meta.appendChild(fsize);
+    }
+    if (!isDir && node.large && node.included !== false) {
+      var tag = document.createElement("span");
+      tag.className = "tag-large";
+      tag.textContent = "large";
+      row.appendChild(tag);
+    }
+    row.appendChild(meta);
+
+    // The rest of the row does the obvious thing for its kind.
+    row.addEventListener("click", function () {
+      if (isDir) toggleExpand(node.path);
+      else toggleNode(node);
     });
 
     wrap.appendChild(row);
@@ -897,6 +1097,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
     renderTree(state.tree);
   }
 
+  function setAllExpanded(open) {
+    state.expanded = new Set(["__root__"]);
+    if (open) {
+      (function walk(nodes) {
+        nodes.forEach(function (n) {
+          if (n.type === "dir") {
+            state.expanded.add(n.path);
+            walk(n.children || []);
+          }
+        });
+      })(state.tree);
+    }
+    renderTree(state.tree);
+  }
+
   function toggleNode(node) {
     var willInclude = node.included !== true; // true -> exclude; false/partial -> include
     var pattern = node.type === "dir" ? node.path + "/" : node.path;
@@ -910,7 +1125,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
       removeExact(state.always_include, node.path);
       addUnique(state.always_exclude, pattern);
     }
-    if (node.type === "dir") state.expanded.add(node.path);
     markDirty();
     renderPatterns();
     schedulePreview();
@@ -1064,7 +1278,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     state.tree = data.tree;
     if (data.project) renderHeader(data);
     renderStats(data.stats);
-    renderSuggestions(data.suggestions);
+    renderSuggestions(data.suggestions, data.stats);
     renderPatternList("exclude-list", state.always_exclude);
     renderPatternList("include-list", state.always_include);
     renderTree(state.tree);
@@ -1087,8 +1301,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }).catch(function (err) {
       document.getElementById("project-name").textContent = "Could not load project";
       document.getElementById("project-path").textContent = err.message || "Unknown error";
-      document.getElementById("chip-row").innerHTML =
-        '<span class="empty-suggestions">Unavailable — see error below.</span>';
+      document.getElementById("trim").hidden = true;
       var root = document.getElementById("tree-root");
       root.innerHTML = "";
       var msg = document.createElement("div");
@@ -1103,7 +1316,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
         document.getElementById("project-name").textContent = "Loading project…";
         document.getElementById("project-path").textContent = "\u00a0";
         root.innerHTML = '<div class="tree-empty">Scanning your project…</div>';
-        document.getElementById("chip-row").innerHTML = '<span class="empty-suggestions">Scanning…</span>';
         loadInitial();
       });
       root.appendChild(msg);
@@ -1133,6 +1345,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   document.getElementById("add-pattern").addEventListener("keydown", function (e) {
     if (e.key === "Enter") document.getElementById("add-btn").click();
   });
+
+  // ---- suggestions and tree tools ----
+  document.getElementById("trim-all").addEventListener("click", toggleAllSuggestions);
+  document.getElementById("expand-all").addEventListener("click", function () { setAllExpanded(true); });
+  document.getElementById("collapse-all").addEventListener("click", function () { setAllExpanded(false); });
 
   // ---- search ----
   document.getElementById("search-input").addEventListener("input", debounce(function (e) {

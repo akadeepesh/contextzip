@@ -18,6 +18,14 @@ Git mode:
     and CLI --include/--exclude behave identically with and without
     --git-changes.
 
+Who wins, highest first:
+  1. The command: `--exclude` / `contextzip exclude` always leaves a file
+     out; `--include` / `contextzip include` scopes the run, and a path it
+     names is included even if a rule, .gitignore or the config excludes it.
+  2. The project config: always_include, then always_exclude.
+  3. .gitignore (a `!pattern` there brings back a file the built-in rules drop).
+  4. The built-in rules for the detected stacks.
+
 Force-include (Phase 7):
   - build_force_include_spec() turns a project config's "always_include"
     patterns into a PathSpec. resolve_files() and resolve_files_from_git()
@@ -29,27 +37,13 @@ Force-include (Phase 7):
 
 from __future__ import annotations
 
-import importlib
 import os
 from pathlib import Path
 from dataclasses import dataclass, field
 
 import pathspec
 
-
-# ---------------------------------------------------------------------------
-# Rule registry
-# ---------------------------------------------------------------------------
-
-_RULE_REGISTRY: dict[str, str] = {
-    "base": "contextzip.rules.base",
-    "node": "contextzip.rules.node",
-    "python": "contextzip.rules.python",
-    "rust": "contextzip.rules.rust",
-    "go": "contextzip.rules.go",
-    "ruby": "contextzip.rules.ruby",
-    "java": "contextzip.rules.java",
-}
+from contextzip import stacks
 
 # Files larger than this trigger a warning (but are still included)
 LARGE_FILE_WARN_BYTES = 1 * 1024 * 1024  # 1 MB
@@ -109,6 +103,19 @@ class ResolveResult:
     # explicit --include / `contextzip include` path named them (see
     # _explicit_include_override). Also present in `included`.
     explicitly_included: list[Path] = field(default_factory=list)
+    # Size in bytes of every included file, read during the scan so nothing
+    # downstream has to stat the file again.
+    sizes: dict[Path, int] = field(default_factory=dict)
+
+    def size_of(self, path: Path) -> int:
+        """Size of an included file (0 if it has vanished since the scan)."""
+        size = self.sizes.get(path)
+        if size is None:
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
+        return size
 
 
 # ---------------------------------------------------------------------------
@@ -160,18 +167,21 @@ def build_spec(
     """
     Combine patterns from *rule_modules*, an optional *.gitignore* file,
     and any *extra_exclude* CLI patterns into a single PathSpec.
+
+    *rule_modules* are rule keys from stacks.py: a rule set ("node"), or a
+    stack's own patterns, optionally scoped to the folder the stack was
+    found in ("laravel-extra@apps/api"). Unknown keys are ignored.
     """
     patterns: list[str] = []
 
     for key in rule_modules:
-        module_path = _RULE_REGISTRY.get(key)
-        if not module_path:
-            continue
-        try:
-            mod = importlib.import_module(module_path)
-            patterns.extend(getattr(mod, "PATTERNS", []))
-        except ImportError:
-            pass
+        _name, _, folder = key.partition("@")
+        found = stacks.patterns_for(key)
+        if folder:
+            # A path ("/public/", "storage/logs/") means that folder's; a bare
+            # name ("*.apk", ".expo/") is distinctive enough to apply anywhere.
+            found = [_rebase_gitignore_pattern(p, folder) if "/" in p.rstrip("/") else p for p in found]
+        patterns.extend(found)
 
     # Respect the project's own .gitignore if present, and the ones in its
     # subfolders (apps/web/.gitignore in a monorepo), rebased onto the root
@@ -360,9 +370,14 @@ def resolve_files(
     include_only: list[str] | None = None,
     force_include: pathspec.PathSpec | None = None,
     large_file_warn_bytes: int = LARGE_FILE_WARN_BYTES,
+    command_exclude: pathspec.PathSpec | None = None,
 ) -> ResolveResult:
     """
     Walk *project_dir* and classify every file.
+
+    *command_exclude* holds the patterns typed on the command line
+    (`--exclude`, `contextzip exclude`). They have the last word: a match
+    is left out even if the project config's always_include names it.
 
     *force_include*, if given, is checked before exclusion: a file (or any
     of its parent directories) matching it is treated as not excluded, even
@@ -383,79 +398,119 @@ def resolve_files(
     Returns a :class:`ResolveResult` with included/excluded/skipped/large/binary lists.
     """
     result = ResolveResult()
+    named = [_clean_include_path(p) for p in include_only or []]
 
-    for original_path in sorted(project_dir.rglob("*")):
-        abs_path = original_path
-        # ── Resolve symlinks safely ──────────────────────────────────────────
-        if abs_path.is_symlink():
+    def add(abs_path: Path, rel_str: str, excluded: bool, forced: bool, size: int | None, dropped: bool = False) -> None:
+        """Classify one file whose exclusion by the rules is already known."""
+        if dropped:  # excluded on the command line: nothing brings it back
+            result.excluded.append(abs_path)
+            return
+        if not forced:
+            if excluded and named and _explicit_include_override_str(rel_str, named, spec):
+                # ── Explicitly named on --include: brings it back ────────────
+                result.explicitly_included.append(abs_path)
+                excluded = False
+            if excluded:
+                result.excluded.append(abs_path)
+                return
+
+        # ── Apply --include filter (exact prefix, not substring) ─────────────
+        if named and not _under_any(rel_str, named):
+            result.excluded.append(abs_path)
+            return
+
+        # ── Readability check ────────────────────────────────────────────────
+        if size is None:
             try:
-                real = abs_path.resolve(strict=True)
-                if not real.is_file():
-                    continue  # symlink to a dir or missing — skip silently
-                abs_path = real
-            except (OSError, RuntimeError):
-                # Dangling symlink or resolution loop
-                result.skipped.append((abs_path, "dangling symlink"))
-                continue
+                size = abs_path.stat().st_size
+            except OSError as e:
+                result.skipped.append((abs_path, f"stat failed: {e}"))
+                return
 
-        if not abs_path.is_file():
-            continue
+        # ── Large file warning ───────────────────────────────────────────────
+        if size >= large_file_warn_bytes:
+            result.large_files.append((abs_path, size))
 
-        # ── Guard: file must still be under project_dir after symlink resolve ─
+        # ── Binary file detection (flagged, still included) ──────────────────
+        if _is_binary(abs_path):
+            result.binary_files.append(abs_path)
+
+        result.included.append(abs_path)
+        result.sizes[abs_path] = size
+
+    def add_symlink(original_path: Path) -> None:
+        """A symlink is rare, so it takes the slow road: resolve it, then match its real path."""
         try:
-            rel = abs_path.relative_to(project_dir)
+            real = original_path.resolve(strict=True)
+            if not real.is_file():
+                return  # symlink to a dir or missing — skip silently
+        except (OSError, RuntimeError):
+            # Dangling symlink or resolution loop
+            result.skipped.append((original_path, "dangling symlink"))
+            return
+        try:
+            rel = real.relative_to(project_dir)
         except ValueError:
-            # Symlink pointed outside the project tree — use the original
-            # (pre-resolve) path to compute a meaningful relative path
+            # Points outside the project tree — match it where the link sits
             try:
                 rel = original_path.relative_to(project_dir)
             except ValueError:
                 result.skipped.append((original_path, "outside project tree"))
-                continue
-
+                return
         rel_str = rel.as_posix()
-
-        # ── force_include short-circuits the exclusion checks below ─────────
         forced = force_include is not None and (
-            force_include.match_file(rel_str)
-            or _any_parent_excluded(rel, force_include)
+            force_include.match_file(rel_str) or _any_parent_excluded(rel, force_include)
         )
+        excluded = not forced and (_any_parent_excluded(rel, spec) or spec.match_file(rel_str))
+        dropped = command_exclude is not None and (
+            command_exclude.match_file(rel_str) or _any_parent_excluded(rel, command_exclude)
+        )
+        add(real, rel_str, excluded, forced, None, dropped)
 
-        if not forced:
-            excluded = _any_parent_excluded(rel, spec) or spec.match_file(rel_str)
-            if excluded and include_only:
-                # ── Explicitly named on --include: brings it back ────────────
-                if _explicit_include_override(rel, include_only, spec):
-                    result.explicitly_included.append(abs_path)
-                    excluded = False
-            if excluded:
-                result.excluded.append(abs_path)
-                continue
-
-        # ── Apply --include filter (exact prefix, not substring) ─────────────
-        if include_only:
-            if not _matches_any_prefix(rel_str, include_only):
-                result.excluded.append(abs_path)
-                continue
-
-        # ── Readability check ────────────────────────────────────────────────
+    def walk(directory: str, prefix: str, dir_excluded: bool, dir_forced: bool, dir_dropped: bool = False) -> None:
+        """
+        One directory, in path order. Whether a parent folder is excluded (or
+        force-included) is worked out once per folder and handed down, so a
+        file inside node_modules/ costs no pattern matching at all.
+        """
         try:
-            file_size = abs_path.stat().st_size
-        except OSError as e:
-            result.skipped.append((abs_path, f"stat failed: {e}"))
-            continue
+            with os.scandir(directory) as it:
+                entries = sorted(it, key=_entry_sort_key)
+        except OSError:
+            return
+        for entry in entries:
+            rel_str = prefix + entry.name
+            try:
+                if entry.is_symlink():
+                    add_symlink(Path(entry.path))
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    as_dir = rel_str + "/"
+                    walk(
+                        entry.path,
+                        as_dir,
+                        dir_excluded or spec.match_file(as_dir),
+                        dir_forced or (force_include is not None and force_include.match_file(as_dir)),
+                        dir_dropped or (command_exclude is not None and command_exclude.match_file(as_dir)),
+                    )
+                    continue
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+            except OSError:
+                continue
 
-        # ── Large file warning ───────────────────────────────────────────────
-        if file_size >= large_file_warn_bytes:
-            result.large_files.append((abs_path, file_size))
+            dropped = dir_dropped or (command_exclude is not None and command_exclude.match_file(rel_str))
+            forced = dir_forced or (force_include is not None and force_include.match_file(rel_str))
+            excluded = not forced and (dir_excluded or spec.match_file(rel_str))
+            size: int | None = None
+            if not dropped and (forced or not excluded):
+                try:
+                    size = entry.stat(follow_symlinks=False).st_size
+                except OSError:
+                    size = None  # add() retries and records the failure
+            add(Path(entry.path), rel_str, excluded, forced, size, dropped)
 
-        # ── Binary file detection ────────────────────────────────────────────
-        if _is_binary(abs_path):
-            result.binary_files.append(abs_path)
-            # Still include — caller can decide; we just flag it
-
-        result.included.append(abs_path)
-
+    walk(str(project_dir), "", False, False)
     return result
 
 
@@ -466,6 +521,7 @@ def resolve_files_from_git(
     extra_exclude: list[str] | None = None,
     include_only: list[str] | None = None,
     force_include: pathspec.PathSpec | None = None,
+    command_exclude: pathspec.PathSpec | None = None,
 ) -> ResolveResult:
     """
     Build a :class:`ResolveResult` from a pre-selected list of files reported
@@ -537,6 +593,13 @@ def resolve_files_from_git(
 
         rel_str = rel.as_posix()
 
+        # ── Excluded on the command line: nothing brings it back ────────────
+        if command_exclude is not None and (
+            command_exclude.match_file(rel_str) or _any_parent_excluded(rel, command_exclude)
+        ):
+            result.excluded.append(abs_path)
+            continue
+
         # ── force_include (config always_include) short-circuits exclusion ───
         forced = force_include is not None and (
             force_include.match_file(rel_str)
@@ -575,6 +638,7 @@ def resolve_files_from_git(
             result.binary_files.append(abs_path)
 
         result.included.append(abs_path)
+        result.sizes[abs_path] = file_size
 
     return result
 
@@ -655,6 +719,11 @@ def _any_parent_excluded(rel: Path, spec: pathspec.PathSpec) -> bool:
     return False
 
 
+def _entry_sort_key(entry: os.DirEntry) -> str:
+    """Sorts a folder's entries the way pathlib orders paths (case-insensitive on Windows)."""
+    return os.path.normcase(entry.name)
+
+
 def _clean_include_path(p: str) -> str:
     """`./src/`, `.\\src\\` and `src` all become `src`."""
     p = p.replace("\\", "/")
@@ -678,9 +747,16 @@ def _explicit_include_override(
     `dist/node_modules/`), matched relative to the named folder. Secret
     files brought back this way are still redacted by the packager.
     """
-    rel_str = rel.as_posix()
-    for raw in include_only:
-        named = _clean_include_path(raw)
+    return _explicit_include_override_str(
+        rel.as_posix(), [_clean_include_path(raw) for raw in include_only], spec
+    )
+
+
+def _explicit_include_override_str(
+    rel_str: str, named_paths: list[str], spec: pathspec.PathSpec
+) -> bool:
+    """:func:`_explicit_include_override` for an already-cleaned list of named paths."""
+    for named in named_paths:
         if not named or not (rel_str == named or rel_str.startswith(named + "/")):
             continue
 
@@ -695,7 +771,7 @@ def _explicit_include_override(
         if rel_str == named:
             return True
 
-        inner = rel.relative_to(named_path)
+        inner = Path(rel_str[len(named) + 1 :])
         if not _any_parent_excluded(inner, spec):
             return True
     return False
@@ -716,6 +792,11 @@ def _matches_any_prefix(rel_str: str, prefixes: list[str]) -> bool:
         if rel_str.startswith(p + "/"):
             return True
     return False
+
+
+def _under_any(rel_str: str, cleaned: list[str]) -> bool:
+    """:func:`_matches_any_prefix` for prefixes already through :func:`_clean_include_path`."""
+    return any(rel_str == p or rel_str.startswith(p + "/") for p in cleaned)
 
 
 def _is_binary(path: Path) -> bool:

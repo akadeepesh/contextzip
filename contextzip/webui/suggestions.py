@@ -76,6 +76,15 @@ _SUGGESTABLE_EXTENSIONS: dict[str, str] = {
 _MAX_SUGGESTIONS = 10
 
 
+def covered_bytes(files: list[tuple[str, int]]) -> int:
+    """Total size of the *files* any suggestion would cover, each counted once."""
+    return sum(
+        size
+        for rel_path, size in files
+        if size >= LARGE_FILE_BYTES or Path(rel_path).suffix.lower() in _SUGGESTABLE_EXTENSIONS
+    )
+
+
 def build_suggestions(included_files: list[tuple[str, int]]) -> list[dict]:
     """
     *included_files*: (rel_posix_path, size_bytes) pairs for files

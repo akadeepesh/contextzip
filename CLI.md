@@ -8,12 +8,14 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 
 - [Quick reference](#quick-reference)
 - [Run flags](#run-flags)
+- [Which rule wins](#which-rule-wins) — the command, the config, `.gitignore`, the built-in rules
 - [`contextzip`](#contextzip) — package the project
 - [Remote repositories](#remote-repositories) — package a GitHub, GitLab or Bitbucket repo without cloning it
 - [`contextzip include`](#contextzip-include) / [`exclude`](#contextzip-exclude)
 - [`contextzip apply-zip`](#contextzip-apply-zip)
 - [`contextzip watch`](#contextzip-watch)
 - [`contextzip config`](#contextzip-config)
+- [`contextzip stacks`](#contextzip-stacks) — the languages and frameworks it recognises
 - [`contextzip update`](#contextzip-update)
 - [`contextzip setup-path`](#contextzip-setup-path)
 - [Global flags](#global-flags)
@@ -58,6 +60,17 @@ These flags work on the main command **and** on `include` and `exclude`. Flags g
 | `--json` | | Print one JSON object instead of terminal output. Never prompts. See [JSON output](#json-output). |
 
 `--include` and `--exclude` (and the `include` / `exclude` subcommands) also work together with `--git-changes`, and are combined with `always_include` / `always_exclude` from `.contextzip/config.json`.
+
+## Which rule wins
+
+When they disagree, the more specific source wins:
+
+1. **The command you typed.** `exclude` / `--exclude` always leaves a file out. `include` / `--include` scopes the run, and a file or folder you name is included even if it's a `.env`, is in `.gitignore`, or is excluded by the config.
+2. **The project config:** `always_include`, then `always_exclude`.
+3. **Your `.gitignore`.** A `!pattern` there brings back a file the built-in rules would drop, such as `!.env.example`.
+4. **The built-in rules** for the detected stack.
+
+Including a folder is a scope, not an override: `contextzip include src/` still leaves out `src/.env` and whatever `.gitignore` ignores inside `src/`. Name the file itself to bring it in. A secret file that ends up in the ZIP, by any of these routes, has its values redacted.
 
 ## Project root
 
@@ -268,6 +281,22 @@ contextzip snapshots [--json]
 
 Every package is kept as a numbered snapshot in `.contextzip/snapshots/` (local, never uploaded): a copy of the ZIP plus a manifest of what was sent. Each ZIP's `CONTEXTZIP.md` names its snapshot, e.g. `Snapshot: 14-k3f9a2`. Snapshots are kept while they're among the newest `snapshots.keep` (10), younger than `snapshots.max_age_days` (14), or still awaited by a reply in the inbox.
 
+## `contextzip stacks`
+
+List the languages and frameworks contextzip recognises, and what marks a project as each one.
+
+```bash
+contextzip stacks [STACK] [--json]
+```
+
+```bash
+contextzip stacks              # every stack and its marker files
+contextzip stacks laravel      # the patterns Laravel leaves out, on top of the universal rules
+contextzip stacks --json       # the same as data
+```
+
+A stack is recognised by a marker file (`Cargo.toml`, `*.csproj`), by a dependency in its manifest (`next` in `package.json`), or, when a project has no project file at all, by its file types. A framework's own exclusions apply from the folder it was found in, so one app's `storage/` or `public/` doesn't affect the rest of a monorepo. Missing a stack? [Request it](https://www.contextzipcli.com/request-language).
+
 ## `CONTEXTZIP.md`
 
 A short file added to every ZIP for the AI that receives it: the project, the snapshot ID, and how to reply so `apply-zip` can put the answer back cleanly — only changed files, complete contents, the same paths, `[REDACTED]` values left alone, and moves or deletions listed under **Changes** (`moved: a -> b`, `deleted: x`). Turn it off per project with `"zip_guide": false` or in `contextzip config --ui`.
@@ -364,7 +393,7 @@ It never adds the folder twice. Open a new terminal afterwards. `python -m conte
 
 ## JSON output
 
-Add `--json` to `contextzip`, `include`, `exclude`, `apply-zip` or `snapshots` and contextzip prints exactly one JSON object on stdout instead of terminal output, for editors, scripts and CI. It never prompts, and the exit code matches `ok`: 0 when it's `true`, non-zero when it's `false`.
+Add `--json` to `contextzip`, `include`, `exclude`, `apply-zip`, `snapshots` or `stacks` and contextzip prints exactly one JSON object on stdout instead of terminal output, for editors, scripts and CI. It never prompts, and the exit code matches `ok`: 0 when it's `true`, non-zero when it's `false`.
 
 ```bash
 contextzip --json --no-clipboard
@@ -379,6 +408,9 @@ Every object has `ok`, `command`, `version`, `warnings` (strings) and `log` (eac
 | `contextzip`, `include`, `exclude` | `mode`, `dry_run`, `project` (`root`, `kind`), `remote` (with `--from`), `detection`, `files` (counts, `included_bytes`, `estimated_tokens`, `included_files`, warnings; `excluded_files` with `--verbose`), `ai` (with `--prompt`), `zip` (path, sizes, `estimated_tokens`, `snapshot`, `redacted`; `null` on a dry run), `report`, `clipboard` |
 | `apply-zip` | `project`, `plan` (`snapshot`, `remap`, `needs_decision`, `counts`, and `files`: each with `path`, `source`, `status`, `safe`, `reason`, `moved_from`, …), `result` (`written`, `skipped`, `removed`, `zip_kept`, `archived_to`; `null` when nothing was written), `report` |
 | `snapshots` | `project`, `snapshots` (`id`, `token`, `label`, `mode`, `files`, `status`, `created`) |
+| `stacks` | `stacks`, or `stack` when one is named (`name`, `slug`, `rules`, `markers`, `dependencies`, `manifests`, `extensions`, `excludes`) |
+
+`detection` has `ecosystems`, `display`, `confidence`, `rules`, `sources` (the folder each stack was found in) and `by_file_type` (stacks recognised only from file types, because the project has no project file).
 
 When `--from` can't fetch a repository, the result also has `error_kind`: `invalid`, `not_found`, `private`, `too_big`, `rate_limited`, `auth` or `unavailable`.
 

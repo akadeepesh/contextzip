@@ -25,6 +25,7 @@ from contextzip.detector import detect
 from contextzip.filters import (
     build_spec,
     build_force_include_spec,
+    make_spec,
     resolve_files,
     resolve_files_from_git,
 )
@@ -240,6 +241,62 @@ class _MainGroup(click.Group):
                 args = [*args[:i], *args[i + 1:], "--from", arg]
                 break
         return super().parse_args(ctx, args)
+
+    def main(self, *args, **kwargs):
+        _printable_streams()
+        try:
+            return super().main(*args, **kwargs)
+        except OSError:
+            # `cz -v | head`: the reader went away. Click exits quietly on
+            # EPIPE; Windows reports the same thing as EINVAL instead.
+            import sys
+
+            if os.name != "nt" or not _stdout_closed():
+                raise
+            try:
+                sys.stdout = open(os.devnull, "w")  # nothing left to flush at exit
+            except OSError:
+                pass
+            sys.exit(1)
+
+
+def _stdout_closed() -> bool:
+    import sys
+
+    try:
+        sys.stdout.write("")
+        sys.stdout.flush()
+    except (OSError, ValueError):
+        return True
+    return False
+
+
+def _printable_streams() -> None:
+    """
+    Make sure "✓", "→" and "≈" can be printed. On Windows before Python
+    3.15, output that isn't a real console (Git Bash, a pipe, a CI log) is
+    encoded with the ANSI code page, which has no check mark, so the first
+    line of output raised UnicodeEncodeError. There the stream switches to
+    UTF-8; anywhere else a character the terminal can't show becomes "?".
+    """
+    import sys
+
+    for stream in (sys.stdout, sys.stderr):
+        encoding = getattr(stream, "encoding", None)
+        if not encoding:
+            continue
+        try:
+            "✓→≈…·↓".encode(encoding)
+            continue
+        except (UnicodeEncodeError, LookupError):
+            pass
+        try:
+            if os.name == "nt":
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            else:
+                stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
 
 
 @click.group(
@@ -1295,6 +1352,98 @@ def _list_snapshots() -> None:
     console.print()
 
 
+@main.command("stacks")
+@click.argument("name", required=False, metavar="[STACK]")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help="Print one JSON object instead of terminal output, for editors and scripts.",
+)
+def cmd_stacks(name: str | None, json_output: bool) -> None:
+    """
+    List the languages and frameworks contextzip recognises.
+
+    \b
+    For each one: what marks a project as that stack, and how many
+    patterns it adds to what's left out. Name a stack to see every
+    pattern:
+
+    \b
+      contextzip stacks
+      contextzip stacks laravel
+    """
+    with _json_session("stacks", json_output):
+        _list_stacks(name)
+
+
+def _list_stacks(name: str | None) -> None:
+    from contextzip import stacks as stacks_mod
+
+    described = [stacks_mod.describe(s) for s in stacks_mod.STACKS]
+    console.print()
+
+    if name:
+        wanted = name.strip().lower()
+        match = [d for d in described if wanted in (d["name"].lower(), d["slug"])]
+        if not match:
+            close = [d["name"] for d in described if wanted in d["name"].lower() or wanted in d["slug"]]
+            err(f"contextzip doesn't have a stack called {name!r}.")
+            if close:
+                info(f"Did you mean: {', '.join(close)}?")
+            info("Run contextzip stacks to see them all, or request one: https://www.contextzipcli.com/request-language")
+            raise SystemExit(1)
+        d = match[0]
+        jsonout.put("stack", d)
+        ok(d["name"], _stack_signs(d) or None)
+        info(f"Leaves out {len(d['excludes'])} patterns, on top of the universal rules:")
+        for pattern in d["excludes"]:
+            console.print(f"    [dim]{escape(pattern)}[/]")
+        console.print()
+        return
+
+    jsonout.put("stacks", described)
+    ok(f"{len(described)} stacks", "run contextzip stacks NAME to see what one leaves out")
+    from rich.table import Table
+
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="bold", no_wrap=True, min_width=max(len(d["name"]) for d in described) + 2)
+    table.add_column(style="dim", no_wrap=True, overflow="ellipsis")
+    for d in described:
+        table.add_row("  " + d["name"], escape(_stack_signs(d, limit=3)))
+    console.print(table)
+    console.print()
+    info("Don't see yours? Request it: https://www.contextzipcli.com/request-language")
+    console.print()
+
+
+def _stack_signs(described: dict, *, limit: int | None = None) -> str:
+    """What gives a stack away, as one line: 'artisan, or laravel/framework in composer.json'."""
+    # next.config.js, next.config.ts, next.config.mjs  ->  next.config.*
+    signs: list[str] = []
+    stems: dict[str, int] = {}
+    for marker in described["markers"]:
+        stem = marker.rsplit(".", 1)[0] if "." in marker.lstrip(".*") else marker
+        stems[stem] = stems.get(stem, 0) + 1
+    for marker in described["markers"]:
+        stem = marker.rsplit(".", 1)[0] if "." in marker.lstrip(".*") else marker
+        label = f"{stem}.*" if stems[stem] > 1 else marker
+        if label not in signs:
+            signs.append(label)
+    if limit is not None and len(signs) > limit:
+        signs = [*signs[:limit], f"+{len(signs) - limit} more"]
+    if described["dependencies"]:
+        deps = described["dependencies"]
+        if limit is not None and len(deps) > 2:
+            deps = [*deps[:2], "…"]
+        where = " or ".join(described["manifests"][:2]) or "its manifest"
+        signs.append(f"{' or '.join(deps)} in {where}")
+    if not signs:
+        signs = [f"{ext} files" for ext in described["extensions"]]
+    return ", ".join(signs)
+
+
 def _ago(seconds: float) -> str:
     seconds = max(0, int(seconds))
     for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
@@ -1798,6 +1947,9 @@ def _package(
     # is a standing negation. Built once here so standard and --git-changes
     # runs honour project config identically.
     normalized_exclude = [normalize_pattern(p) for p in extra_exclude or []]
+    # What was typed on the command line outranks the project config, so an
+    # --exclude also beats the config's always_include.
+    command_exclude = make_spec(normalized_exclude) if normalized_exclude else None
     normalized_exclude += [normalize_pattern(p) for p in project_cfg.always_exclude]
     force_include = build_force_include_spec(
         [normalize_pattern(p) for p in project_cfg.always_include]
@@ -1832,6 +1984,7 @@ def _package(
                 extra_exclude=normalized_exclude if normalized_exclude else None,
                 include_only=include_only if include_only else None,
                 force_include=force_include,
+                command_exclude=command_exclude,
             )
 
     else:
@@ -1855,6 +2008,7 @@ def _package(
                 large_file_warn_bytes=int(
                     project_cfg.limits.max_file_size_mb * 1024 * 1024
                 ),
+                command_exclude=command_exclude,
             )
 
         # Snapshot the scan summary now — --prompt reassigns resolved.included

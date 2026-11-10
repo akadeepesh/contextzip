@@ -35,7 +35,7 @@ Every AI coding session starts the same way. You hunt down the relevant files, s
 
 contextzip does all of that for you. Run it from your project root and it:
 
-1. **Detects your stack** (Node.js, Next.js, Python, Django, FastAPI, Java, Kotlin, Spring Boot, Rust, Go, Ruby, monorepos included).
+1. **Detects your stack**: 62 languages and frameworks, from Next.js, Django and Spring Boot to .NET, Laravel, Flutter, Swift and C++, monorepos included.
 2. **Excludes the noise**: dependencies, build output, caches, binaries, logs, and anything in your `.gitignore`.
 3. **Keeps secrets out**: `.env` files, private keys, cloud credentials and Terraform state are left out by default. If you include your `.env` on purpose, its values are redacted, and passwords and secrets in Spring Boot's `application.properties` / `application.yml` are always redacted.
 4. **Puts the ZIP on your clipboard** as a real file, so you can paste it straight into Claude, ChatGPT, Gemini or any other upload box.
@@ -156,16 +156,24 @@ contextzip apply-zip                        # write the AI's changes back
 
 ### Smart packaging
 
-contextzip scans your project and recognises its stack from marker files such as `package.json`, `next.config.*`, `pyproject.toml`, `manage.py`, `pom.xml`, `build.gradle(.kts)`, `Cargo.toml`, `go.mod` and `Gemfile`. It looks a couple of levels deep, so a monorepo with a React frontend and a Spring Boot backend gets **both** rule sets applied. Modules a Maven `pom.xml` or Gradle `settings.gradle` declares are found at any depth.
+contextzip scans your project and recognises its stack from marker files such as `package.json`, `next.config.*`, `pyproject.toml`, `pom.xml`, `*.csproj`, `composer.json`, `pubspec.yaml`, `Cargo.toml` and `go.mod`, and from the dependencies those files list. It looks a couple of levels deep, so a monorepo with a React frontend and a Spring Boot backend gets **both** rule sets applied. Packages a workspace file declares (npm, pnpm, Cargo, Go, Maven, Gradle) are found at any depth. A project with no project file at all, such as a folder of scripts, is recognised by its file types.
 
-| Ecosystem | Examples of what's excluded |
-|---|---|
-| **Node.js / Next.js** | `node_modules/`, `.next/`, `dist/`, `build/`, `coverage/`, lockfiles, `*.min.js` |
-| **Python / Django / FastAPI** | `__pycache__/`, `.venv/`, `*.pyc`, `.pytest_cache/`, `*.egg-info/` |
-| **Rust** | `target/`, `Cargo.lock`, `*.rlib` |
-| **Go** | `vendor/`, `bin/`, `go.sum` |
-| **Ruby / Rails** | `vendor/bundle/`, `tmp/`, `log/`, `storage/`, built gems |
-| **Java / Kotlin / Spring Boot** | `target/`, `build/`, `.gradle/`, `*.class`, `*.jar`, `mvnw`/`gradlew` wrappers, IDE files (`*.iml`, `.classpath`, `.settings/`) |
+| Ecosystem | Frameworks recognised | Examples of what's excluded |
+|---|---|---|
+| **JavaScript / TypeScript** | Next.js, Nuxt, SvelteKit, Astro, Remix, Gatsby, Angular, Vue, Svelte, Vite, NestJS, Expo, React Native, Electron, Tauri, Bun, Deno | `node_modules/`, `.next/`, `.nuxt/`, `.svelte-kit/`, `dist/`, `build/`, `coverage/`, lockfiles, `*.min.js` |
+| **Python** | Django, FastAPI, Flask, Jupyter | `__pycache__/`, `.venv/`, `*.pyc`, `.pytest_cache/`, `*.egg-info/`, model weights |
+| **Java / Kotlin / Scala / Clojure** | Spring Boot, Android | `target/`, `build/`, `.gradle/`, `*.class`, `*.jar`, `mvnw`/`gradlew` wrappers, IDE files |
+| **C# / .NET** | Unity | `bin/`, `obj/`, `.vs/`, `*.nupkg`; for Unity: `Library/`, `*.meta`, scenes and prefabs |
+| **PHP** | Laravel, Symfony, WordPress | `vendor/`, `composer.lock`, `storage/framework/`, `var/`, WordPress core and `wp-config.php` |
+| **Swift / Dart** | Xcode, SwiftPM, CocoaPods, Flutter | `.build/`, `DerivedData/`, `Pods/`, `*.pbxproj`, `.dart_tool/`, `*.g.dart` |
+| **C / C++** | CMake, Meson, Autotools, MSBuild, Bazel | `build/`, `cmake-build-*/`, `CMakeCache.txt`, `*.o`, `*.obj`, `bazel-*/` |
+| **Rust, Go, Zig, Nim** | | `target/`, `Cargo.lock`, `vendor/`, `go.sum`, `zig-out/` |
+| **Ruby** | Rails, Jekyll | `vendor/bundle/`, `tmp/`, `log/`, `storage/`, `_site/` |
+| **Elixir / Erlang** | Phoenix | `_build/`, `deps/`, `mix.lock`, `*.beam` |
+| **Haskell, OCaml, R, Julia, Lua, Perl** | | `dist-newstyle/`, `_build/`, `renv/library/`, `Manifest.toml` |
+| **Other** | Terraform, Foundry, Hardhat, Godot, Unreal Engine, Hugo | `*.tfvars`, `.terraform.lock.hcl`, `out/`, `artifacts/`, `.godot/`, `Intermediate/`, `public/` |
+
+Run `contextzip stacks` for the full list, and `contextzip stacks laravel` for everything one stack leaves out.
 
 On top of the stack rules, contextzip also:
 
@@ -308,6 +316,7 @@ This opens a local browser tab where you can tick files and folders to always in
 | `contextzip watch -- COMMAND` | Run a command and package debug context when an error appears |
 | `contextzip apply-zip ZIP --pr` | Send an AI's reply to a GitHub repo back as a pull request |
 | `contextzip snapshots` | List what you've sent, so a reply can be merged against it |
+| `contextzip stacks` | List the languages and frameworks contextzip recognises, and what each leaves out |
 | `contextzip mcp` | Run the MCP server for AI agents |
 | `contextzip config …` | Gemini key, workspace location and the visual config UI |
 | `contextzip update` | Update to the latest release (or print the npm, Homebrew or Scoop command for a standalone build) |
@@ -366,6 +375,17 @@ This holds per-project settings. Edit it by hand or with `contextzip config --ui
 
 `.contextzip/` is fully gitignored by default. If your team wants to share these settings, commit the file explicitly with `git add -f .contextzip/config.json`.
 
+### Which rule wins
+
+When they disagree, the more specific source wins:
+
+1. **The command you typed.** `exclude` / `--exclude` always leaves a file out. `include` / `--include` scopes the run, and a file or folder you name is included even if it's a `.env`, is in `.gitignore`, or is excluded by the config.
+2. **The project config:** `always_include`, then `always_exclude`.
+3. **Your `.gitignore`.** A `!pattern` there brings back a file the built-in rules would drop, such as `!.env.example`.
+4. **The built-in rules** for the detected stack.
+
+Including a folder is a scope, not an override: `contextzip include src/` still leaves out `src/.env` and whatever `.gitignore` ignores inside `src/`. Name the file itself to bring it in. A secret file that ends up in the ZIP, by any of these routes, has its values redacted.
+
 ### Personal config
 
 Your Gemini API key and personal defaults live outside the project, so they're never committed:
@@ -386,16 +406,16 @@ The full option-by-option guide is at [contextzipcli.com/docs/configuration](htt
 
 ## What is always excluded
 
-These patterns apply to **every** project, whatever its stack or `.gitignore` says, and in `--git-changes` mode too:
+These patterns apply to **every** project, whatever its stack, and in `--git-changes` mode too:
 
 - **Secrets & credentials:** `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.ppk`, SSH private keys (`id_rsa`, `id_ed25519`, …), `.npmrc`, `.netrc`, `.pypirc`, `.pgpass`, Docker auth config, `.aws/credentials`, service-account and `*credentials*.json` files, kubeconfigs
 - **Infrastructure state:** `*.tfstate`, `.terraform/`
 - **Version control & editors:** `.git/`, `.svn/`, `.hg/`, `.vscode/`, `.idea/`, swap files, `.DS_Store`
 - **Logs, caches & temp files:** `*.log`, `logs/`, `.cache/`, `tmp/`, `*.tmp`, `*.bak`
-- **Binaries & media:** executables, shared libraries, images, video, audio and archives
+- **Binaries & media:** executables, shared libraries, images, video, audio, fonts and archives
 - **Project boilerplate:** `CHANGELOG`, `LICENSE`, `CONTRIBUTING`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, GitHub issue/PR templates
 
-To bring one back, name it explicitly with `contextzip include .env`, list it under `always_include` in the project config, or tick it in `contextzip config --ui`. `--exclude` and `.gitignore` can't bring them back, and naming a folder like `src/` doesn't pull in the secret files inside it.
+To bring one back, name it explicitly with `contextzip include .env`, list it under `always_include` in the project config, tick it in `contextzip config --ui`, or un-ignore it in `.gitignore` (`!.env.example`). Naming a folder like `src/` doesn't pull in the secret files inside it. See [Which rule wins](#which-rule-wins).
 
 **Secret files you include on purpose are always redacted.** If you include your `.env` so the AI can see which variables your app expects, every key and comment is kept but every value becomes `[REDACTED]`:
 
@@ -516,7 +536,7 @@ pip install -e .
 contextzip --version
 ```
 
-Adding a new language takes three small steps: a `PATTERNS` list in `contextzip/rules/`, one registry entry and one detection rule. [CONTRIBUTING.md](https://github.com/akadeepesh/contextzip/blob/main/CONTRIBUTING.md) walks through it, along with PR conventions. Please open an issue before starting a large PR.
+Adding a new language takes three small steps: a `PATTERNS` list in `contextzip/rules/`, one entry in `contextzip/stacks.py` and one test case. [CONTRIBUTING.md](https://github.com/akadeepesh/contextzip/blob/main/CONTRIBUTING.md) walks through it, along with PR conventions. Please open an issue before starting a large PR.
 
 ## License
 

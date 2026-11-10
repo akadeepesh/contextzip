@@ -40,9 +40,13 @@ contextzip --dry-run   # run from any project directory
 
 ---
 
-## Adding a new framework
+## Adding a new language or framework
 
-1. Create `contextzip/rules/yourlang.py`:
+Every stack contextzip knows is one entry in `contextzip/stacks.py`. Run `contextzip stacks` to see them.
+
+**A new language** takes three small steps.
+
+1. Create `contextzip/rules/yourlang.py` with what to leave out: build output, dependency folders, lockfiles, generated code.
 
 ```python
 """
@@ -52,35 +56,44 @@ YourLang exclusion rules.
 PATTERNS = [
     "build/",
     "*.compiled",
-    ".cache/",
+    "yourlang.lock",
 ]
 ```
 
-2. Register it in `contextzip/filters.py` under `_RULE_REGISTRY`:
+Patterns use `.gitignore` syntax. Don't use `!` to bring a file back: it could undo an exclusion from the project's own `.gitignore`.
+
+2. Add an entry to `STACKS` in `contextzip/stacks.py`:
 
 ```python
-_RULE_REGISTRY: dict[str, str] = {
-    ...
-    "yourlang": "contextzip.rules.yourlang",
-}
-```
-
-3. Add a detection rule in `contextzip/detector.py`:
-
-```python
-_Rule(
-    name="YourLang",
-    module="yourlang",
-    check=lambda p: _file_exists(p, "yourlang.config"),
-    weight=3,
+Stack(
+    "YourLang",
+    rules="yourlang",                  # the file from step 1
+    markers=("yourlang.config",),      # a file or folder that marks a project; globs like "*.ylproj" work
+    extensions=(".yl",),               # recognises a project that has no marker file
 ),
 ```
 
-4. Test it:
+3. Add a `Case` to `tests/test_stacks.py`: the files of a minimal project, the names detection should report, and the files that should be included.
+
+```python
+Case("yourlang", ["yourlang.config", "src/main.yl", "build/main.compiled", "yourlang.lock"], ["YourLang"], ["src/main.yl", "yourlang.config"]),
+```
+
+**A framework on an existing language** needs only steps 2 and 3. It shares the language's rule set and adds its own patterns with `extra`. Put it *before* the language in `STACKS`, since that's the order names are shown in:
+
+```python
+Stack("YourFramework", rules="yourlang", deps=("yourframework",), extra=("/public/build/", ".yfcache/")),
+```
+
+- `deps` are dependency names looked up in the rule set's manifests (`MANIFESTS` in the same file).
+- A path in `extra` (`/public/build/`) applies from the folder the framework was found in, so it doesn't affect the other packages of a monorepo. A bare name (`.yfcache/`) applies everywhere.
+- `hides` names stacks not worth reporting once this one is found in the same folder (Nuxt hides Vue and Vite).
+
+Then run the tests and try it on a real project:
 
 ```bash
-mkdir /tmp/test-yourlang && touch /tmp/test-yourlang/yourlang.config
-cd /tmp/test-yourlang && contextzip --dry-run --verbose
+python -m pytest tests/test_stacks.py
+contextzip --dry-run --verbose
 ```
 
 ---
@@ -89,7 +102,7 @@ cd /tmp/test-yourlang && contextzip --dry-run --verbose
 
 1. Fork the repo and create a branch: `git checkout -b fix/your-description`
 2. Make your changes
-3. Test manually — run `contextzip --dry-run --verbose` on a real project
+3. Run `python -m pytest`, and `contextzip --dry-run --verbose` on a real project
 4. Commit with a clear message: `git commit -m "add: Elixir/Mix rule set"`
 5. Push and open a PR against `main`
 

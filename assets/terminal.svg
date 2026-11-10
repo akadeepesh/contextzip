@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 382" width="860" height="382" role="img" aria-label="A terminal: cz packs the project, then cz apply-zip merges the AI's reply back">
+<style>
+text{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:15px;white-space:pre}
+.l{opacity:0;animation-duration:13s;animation-iteration-count:infinite;animation-timing-function:step-end}
+@keyframes k0{0%{opacity:0}3.1%{opacity:1}97%{opacity:1}100%{opacity:0}}.l0{animation-name:k0}
+@keyframes k1{0%{opacity:0}10.0%{opacity:1}97%{opacity:1}100%{opacity:0}}.l1{animation-name:k1}
+@keyframes k2{0%{opacity:0}14.6%{opacity:1}97%{opacity:1}100%{opacity:0}}.l2{animation-name:k2}
+@keyframes k3{0%{opacity:0}19.2%{opacity:1}97%{opacity:1}100%{opacity:0}}.l3{animation-name:k3}
+@keyframes k4{0%{opacity:0}23.1%{opacity:1}97%{opacity:1}100%{opacity:0}}.l4{animation-name:k4}
+@keyframes k5{0%{opacity:0}35.4%{opacity:1}97%{opacity:1}100%{opacity:0}}.l5{animation-name:k5}
+@keyframes k6{0%{opacity:0}47.7%{opacity:1}97%{opacity:1}100%{opacity:0}}.l6{animation-name:k6}
+@keyframes k7{0%{opacity:0}54.6%{opacity:1}97%{opacity:1}100%{opacity:0}}.l7{animation-name:k7}
+@keyframes k8{0%{opacity:0}59.2%{opacity:1}97%{opacity:1}100%{opacity:0}}.l8{animation-name:k8}
+@keyframes k9{0%{opacity:0}63.1%{opacity:1}97%{opacity:1}100%{opacity:0}}.l9{animation-name:k9}
+@keyframes k10{0%{opacity:0}68.5%{opacity:1}97%{opacity:1}100%{opacity:0}}.l10{animation-name:k10}
+@media (prefers-reduced-motion: reduce){.l{animation:none;opacity:1}}
+</style>
+<rect x="0.5" y="0.5" width="859" height="381" rx="12" fill="#0d1117" stroke="#30363d"/>
+<path d="M1 44 v-31 a12 12 0 0 1 12 -12 h834 a12 12 0 0 1 12 12 v31 z" fill="#161b22"/>
+<line x1="1" y1="44.5" x2="859" y2="44.5" stroke="#30363d"/>
+<circle cx="24" cy="22.5" r="6" fill="#ff5f57"/>
+<circle cx="44" cy="22.5" r="6" fill="#febc2e"/>
+<circle cx="64" cy="22.5" r="6" fill="#28c840"/>
+<text x="430.0" y="27" text-anchor="middle" fill="#8b949e" style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:13px">my-app</text>
+<text class="l l0" x="22" y="74" xml:space="preserve"><tspan fill="#6e7681">$ </tspan><tspan fill="#e6edf3">cz</tspan></text>
+<text class="l l1" x="22" y="100" xml:space="preserve"><tspan fill="#56d364">✓ </tspan><tspan fill="#e6edf3">Detected Next.js + Node.js + Python</tspan></text>
+<text class="l l2" x="22" y="126" xml:space="preserve"><tspan fill="#56d364">✓ </tspan><tspan fill="#e6edf3">Scanned 37949 files &amp; Packed 62 files</tspan><tspan fill="#8b949e">  · 323 KB → 114 KB, ≈ 83k tokens</tspan></text>
+<text class="l l3" x="22" y="152" xml:space="preserve"><tspan fill="#56d364">✓ </tspan><tspan fill="#e6edf3">Saved to codebase.zip</tspan><tspan fill="#8b949e">  · snapshot #14</tspan></text>
+<text class="l l4" x="22" y="178" xml:space="preserve"><tspan fill="#56d364">✓ </tspan><tspan fill="#e6edf3">Ready to paste</tspan></text>
+<text class="l l5" x="22" y="204" xml:space="preserve"><tspan fill="#6e7681">  # paste into Claude or ChatGPT, ask for a change, download the reply</tspan></text>
+<text class="l l6" x="22" y="230" xml:space="preserve"><tspan fill="#6e7681">$ </tspan><tspan fill="#e6edf3">cz apply-zip</tspan></text>
+<text class="l l7" x="22" y="256" xml:space="preserve"><tspan fill="#56d364">✓ </tspan><tspan fill="#e6edf3">Compared with snapshot #14</tspan></text>
+<text class="l l8" x="22" y="282" xml:space="preserve"><tspan fill="#56d364">✓ </tspan><tspan fill="#e6edf3">Classified 6 files</tspan><tspan fill="#8b949e">  · 3 modified, 1 merged, 2 new</tspan></text>
+<text class="l l9" x="22" y="308" xml:space="preserve"><tspan fill="#79c0ff">  ≈ </tspan><tspan fill="#e6edf3">src/auth/login.ts</tspan><tspan fill="#8b949e">  your edits kept, merged around</tspan></text>
+<text class="l l10" x="22" y="334" xml:space="preserve"><tspan fill="#56d364">✓ </tspan><tspan fill="#e6edf3">Applied 6 files</tspan></text>
+</svg>

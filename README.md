@@ -123,6 +123,10 @@ On Windows this adds the folder to your user PATH (no admin needed). On macOS an
 
 ## Quick start
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/akadeepesh/contextzip/main/assets/terminal.svg" width="760" alt="A terminal session: cz detects the stack and packs 62 of 37,949 files; after the AI replies, cz apply-zip merges 6 files back and keeps your own edits.">
+</p>
+
 ```bash
 cd ~/projects/my-app
 cz

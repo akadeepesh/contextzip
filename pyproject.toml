@@ -50,3 +50,6 @@ cz = "contextzip.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
+# Only the package itself. Without this, every other top-level folder
+# (tests/, installers/, tools/) was installed into site-packages too.
+include = ["contextzip*"]

@@ -136,7 +136,8 @@ def smoke_test(exe: Path, expected_version: str) -> None:
     if expected_version not in out:
         sys.exit(f"smoke test failed: expected version {expected_version}, got {out.strip()!r}")
     run("--help")
-    run("apply-zip", "--help")
+    run("apply", "--help")
+    run("apply-zip", "--help")  # the old name still works
 
     with tempfile.TemporaryDirectory(prefix="cz-smoke-") as tmp:
         project = Path(tmp) / "app"

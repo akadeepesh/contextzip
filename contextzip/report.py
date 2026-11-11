@@ -216,7 +216,7 @@ def write_apply_report(
     lines: list[str] = []
     w = lines.append
 
-    w("contextzip apply-zip report")
+    w("contextzip apply report")
     w(f"generated : {_dt.datetime.now().isoformat(timespec='seconds')}")
     w(f"project   : {project_dir}")
     w(f"zip       : {plan.zip_path}")

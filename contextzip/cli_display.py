@@ -764,7 +764,7 @@ def print_package_summary(
           Left out  36,176 files: node_modules/ (35,120), .next/ (904), 3 secret files
 
         ✓ On your clipboard. Paste it into Claude or ChatGPT.   snapshot #14
-          When the AI replies, run: cz apply-zip
+          When the AI replies, run: cz apply
 
     *result* is the PackageResult, or None for a dry run. *warnings* is a
     callable that prints the run's `!` lines; they go between the block and
@@ -1132,7 +1132,7 @@ def print_apply_result(result, *, con: Console = console) -> None:
         left = len(result.skipped)
         if left:
             need = "needs" if left == 1 else "need"
-            con.print(f"[green]✓[/] {wrote}   {left} {need} your call: run {prog_name()} apply-zip --review", highlight=False)
+            con.print(f"[green]✓[/] {wrote}   {left} {need} your call: run {prog_name()} apply --review", highlight=False)
         else:
             con.print(f"[green]✓[/] {wrote} Nothing left to decide.", highlight=False)
         removed = getattr(result, "removed", [])
@@ -1151,7 +1151,7 @@ def print_apply_result(result, *, con: Console = console) -> None:
     if result.skipped:
         warn(f"Skipped {len(result.skipped)} for now: {', '.join(result.skipped[:5])}{' …' if len(result.skipped) > 5 else ''}", con=con)
     if result.zip_kept:
-        info("The zip stays in the inbox — run contextzip apply-zip again once you've decided on the rest.", con=con)
+        info("The zip stays in the inbox — run contextzip apply again once you've decided on the rest.", con=con)
     else:
         ok("Archived zip to", str(result.applied_zip_path), con=con)
 

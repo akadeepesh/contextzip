@@ -78,7 +78,7 @@ _INBOX_README_CONTENTS = """\
 Drop your zip here which you want to apply.
 ============================================
 
-This folder is contextzip's inbox — the one place `apply-zip` looks for
+This folder is contextzip's inbox — the one place `apply` looks for
 a zip to bring back into your project.
 
 HOW TO USE IT
@@ -86,7 +86,7 @@ HOW TO USE IT
      after you sent it a codebase package contextzip made for you.
   2. Drop that zip file directly into this folder — no need to rename
      it or unzip it first.
-  3. Run:  contextzip apply-zip     (short alias:  cz apply-zip)
+  3. Run:  contextzip apply     (short alias:  cz apply)
   4. contextzip finds it automatically, works out where every file
      belongs, compares each one with what you sent and what's on disk
      now, and shows you exactly what will change before writing anything.
@@ -95,7 +95,7 @@ WHAT HAPPENS TO THE ZIP AFTERWARDS
   Once applied, contextzip moves it into inbox/applied/ instead of
   deleting it, so there's always a record of exactly what was applied
   and when. If some files still need your decision, the zip stays here
-  so you can run apply-zip again after resolving them. Old entries in
+  so you can run apply again after resolving them. Old entries in
   applied/ are pruned automatically over time — see the `cleanup` and
   `applied_zip_retention` settings in .contextzip/config.json.
 
@@ -103,9 +103,9 @@ A FEW THINGS WORTH KNOWING
   - Only .zip files placed directly in this folder are picked up —
     not ones inside a subfolder.
   - If more than one zip ends up here at once, contextzip will ask you
-    to say which one: contextzip apply-zip <name>.zip
-  - You can also point apply-zip at a zip anywhere else on disk instead
-    of using this folder: contextzip apply-zip /path/to/file.zip
+    to say which one: contextzip apply <name>.zip
+  - You can also point apply at a zip anywhere else on disk instead
+    of using this folder: contextzip apply /path/to/file.zip
   - This whole .contextzip/ folder is local to your machine and is
     never committed to git (see .contextzip/.gitignore) — nothing here
     leaves your computer unless you explicitly share it yourself.
@@ -167,7 +167,7 @@ class MultipleZipsFoundError(ApplyError):
         names = ", ".join(p.name for p in candidates)
         super().__init__(
             f"Multiple zips found in the inbox: {names}. "
-            "Specify which one: contextzip apply-zip <path>"
+            "Specify which one: contextzip apply <path>"
         )
 
 
@@ -640,14 +640,14 @@ def find_zip_to_apply(
         ensure_inbox_scaffolding(_workspace_dir(project_dir))
         raise NoZipFoundError(
             f"No zip found. Drop the AI-returned zip into {inbox}, "
-            "or pass a path directly: contextzip apply-zip <path>"
+            "or pass a path directly: contextzip apply <path>"
         )
 
     candidates = sorted(p for p in inbox.glob("*.zip") if p.is_file())
     if not candidates:
         raise NoZipFoundError(
             f"No zip found in {inbox}. Drop the AI-returned zip there, "
-            "or pass a path directly: contextzip apply-zip <path>"
+            "or pass a path directly: contextzip apply <path>"
         )
     if len(candidates) > 1:
         raise MultipleZipsFoundError(candidates)

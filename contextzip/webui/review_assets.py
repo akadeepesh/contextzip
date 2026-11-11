@@ -399,7 +399,7 @@ footer.nav { display: flex; gap: 8px; align-items: center; padding: 10px 24px; b
     refreshHeader();
     const first = plan.entries.find((e) => e.risky) || plan.entries[0];
     if (first) select(first); else { renderList(); $("#main").innerHTML = `<div class="empty-state">This zip has no files to apply.</div>`; }
-  }).catch(() => { $("#main").innerHTML = `<div class="empty-state">Couldn't load the review. Re-run contextzip apply-zip --review.</div>`; });
+  }).catch(() => { $("#main").innerHTML = `<div class="empty-state">Couldn't load the review. Re-run contextzip apply --review.</div>`; });
 })();
 </script>
 </body>

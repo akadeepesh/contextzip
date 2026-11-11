@@ -609,11 +609,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
             <div class="fc"><div class="toggle" id="redact-toggle"><div class="knob"></div></div></div>
           </div>
           <div class="field">
-            <div class="fl"><div class="ft">Add CONTEXTZIP.md to every ZIP</div><div class="fd">A short note for the AI: which snapshot this is, and how to reply so apply-zip can put the changes back cleanly.</div></div>
+            <div class="fl"><div class="ft">Add CONTEXTZIP.md to every ZIP</div><div class="fd">A short note for the AI: which snapshot this is, and how to reply so apply can put the changes back cleanly.</div></div>
             <div class="fc"><div class="toggle" id="guide-toggle"><div class="knob"></div></div></div>
           </div>
           <div class="field">
-            <div class="fl"><div class="ft">Keep applied zips</div><div class="fd">How many past apply-zip archives to retain in .contextzip/inbox/applied/ before pruning.</div></div>
+            <div class="fl"><div class="ft">Keep applied zips</div><div class="fd">How many past applied replies to keep in .contextzip/inbox/applied/ before pruning.</div></div>
             <div class="fc stepper" id="retention-stepper">
               <button type="button" data-step="-1">−</button><span class="val" id="retention-val">1</span><button type="button" data-step="1">+</button>
             </div>

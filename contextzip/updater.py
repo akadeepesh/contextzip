@@ -204,6 +204,21 @@ def binary_install(executable: str | None = None, frozen: bool | None = None) ->
     return BinaryInstall("a download", f"download the latest build from {RELEASES_URL}")
 
 
+def install_method(install: PythonInstall | None = None) -> str:
+    """How this contextzip was installed, in a word or two: pip, pipx, uv tool, uv, or a standalone build."""
+    binary = binary_install()
+    if binary is not None:
+        return f"standalone build ({binary.manager})"
+    install = install or current_install()
+    if install.via_pipx:
+        return "pipx"
+    if install.via_uv_tool:
+        return "uv tool"
+    if install.made_by_uv:
+        return "uv"
+    return "pip"
+
+
 @dataclass(frozen=True)
 class UpdateStep:
     method: str

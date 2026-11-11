@@ -1441,8 +1441,22 @@ This project uses [Semantic Versioning](https://semver.org/).
   with what to do. Under `--json` the why and the fix are the error's
   `detail`. An empty folder now says there are no files to package instead
   of "all files were excluded".
+- **`apply` is the command's name now.** `cz apply` writes an AI's reply
+  back; `apply-zip` keeps working as an alias, hidden from help. Messages
+  and docs say `apply`. The `--json` result still says
+  `"command": "apply-zip"`.
+- **Help you can scan.** `contextzip --help` lists the commands in groups
+  with one line each, examples of the common runs, and every option on one
+  line. Each command's own `--help` starts with examples.
+- `contextzip --version` prints `contextzip 0.9.0` and, on a second line,
+  the Python version and how it was installed.
 - Sizes from one megabyte up keep a decimal below ten: "1.4 MB" instead of
   "1 MB". Larger ones stay whole ("14 MB").
+
+### Added
+- **Suggestions for typos.** `cz aply` says there's no such command and
+  asks "Did you mean: apply?". A path typed where a command goes points to
+  `cz include PATH`.
 
 ### Fixed
 - **No more raw tracebacks.** An unexpected error prints what happened,

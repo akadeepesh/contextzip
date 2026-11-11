@@ -139,7 +139,7 @@ class ApplyResultDisplayTests(TempProject):
 
     def test_files_left_to_decide(self):
         text = self.render(self.result(skipped=["a", "b"], zip_kept=True))
-        self.assertIn("✓ Wrote 9 files.   2 need your call: run contextzip apply-zip --review", text)
+        self.assertIn("✓ Wrote 9 files.   2 need your call: run contextzip apply --review", text)
 
     def test_one_file(self):
         text = self.render(self.result(written=["a"], skipped=["b"]))
@@ -208,14 +208,14 @@ class ConvertedErrorTests(TempProject):
         result = self.invoke("apply-zip", "bad.zip")
         self.assertEqual(result.exit_code, 1)
         self.assertIn("✗ Not a valid zip file", result.stdout)
-        self.assertIn("Try: contextzip apply-zip PATH/TO/reply.zip", result.stdout)
+        self.assertIn("Try: contextzip apply PATH/TO/reply.zip", result.stdout)
 
     def test_a_missing_zip(self):
         self.write("a.py", "print(1)\n")
         result = self.invoke("apply-zip", "nope.zip")
         self.assertEqual(result.exit_code, 1)
         self.assertIn("✗ No such file", result.stdout)
-        self.assertIn("Try: contextzip apply-zip PATH/TO/reply.zip", result.stdout)
+        self.assertIn("Try: contextzip apply PATH/TO/reply.zip", result.stdout)
 
     def test_ref_without_a_repository(self):
         self.write("a.py", "print(1)\n")
@@ -338,5 +338,5 @@ class ApplyCliTests(TempProject):
         with _Env(CONTEXTZIP_FANCY="1"):
             result = CliRunner().invoke(cli.main, ["apply-zip", str(self.reply), "--safe-only"], catch_exceptions=False)
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("✓ Wrote 1 file.   1 needs your call: run contextzip apply-zip --review", result.stdout)
+        self.assertIn("✓ Wrote 1 file.   1 needs your call: run contextzip apply --review", result.stdout)
         self.assertEqual(self.read("app/main.py"), "print('hi')\n")

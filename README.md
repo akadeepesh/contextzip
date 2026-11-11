@@ -24,13 +24,13 @@ Another writes the AI's reply into your project, without losing your own edits.
 </div>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/akadeepesh/contextzip/main/assets/readme-demo.svg" width="100%" alt="Three steps. Pack: cz scans 37,949 files and packs the 62 that matter. Paste: attach the ZIP in an AI chat and get a ZIP of changes back. Apply: cz apply-zip merges them into your project and keeps your own edits.">
+  <img src="https://raw.githubusercontent.com/akadeepesh/contextzip/main/assets/readme-demo.svg" width="100%" alt="Three steps. Pack: cz scans 37,949 files and packs the 62 that matter. Paste: attach the ZIP in an AI chat and get a ZIP of changes back. Apply: cz apply merges them into your project and keeps your own edits.">
 </p>
 
 ```bash
 pip install contextzip      # or: npm i -g @contextzip/cli  ·  brew install akadeepesh/tap/contextzip
 cz                          # zip the right files and put the ZIP on your clipboard
-cz apply-zip                # write the AI's reply back into your project
+cz apply                # write the AI's reply back into your project
 ```
 
 <p align="center">
@@ -52,7 +52,7 @@ contextzip does both directions.
 | **Leaves out the noise** | Dependencies, build output, caches, lockfiles, binaries and everything in your `.gitignore`. On this project's website repo that is 37,887 of 37,949 files. |
 | **Never sends secrets** | `.env`, private keys, cloud credentials and Terraform state stay out. Include a `.env` on purpose and its keys are kept while every value becomes `[REDACTED]`. |
 | **Pastes as a file** | The ZIP goes on your clipboard as a real file, folders intact. Ctrl+V in Claude, ChatGPT or Gemini attaches it. |
-| **Brings the changes back** | `cz apply-zip` finds where each returned file belongs and three-way merges it against a snapshot of what you sent. Conflicts and cut-off files wait for your decision. |
+| **Brings the changes back** | `cz apply` finds where each returned file belongs and three-way merges it against a snapshot of what you sent. Conflicts and cut-off files wait for your decision. |
 | **Stays on your machine** | No telemetry. Packaging and applying make no network requests. |
 
 ## How it compares
@@ -144,13 +144,13 @@ contextzip · my-app   Next.js + FastAPI (backend/)
   Left out  36,176 files: node_modules/ (35,120), .next/ (904), 3 secret files
 
 ✓ On your clipboard. Paste it into Claude or ChatGPT.   snapshot #14
-  When the AI replies, run: cz apply-zip
+  When the AI replies, run: cz apply
 ```
 
 Piped or in CI, and with `--plain`, the same run prints one plain line per step instead. Paste the ZIP into your AI tool, ask for what you want, and when it sends files back:
 
 ```bash
-cz apply-zip
+cz apply
 ```
 
 The commands you'll use most:
@@ -170,12 +170,12 @@ cz stacks                           # the languages and frameworks it recognises
 ## Applying AI changes back
 
 ```bash
-cz apply-zip              # picks up a ZIP from .contextzip/inbox/
-cz apply-zip fix.zip      # or point at one directly
-cz apply-zip --dry-run    # preview without writing anything
+cz apply              # picks up a ZIP from .contextzip/inbox/
+cz apply fix.zip      # or point at one directly
+cz apply --dry-run    # preview without writing anything
 ```
 
-AI tools return ZIPs in every shape: wrapped in an extra folder, relative to a subfolder, flattened, with Windows separators. `apply-zip` matches each file to its real place in your project anyway.
+AI tools return ZIPs in every shape: wrapped in an extra folder, relative to a subfolder, flattened, with Windows separators. `apply` matches each file to its real place in your project anyway.
 
 Every ZIP contextzip makes is kept as a local **snapshot** (never uploaded). When a reply comes back, three versions of each file are compared: what you sent, what's on disk now, and what came back.
 
@@ -214,7 +214,7 @@ spring.datasource.password=hunter2                      spring.datasource.passwo
 jwt.secret=${JWT_SECRET:dev-secret}                     jwt.secret=${JWT_SECRET:[REDACTED]}
 ```
 
-When the file comes back, `apply-zip` keeps your real values. Set `limits.redact_secrets: true` to also mask API keys, tokens and private-key blocks hardcoded in ordinary files. Before sharing a sensitive project, `cz --dry-run --verbose` shows exactly what will go in.
+When the file comes back, `apply` keeps your real values. Set `limits.redact_secrets: true` to also mask API keys, tokens and private-key blocks hardcoded in ordinary files. Before sharing a sensitive project, `cz --dry-run --verbose` shows exactly what will go in.
 
 ## Stacks
 
@@ -257,7 +257,7 @@ cz gitlab.com/group/project                           # or gl:group/project
 cz bitbucket.org/team/repo                            # or bb:team/repo
 ```
 
-contextzip downloads one commit through the host's API and packages it like any other project. Private repos use `GITHUB_TOKEN` (or your `gh` login), `GITLAB_TOKEN` or `BITBUCKET_TOKEN`; a token is only ever sent to its own host. For a GitHub repo, `cz apply-zip reply.zip --pr` commits the AI's changes and **opens a pull request**, forking first if you can't push.
+contextzip downloads one commit through the host's API and packages it like any other project. Private repos use `GITHUB_TOKEN` (or your `gh` login), `GITLAB_TOKEN` or `BITBUCKET_TOKEN`; a token is only ever sent to its own host. For a GitHub repo, `cz apply reply.zip --pr` commits the AI's changes and **opens a pull request**, forking first if you can't push.
 
 ### VS Code extension
 
@@ -314,8 +314,8 @@ contextzip runs your command and watches its output. When a stack trace appears 
 | `cz --prompt "task"` | Let Gemini pick only the files relevant to a task |
 | `cz tokens [PATH…]` | Show where the tokens are, and whether they fit Claude, ChatGPT and Gemini |
 | `cz github.com/user/repo` | Package a GitHub, GitLab or Bitbucket repository without cloning it |
-| `cz apply-zip [ZIP]` | Write an AI-returned ZIP back into your project, safely |
-| `cz apply-zip ZIP --pr` | Send an AI's reply to a GitHub repo back as a pull request |
+| `cz apply [ZIP]` | Write an AI-returned ZIP back into your project, safely |
+| `cz apply ZIP --pr` | Send an AI's reply to a GitHub repo back as a pull request |
 | `cz snapshots` | List what you've sent, so a reply can be merged against it |
 | `cz stacks` | List the languages and frameworks contextzip recognises |
 | `cz watch -- COMMAND` | Run a command and package debug context when an error appears |
@@ -370,7 +370,7 @@ Both config files are optional. Per-project settings live in `.contextzip/config
     "max_file_size_mb": 1,                     // threshold for "large file" warnings
     "redact_secrets": false                    // also mask secret-looking values in ordinary files
   },
-  "snapshots": { "keep": 10, "max_age_days": 14 },  // history apply-zip merges against
+  "snapshots": { "keep": 10, "max_age_days": 14 },  // history apply merges against
   "zip_guide": true,                           // add CONTEXTZIP.md to every ZIP
   "tokens": {
     "max": 150000,                             // a token budget for every run, like --max-tokens
@@ -426,7 +426,7 @@ contextzip keeps everything in a `.contextzip/` folder at your git root (change 
 │   ├── prompt/        vibe.zip + manifest + report       (--prompt)
 │   └── watch/         debug-context.zip                  (cz watch)
 ├── snapshots/         numbered copies of what you sent   (cz snapshots)
-├── inbox/             drop AI-returned ZIPs here for apply-zip
+├── inbox/             drop AI-returned ZIPs here for apply
 └── config.json        project config (optional)
 ```
 
@@ -453,8 +453,8 @@ All exceptions inherit from `ContextzipError`. Full signatures are in the [API r
 
 ## Privacy & security
 
-- **Local by default.** Packaging, `apply-zip`, `watch` and the config UI never make network requests.
-- **Network use is opt-in and limited to three features:** `--prompt` sends file paths, sizes and your prompt to the Gemini API, never file contents. Packaging a remote repo downloads it from that host, and `apply-zip --pr` opens a pull request on GitHub. `cz update` asks PyPI for the latest version number.
+- **Local by default.** Packaging, `apply`, `watch` and the config UI never make network requests.
+- **Network use is opt-in and limited to three features:** `--prompt` sends file paths, sizes and your prompt to the Gemini API, never file contents. Packaging a remote repo downloads it from that host, and `apply --pr` opens a pull request on GitHub. `cz update` asks PyPI for the latest version number.
 - **No telemetry.** Nothing is collected or phoned home.
 - **Secrets are excluded or redacted.** See [Secrets](#secrets).
 
@@ -464,7 +464,7 @@ Found a vulnerability? Please follow [SECURITY.md](https://github.com/akadeepesh
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
-| Packaging, `apply-zip`, config | ✅ | ✅ | ✅ |
+| Packaging, `apply`, config | ✅ | ✅ | ✅ |
 | ZIP copied to clipboard as a file | ✅ native | ✅ via Finder | ✅ X11 (works under XWayland), `wl-copy` or `xclip` |
 | `cz watch` | ✅ | ✅ | ✅ |
 | Standalone build (no Python) | ✅ x64 | ✅ Apple Silicon and Intel | ✅ x64 and arm64, glibc 2.35+ |

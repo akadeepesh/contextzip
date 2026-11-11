@@ -238,7 +238,7 @@ def _make_handler(state: _ReviewState):
                 if url.path == "/":
                     state.touch()
                     if not self._authorized():
-                        self._send(403, b"Invalid or missing token. Re-run contextzip apply-zip --review.", "text/plain; charset=utf-8")
+                        self._send(403, b"Invalid or missing token. Re-run contextzip apply --review.", "text/plain; charset=utf-8")
                         return
                     html = REVIEW_HTML.replace("__TOKEN__", state.token)
                     self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")

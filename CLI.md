@@ -12,7 +12,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 - [`contextzip`](#contextzip) — package the project
 - [Remote repositories](#remote-repositories) — package a GitHub, GitLab or Bitbucket repo without cloning it
 - [`contextzip include`](#contextzip-include) / [`exclude`](#contextzip-exclude)
-- [`contextzip apply-zip`](#contextzip-apply-zip)
+- [`contextzip apply`](#contextzip-apply)
 - [`contextzip watch`](#contextzip-watch)
 - [`contextzip config`](#contextzip-config)
 - [`contextzip tokens`](#contextzip-tokens) — where the tokens are, and whether it fits
@@ -37,7 +37,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 | `contextzip --git-changes` | Package only modified / added / untracked files |
 | `contextzip tokens [PATH…]` | Show where the tokens are, per folder and file, and whether it fits each model |
 | `contextzip --max-tokens 150k --trim` | Keep the ZIP within a token budget, leaving out the least important files |
-| `contextzip apply-zip [ZIP]` | Write an AI-returned ZIP back into your project, safely (or `--pr`: as a GitHub pull request) |
+| `contextzip apply [ZIP]` | Write an AI-returned ZIP back into your project, safely (or `--pr`: as a GitHub pull request) |
 | `contextzip watch -- COMMAND` | Run a command and package debug context when an error appears |
 | `contextzip config …` | Gemini key, workspace location, visual include/exclude UI |
 | `contextzip update` | Check PyPI for a newer release and update in place |
@@ -82,7 +82,7 @@ Including a folder is a scope, not an override: `contextzip include src/` still 
 
 ## Project root
 
-Every command works from the **project root**, wherever you run it from, like git does. Run `cz` inside `frontend/` of a monorepo and the workspace stays at the root (no `frontend/.contextzip/`), the ZIP's paths are root-relative, and `apply-zip` puts files back in the right place.
+Every command works from the **project root**, wherever you run it from, like git does. Run `cz` inside `frontend/` of a monorepo and the workspace stays at the root (no `frontend/.contextzip/`), the ZIP's paths are root-relative, and `apply` puts files back in the right place.
 
 The root is, first match wins:
 
@@ -122,7 +122,7 @@ contextzip · my-app   Next.js + FastAPI (backend/)
   Left out  36,176 files: node_modules/ (35,120), .next/ (904), 3 secret files
 
 ✓ On your clipboard. Paste it into Claude or ChatGPT.   snapshot #14
-  When the AI replies, run: cz apply-zip
+  When the AI replies, run: cz apply
 ```
 
 Warnings (large or binary files, redacted values, trimmed files) appear as `!` lines above the last line. The path of the full report is shown with `--verbose`, or when a warning points to it. Below 60 columns the bars are dropped. When the output is piped or redirected, in CI, and with `--plain`, contextzip prints one plain line per step instead, which is easier to read in a log or to parse:
@@ -206,7 +206,7 @@ contextzip asks the host's API which commit to use, downloads that commit as one
 - **Size limit:** downloads over 250 MB are refused; change it with `CONTEXTZIP_REMOTE_MAX_MB`.
 - **Not unpacked:** `.git/`, `.contextzip/`, symlinks, and names your system can't store (on Windows, names like `CON` or containing `:`).
 - `--git-changes` needs a local checkout, so it can't be combined with a repository.
-- **Applying the reply:** for a GitHub repository, `contextzip apply-zip reply.zip --pr` opens a pull request with the AI's changes (see [`apply-zip`](#contextzip-apply-zip)). For GitLab and Bitbucket, package from a clone and run `apply-zip` there.
+- **Applying the reply:** for a GitHub repository, `contextzip apply reply.zip --pr` opens a pull request with the AI's changes (see [`apply`](#contextzip-apply)). For GitLab and Bitbucket, package from a clone and run `apply` there.
 
 ## `contextzip include`
 
@@ -240,12 +240,14 @@ contextzip exclude .github/ CHANGELOG.md --output ~/Desktop/out.zip
 
 Quote patterns that contain `*` so your shell doesn't expand them first.
 
-## `contextzip apply-zip`
+<a id="contextzip-apply-zip"></a>
 
-Apply an AI-returned ZIP back into your project.
+## `contextzip apply`
+
+Apply an AI-returned ZIP back into your project. Its old name, `contextzip apply-zip`, still works.
 
 ```bash
-contextzip apply-zip [ZIP] [--manifest PATH] [-n] [-v] [--review | --editor | --safe-only | -y] [--plain] [--json]
+contextzip apply [ZIP] [--manifest PATH] [-n] [-v] [--review | --editor | --safe-only | -y] [--plain] [--json]
 ```
 
 | Argument / flag | Short | Description |
@@ -267,12 +269,12 @@ contextzip apply-zip [ZIP] [--manifest PATH] [-n] [-v] [--review | --editor | --
 | `--json` | | Print one JSON object with every file's status. Never prompts: if files need a decision, nothing is written unless `--safe-only`, `--yes` or `--review` says what to do. Can't be combined with `--editor`. |
 
 ```bash
-contextzip apply-zip                    # from .contextzip/inbox/, asks when something needs a decision
-contextzip apply-zip fix.zip            # a ZIP anywhere on disk
-contextzip apply-zip --dry-run -v       # see exactly what would happen
-contextzip apply-zip --review           # decide in the browser
-contextzip apply-zip --editor           # three-way merge in VS Code
-contextzip apply-zip --safe-only        # CI: only the safe changes
+contextzip apply                    # from .contextzip/inbox/, asks when something needs a decision
+contextzip apply fix.zip            # a ZIP anywhere on disk
+contextzip apply --dry-run -v       # see exactly what would happen
+contextzip apply --review           # decide in the browser
+contextzip apply --editor           # three-way merge in VS Code
+contextzip apply --safe-only        # CI: only the safe changes
 ```
 
 In a terminal it first shows the plan: how many files it will write, how many need you, how many already match, then a line for each file worth a look (the ones that need a decision first, then merged, moved and matched-by-name files, at most 14; every file with `--verbose`):
@@ -289,11 +291,11 @@ contextzip apply · reply.zip   compared with snapshot #14
   ≈ src/db/schema.ts    merged     your edits and the AI's merged cleanly
 ```
 
-After applying, one line says what happened: `✓ Wrote 9 files.   2 need your call: run cz apply-zip --review`. Piped output and `--plain` keep the one-line-per-step log.
+After applying, one line says what happened: `✓ Wrote 9 files.   2 need your call: run cz apply --review`. Piped output and `--plain` keep the one-line-per-step log.
 
 **Where each file goes.** The returned ZIP doesn't need to match your layout. Each file is matched to the project by its longest shared path suffix, so a ZIP wrapped in an extra folder, made relative to a subfolder (`src/...` for `frontend/src/...`), flattened to bare names, or using backslash separators still lands correctly. The layout learned from files that clearly match is applied to brand-new files too. A name that fits several files is settled by content; if it's still unclear the file is marked *ambiguous* and never written on a guess. `__MACOSX/`, `.DS_Store` and contextzip's own `prompt.txt` are ignored.
 
-**What it compares against.** Every ZIP contextzip makes gets a local manifest, never uploaded. `apply-zip` picks the manifest that best matches the returned ZIP, not just the newest, so an unrelated run in between (or `-o`) doesn't confuse it. Each file is then compared three ways: what you sent, what's on disk now, and what came back.
+**What it compares against.** Every ZIP contextzip makes gets a local manifest, never uploaded. `apply` picks the manifest that best matches the returned ZIP, not just the newest, so an unrelated run in between (or `-o`) doesn't confuse it. Each file is then compared three ways: what you sent, what's on disk now, and what came back.
 
 | Status | Meaning | Default |
 |---|---|---|
@@ -314,7 +316,7 @@ After applying, one line says what happened: `✓ Wrote 9 files.   2 need your c
 
 Line endings never count as a change, and text is written back with the local file's line endings and BOM. Secret files that were redacted on the way out are merged against the redacted copy, so your real values are kept and a `[REDACTED]` placeholder is never written over them.
 
-When something needs a decision, `apply-zip` asks: apply the safe changes and leave the rest, review in the browser, resolve in your editor, apply everything, or quit. Without a terminal to ask (CI), it writes nothing unless you pass `--safe-only` or `--yes`. If anything is left undecided, the ZIP stays in the inbox so you can run `apply-zip` again. Only adds and modifies files — **nothing is ever deleted**.
+When something needs a decision, `apply` asks: apply the safe changes and leave the rest, review in the browser, resolve in your editor, apply everything, or quit. Without a terminal to ask (CI), it writes nothing unless you pass `--safe-only` or `--yes`. If anything is left undecided, the ZIP stays in the inbox so you can run `apply` again. Only adds and modifies files — **nothing is ever deleted**.
 
 ## `contextzip watch`
 
@@ -433,7 +435,7 @@ A stack is recognised by a marker file (`Cargo.toml`, `*.csproj`), by a dependen
 
 ## `CONTEXTZIP.md`
 
-A short file added to every ZIP for the AI that receives it: the project, the snapshot ID, and how to reply so `apply-zip` can put the answer back cleanly — only changed files, complete contents, the same paths, `[REDACTED]` values left alone, and moves or deletions listed under **Changes** (`moved: a -> b`, `deleted: x`). Turn it off per project with `"zip_guide": false` or in `contextzip config --ui`.
+A short file added to every ZIP for the AI that receives it: the project, the snapshot ID, and how to reply so `apply` can put the answer back cleanly — only changed files, complete contents, the same paths, `[REDACTED]` values left alone, and moves or deletions listed under **Changes** (`moved: a -> b`, `deleted: x`). Turn it off per project with `"zip_guide": false` or in `contextzip config --ui`.
 
 ## `contextzip update`
 
@@ -459,16 +461,16 @@ It detects whether contextzip was installed with pip, pipx or uv tool and re-run
 
 A standalone build (from npm, Homebrew, Scoop or a downloaded archive) has no pip to call, so `update` prints the command for the tool that installed it instead: `npm install -g @contextzip/cli@latest`, `brew upgrade contextzip` or `scoop update contextzip`. `setup-path` likewise explains that the installer manages PATH.
 
-### Pull requests: `apply-zip --pr`
+### Pull requests: `apply --pr`
 
 When you packaged a GitHub repository with `contextzip github.com/user/repo`, the AI's reply can go straight back as a pull request, with no clone and no git:
 
 ```bash
-contextzip apply-zip ~/Downloads/reply.zip --pr --dry-run   # what the pull request would contain
-contextzip apply-zip ~/Downloads/reply.zip --pr             # asks, then opens it
+contextzip apply ~/Downloads/reply.zip --pr --dry-run   # what the pull request would contain
+contextzip apply ~/Downloads/reply.zip --pr             # asks, then opens it
 ```
 
-contextzip finds the commit the reply answers from the snapshot in its `CONTEXTZIP.md` (or `--from REPO` and the closest match by content), works out each file exactly as `apply-zip` does, then builds a commit on top of that commit through GitHub's API and opens a pull request into the branch you packaged (or the default branch, if you packaged a tag or a commit). The branch is `contextzip/<snapshot>`. If you can't push to the repository, it's forked first and the pull request comes from your fork.
+contextzip finds the commit the reply answers from the snapshot in its `CONTEXTZIP.md` (or `--from REPO` and the closest match by content), works out each file exactly as `apply` does, then builds a commit on top of that commit through GitHub's API and opens a pull request into the branch you packaged (or the default branch, if you packaged a tag or a commit). The branch is `contextzip/<snapshot>`. If you can't push to the repository, it's forked first and the pull request comes from your fork.
 
 - **Only safe changes are committed:** new, modified and moved files. Files the AI cut short, can't be matched, or asked to delete are listed in the pull request's description instead. Removals still need `--remove-moved` / `--allow-delete`.
 - **It publishes:** in a terminal it asks first; with `--json`, it needs `--yes`.
@@ -495,7 +497,7 @@ Register it in your MCP client:
 | `package_repository` | Package a GitHub, GitLab or Bitbucket repository (`ref`, `include`, `exclude`, `dry_run`, `max_tokens`, `trim`) |
 | `preview_apply` | What applying an AI's ZIP would do, writing nothing (read-only) |
 | `apply_changes` | Apply it: safe changes only by default, or `mode: "all"` (marked destructive) |
-| `open_pull_request` | `apply-zip --pr`; a dry run unless `dry_run: false` |
+| `open_pull_request` | `apply --pr`; a dry run unless `dry_run: false` |
 | `list_snapshots` | A project's snapshots (read-only) |
 
 Each tool returns the same JSON as `--json` (see [JSON output](#json-output)), without the step-by-step log. For the packaging tools that includes `tokens` (exact counts per folder and file) and `fit` (whether it fits each model), so an agent can narrow a project before handing it on, or pass `max_tokens` and `trim` to keep it within a budget. The standalone builds (npm, Homebrew, Scoop) don't include the MCP server; install with pip for it.
@@ -524,7 +526,7 @@ Every error has the same shape: what went wrong, why when it's known, and what t
 
 ```text
 ✗ Not a valid zip file: reply.zip (File is not a zip file)
-  Try: contextzip apply-zip PATH/TO/reply.zip
+  Try: contextzip apply PATH/TO/reply.zip
 ```
 
 If contextzip itself crashes, it says so in three lines instead of a traceback, with a link to report it. Set `CONTEXTZIP_DEBUG=1` to see the full traceback. Under `--json` the error is the `error` field, and the why and the fix are in the last `log` entry's `detail`.
@@ -533,17 +535,19 @@ If contextzip itself crashes, it says so in three lines instead of a traceback, 
 
 | Flag | Short | Description |
 |---|---|---|
-| `--help` | `-h` | Show help. Works on every command: `contextzip apply-zip -h`. |
-| `--version` | | Print the installed version. |
+| `--help` | `-h` | Show help. Works on every command: `contextzip apply -h`. |
+| `--version` | | Print the installed version, and on a second line the Python version and how contextzip was installed (pip, pipx, uv or a standalone build). |
+
+`contextzip --help` lists the commands in groups (Package, Apply, Set up, More) with one line each, then every option. `contextzip COMMAND --help` shows that command's examples first, then its options. A mistyped command gets the closest names (`cz aply` asks "Did you mean: apply?") and exits 2; a path in place of a command points to `include`.
 
 ## JSON output
 
-Add `--json` to `contextzip`, `include`, `exclude`, `apply-zip`, `snapshots` or `stacks` and contextzip prints exactly one JSON object on stdout instead of terminal output, for editors, scripts and CI. It never prompts, and the exit code matches `ok`: 0 when it's `true`, non-zero when it's `false`.
+Add `--json` to `contextzip`, `include`, `exclude`, `apply`, `snapshots` or `stacks` and contextzip prints exactly one JSON object on stdout instead of terminal output, for editors, scripts and CI. It never prompts, and the exit code matches `ok`: 0 when it's `true`, non-zero when it's `false`.
 
 ```bash
 contextzip --json --no-clipboard
 contextzip --json -n --verbose                 # dry run: what would be included, and what wouldn't
-contextzip apply-zip reply.zip --json --dry-run
+contextzip apply reply.zip --json --dry-run
 ```
 
 Every object has `ok`, `command`, `version`, `warnings` (strings) and `log` (each step as `{"level", "text", "detail"}`), plus `error` when `ok` is false. The rest depends on the command:
@@ -551,7 +555,7 @@ Every object has `ok`, `command`, `version`, `warnings` (strings) and `log` (eac
 | Command | Fields |
 |---|---|
 | `contextzip`, `include`, `exclude` | `mode`, `dry_run`, `project` (`root`, `kind`), `remote` (with `--from`), `detection`, `files` (counts, `included_bytes`, `estimated_tokens`, `tokens`, `included_files`, warnings; `excluded_files` with `--verbose`), `ai` (with `--prompt`), `zip` (path, sizes, `estimated_tokens`, `tokens`, `snapshot`, `redacted`; `null` on a dry run), `fit`, `report`, `clipboard` |
-| `apply-zip` | `project`, `plan` (`snapshot`, `remap`, `needs_decision`, `counts`, and `files`: each with `path`, `source`, `status`, `safe`, `reason`, `moved_from`, …), `result` (`written`, `skipped`, `removed`, `zip_kept`, `archived_to`; `null` when nothing was written), `report` |
+| `apply` (`"command": "apply-zip"`) | `project`, `plan` (`snapshot`, `remap`, `needs_decision`, `counts`, and `files`: each with `path`, `source`, `status`, `safe`, `reason`, `moved_from`, …), `result` (`written`, `skipped`, `removed`, `zip_kept`, `archived_to`; `null` when nothing was written), `report` |
 | `tokens` | `project`, `detection`, `tokens` (as below, with every folder at `--depth` and `--top` files), `fit` |
 | `snapshots` | `project`, `snapshots` (`id`, `token`, `label`, `mode`, `files`, `status`, `created`) |
 | `stacks` | `stacks`, or `stack` when one is named (`name`, `slug`, `rules`, `markers`, `dependencies`, `manifests`, `extensions`, `excludes`) |
@@ -583,7 +587,7 @@ When `--from` can't fetch a repository, the result also has `error_kind`: `inval
 from contextzip.web import run
 
 result = run(["--no-clipboard"], cwd="/project")
-run(["apply-zip", "/reply.zip", "--safe-only"], cwd="/project")
+run(["apply", "/reply.zip", "--safe-only"], cwd="/project")
 ```
 
 `contextzip.service.app` is a WSGI app that packages **public** GitHub, GitLab and Bitbucket repositories for anyone: `?repo=github.com/user/repo[&ref=…][&format=json]` returns the ZIP, or a JSON summary of what's in it. It checks with the host that every repository is public (so a server token can never expose private ones), caps downloads at 100 MB, rate-limits each client, and never returns server paths. To deploy it on Vercel, `api/pack.py` is just:
@@ -598,12 +602,12 @@ Settings: `GITHUB_TOKEN` (optional, for GitHub's higher rate limit; prefer one t
 
 | Path | Contents |
 |---|---|
-| `.contextzip/output/` | ZIPs contextzip creates, plus the manifests used by `apply-zip` |
+| `.contextzip/output/` | ZIPs contextzip creates, plus the manifests used by `apply` |
 | `.contextzip/output/watch/` | Debug packages from `contextzip watch` |
-| `.contextzip/inbox/` | Where `apply-zip` looks for a returned ZIP when you don't pass a path |
+| `.contextzip/inbox/` | Where `apply` looks for a returned ZIP when you don't pass a path |
 | `.contextzip/config.json` | Project config: `always_include`, `always_exclude`, `workspace_location`, `ai`, size limits |
 | `.contextzip/cache/` | Token counts per file, reused while a file is unchanged |
-| `.contextzip/snapshots/` | Numbered snapshots: a copy of each ZIP you sent and its manifest — what `apply-zip` merges against |
+| `.contextzip/snapshots/` | Numbered snapshots: a copy of each ZIP you sent and its manifest — what `apply` merges against |
 | Your user cache folder | Repositories fetched with `--from`, one folder per commit, with the ZIP next to each (see [Remote repositories](#remote-repositories)) |
 
 Where `.contextzip/` itself lives defaults to the git root; see `contextzip config --set-workspace`.

@@ -262,9 +262,9 @@ class SummaryBlockTests(TempProject):
 
     def test_on_the_clipboard(self):
         cb = ClipboardResult(Tier.FILE_ON_CLIPBOARD, "copied")
-        text = self.render(by_file={"a.ts": 10}, result=self.result(), clipboard=cb, hint="When the AI replies, run: cz apply-zip")
+        text = self.render(by_file={"a.ts": 10}, result=self.result(), clipboard=cb, hint="When the AI replies, run: cz apply")
         self.assertIn("✓ On your clipboard. Paste it into Claude or ChatGPT.   snapshot #14", text)
-        self.assertTrue(text.rstrip().endswith("When the AI replies, run: cz apply-zip"))
+        self.assertTrue(text.rstrip().endswith("When the AI replies, run: cz apply"))
         self.assertNotIn("Full report", text)
         self.assertNotIn("Saved to", text)
 
@@ -357,7 +357,7 @@ class SummaryCliTests(TempProject):
         out = self.invoke("--no-clipboard")
         self.assertIn("✓ Saved to .contextzip", out)
         self.assertIn("snapshot #1", out)
-        self.assertIn("When the AI replies, run: contextzip apply-zip", out)
+        self.assertIn("When the AI replies, run: contextzip apply", out)
         self.assertNotIn("Full report", out)
         self.assertTrue((self.root / ".contextzip" / "output" / "codebase" / "codebase.zip").is_file())
 
@@ -408,4 +408,4 @@ class SummaryCliTests(TempProject):
     def test_cz_is_named_when_typed(self):
         with _Env(CONTEXTZIP_FANCY="1"):
             result = CliRunner().invoke(cli.main, ["--no-clipboard"], prog_name="cz", catch_exceptions=False)
-        self.assertIn("run: cz apply-zip", result.stdout)
+        self.assertIn("run: cz apply", result.stdout)

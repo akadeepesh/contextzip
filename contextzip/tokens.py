@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -52,6 +53,9 @@ del _tenths, _suffixes, _suffix
 
 _PARALLEL_THRESHOLD = 32
 _CACHE_FILE = "tokens.json"
+# A file changed this recently isn't cached: on a filesystem with coarse
+# timestamps, a second same-size edit could keep its mtime ("racy git").
+_RACY_NS = 2_000_000_000
 
 _load_lock = threading.Lock()
 _loaded = False
@@ -335,12 +339,13 @@ def count_files(
             shared.add(key)
         seen.add(key)
 
+    racy_cutoff = time.time_ns() - _RACY_NS
     by_file: dict[str, int] = {}
     for i, key in enumerate(keys):
         n = results[i] or 0
         by_file[key] = by_file.get(key, 0) + n
         st_pair = stats[i]
-        if st_pair is not None and key not in shared:
+        if st_pair is not None and key not in shared and st_pair[1] < racy_cutoff:
             new_cache[key] = [st_pair[0], st_pair[1], n]
 
     if cache_dir is not None and new_cache != cache:

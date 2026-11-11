@@ -67,6 +67,17 @@ class TempProject(unittest.TestCase):
         )
 
 
+def backdate(*paths: Path, seconds: int = 60) -> None:
+    """Move files' modification time into the past, so caches that skip just-changed files will keep them."""
+    import time
+
+    when = time.time() - seconds
+    for path in paths:
+        targets = [p for p in path.rglob("*") if p.is_file()] if path.is_dir() else [path]
+        for target in targets:
+            os.utime(target, (when, when))
+
+
 @contextmanager
 def chdir(path: Path):
     prev = Path.cwd()

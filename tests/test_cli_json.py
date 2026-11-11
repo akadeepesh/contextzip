@@ -9,7 +9,7 @@ from click.testing import CliRunner
 from contextzip import cli
 from contextzip.remote import FetchedRemote, RemoteSpec
 from contextzip.tokens import estimate_tokens, format_tokens
-from tests.helpers import TempProject
+from tests.helpers import TempProject, backdate
 
 
 class CliTestCase(TempProject):
@@ -234,6 +234,7 @@ class TokenOutputTests(CliTestCase):
         super().setUp()
         self.write("src/util.ts", "export function add(a: number, b: number) { return a + b; }\n")
         self.write("README.md", "# demo\n\nA small project.\n")
+        backdate(self.root)  # the token cache skips files changed in the last two seconds
 
     def expected_method(self) -> str:
         from contextzip.tokens import METHOD_ESTIMATE, METHOD_EXACT, tokenizer_available

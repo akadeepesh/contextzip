@@ -18,7 +18,7 @@ from contextzip.tokens import (
     format_tokens,
     tokenizer_available,
 )
-from tests.helpers import TempProject
+from tests.helpers import TempProject, backdate
 
 
 class _FakeEncoding:
@@ -211,6 +211,7 @@ class CacheTests(TempProject):
         self.cache = self.root / ".contextzip" / "cache"
         self.a = self.write("a.txt", "one two three")
         self.b = self.write("b.txt", "four five")
+        backdate(self.a, self.b)
 
     def _count(self, files=None):
         with _exact_mode(), mock.patch.object(tokens, "count_text", side_effect=lambda t: len(t.split())) as counter:
@@ -231,7 +232,7 @@ class CacheTests(TempProject):
 
     def test_changed_file_invalidates_only_its_entry(self):
         self._count()
-        self.write("b.txt", "four five six seven")
+        backdate(self.write("b.txt", "four five six seven"))
         report, calls = self._count()
         self.assertEqual(calls, 1)
         self.assertEqual(report.by_file, {"a.txt": 3, "b.txt": 4})
@@ -248,6 +249,14 @@ class CacheTests(TempProject):
             report = count_files([self.a, self.b], self.root, cache_dir=self.cache)
         self.assertEqual(report.method, METHOD_ESTIMATE)
         self.assertEqual(report.by_file, {"a.txt": 4, "b.txt": 3})  # 13 and 9 bytes / 4.0
+
+    def test_just_changed_files_are_not_cached(self):
+        fresh = self.write("fresh.txt", "six seven")
+        self._count([self.a, fresh])
+        stored = json.loads((self.cache / "tokens.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(stored["files"]), {"a.txt"})
+        _report, calls = self._count([self.a, fresh])
+        self.assertEqual(calls, 1)  # fresh.txt is counted again
 
     def test_corrupt_cache_is_ignored(self):
         for junk in ("{not json", "[]", '{"method": "o200k_base", "files": {"a.txt": [1, 2]}}'):

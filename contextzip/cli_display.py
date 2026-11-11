@@ -126,6 +126,37 @@ def err(text: str, *, con: Console = console) -> None:
     con.print(f"[red]✗[/] {text}")
 
 
+def fail(what: str, *, why: str | None = None, fix: str | None = None, con: Console = console) -> None:
+    """
+    A fatal problem, in one shape everywhere:
+
+        ✗ <what>
+          <why>
+          Try: <fix>
+
+    Under --json, *what* is the error and *why* / *fix* its detail. Plain
+    text, never markup. It doesn't exit: callers still raise SystemExit.
+    """
+    detail = " ".join(bit for bit in (why, f"Try: {fix}" if fix else None) if bit) or None
+    if _collected("error", what, detail):
+        return
+    con.print(f"[red]✗[/] {escape(what)}", highlight=False)
+    if why:
+        con.print(f"  [dim]{escape(why)}[/]", highlight=False)
+    if fix:
+        con.print(f"  [dim]Try:[/] {escape(fix)}", highlight=False)
+
+
+def prog_name() -> str:
+    """The name the user typed, cz or contextzip, for the commands contextzip suggests."""
+    import click
+
+    ctx = click.get_current_context(silent=True)
+    name = ctx.find_root().info_name if ctx is not None else None
+    stem = os.path.splitext(os.path.basename(name or ""))[0].lower()
+    return "cz" if stem == "cz" else "contextzip"
+
+
 def status(text: str, *, con: Console = console):
     """
     A spinner while something runs. Under --json it's never seen, so it's
@@ -921,6 +952,10 @@ def print_apply_plan(
     """Where the zip came from, what it was compared with, and what each file will do."""
     from collections import Counter
 
+    if fancy():
+        _print_apply_plan_fancy(plan, project_dir, verbose=verbose, con=con)
+        return
+
     ok("Resolved", _short(plan.zip_path, project_dir), con=con)
 
     if plan.has_manifest:
@@ -979,8 +1014,134 @@ def print_apply_plan(
         info(f"Ignored {len(plan.ignored)} entr{'ies' if len(plan.ignored) != 1 else 'y'} (contextzip's own files, OS junk)", con=con)
 
 
+_APPLY_WRITE_ORDER = ("modified", "new", "merged", "moved")
+_APPLY_MAX_ROWS = 14
+
+
+def _apply_rows(plan, verbose: bool) -> list:
+    """The files worth a line: risky first, then merged, moved and matched by name. Every file with --verbose."""
+    rank = {status: i for i, status in enumerate(_RISKY_ORDER)}
+    risky = sorted(plan.risky_entries, key=lambda e: rank.get(e.status.value, len(rank)))
+    risky_ids = {id(e) for e in risky}
+    if verbose:
+        return risky + [e for e in plan.entries if id(e) not in risky_ids]
+    notable = [
+        e for e in plan.entries
+        if id(e) not in risky_ids and (e.status.value in ("merged", "moved") or (e.moved and e.how in ("suffix", "content")))
+    ]
+    return risky + notable
+
+
+def _apply_note(e) -> str:
+    bits = []
+    if e.status.value == "moved" and e.moved_from:
+        bits.append(f"from {e.moved_from}")
+    elif e.moved and e.how in ("suffix", "content"):
+        bits.append(f"matched {e.source_name} by {'content' if e.how == 'content' else 'name'}")
+    if e.note:
+        bits.append(e.note)
+    return "; ".join(bits)
+
+
+def _print_apply_plan_fancy(plan, project_dir: Path, *, verbose: bool, con: Console) -> None:
+    """
+    `apply-zip` in a terminal:
+
+        contextzip apply · reply.zip   compared with snapshot #14
+
+          Will write   9   6 modified · 2 new · 1 merged
+          Needs you    2   1 conflict · 1 partial
+          Unchanged   12
+
+          ! src/auth/login.ts        conflict   3 places where you and the AI changed …
+          ≈ src/db/schema.ts         merged     your edits and the AI's merged cleanly
+    """
+    from collections import Counter
+
+    width = con.width
+    title = f"contextzip apply [dim]·[/] [bold]{escape(plan.zip_path.name)}[/]"
+    snapshot = getattr(plan, "snapshot", None)
+    if plan.has_manifest:
+        against = f"snapshot #{snapshot.partition('-')[0]}" if snapshot else "what you sent"
+        _print_fitted(con, f"{title}   [dim]compared with[/] {escape(against)}", f"{title}  {escape(against)}", title)
+    else:
+        _print_fitted(con, title)
+    con.print()
+
+    counts = Counter(e.status.value for e in plan.entries)
+    lines = []
+    write = sum(counts.get(k, 0) for k in _APPLY_WRITE_ORDER)
+    if write:
+        lines.append(("Will write", write, [f"{counts[k]} {k}" for k in _APPLY_WRITE_ORDER if counts.get(k)]))
+    needs = sum(counts.get(k, 0) for k in _RISKY_ORDER)
+    if needs:
+        lines.append(("Needs you", needs, [f"{counts[k]} {k}" for k in _RISKY_ORDER if counts.get(k)]))
+    if counts.get("unchanged"):
+        lines.append(("Unchanged", counts["unchanged"], []))
+    number_w = max([3, *(len(str(n)) for _l, n, _p in lines)])
+    for label, n, parts in lines:
+        head = f"  [dim]{label:<10}[/] {n:>{number_w}}"
+        if parts:
+            _print_fitted(con, f"{head}   " + " [dim]·[/] ".join(parts), head)
+        else:
+            _print_fitted(con, head)
+
+    rows = _apply_rows(plan, verbose)
+    shown = rows if verbose else rows[:_APPLY_MAX_ROWS]
+    if shown:
+        con.print()
+        status_w = max(len(e.status.value) for e in shown)
+        longest = max(_cells(e.display_path) for e in shown)
+        # Room for the note matters more than long paths: cut paths from the left past that.
+        path_w = max(12, min(longest, 48, width - (2 + 2 + 2 + status_w + 3) - 20))
+        for e in shown:
+            colour, sym = _APPLY_STATUS_STYLE[e.status.value]
+            path = escape(_pad(_left_truncate(e.display_path, path_w), path_w))
+            status = f"{e.status.value:<{status_w}}"
+            note = _apply_note(e)
+            row = f"  [{colour}]{sym}[/] {path}  [{colour}]{status}[/]"
+            _print_fitted(con, f"{row}   [dim]{escape(note)}[/]" if note else row)
+        hidden = len(rows) - len(shown)
+        if hidden > 0:
+            info(f"… and {hidden} more, see the report or use --verbose", con=con)
+
+    notes = []
+    if plan.has_manifest and plan.manifest_note:
+        notes.append(("info", plan.manifest_note))
+    if not plan.has_manifest:
+        notes.append(("warn", "No snapshot of what you sent was found — files that already exist need a look"))
+    if plan.rule is not None:
+        notes.append(("info", f"Paths in the zip were remapped: {plan.rule.describe()}"))
+    if plan.structure_warning:
+        notes.append(("warn", plan.structure_warning))
+    if plan.ignored:
+        n = len(plan.ignored)
+        notes.append(("info", f"Ignored {n} entr{'ies' if n != 1 else 'y'} (contextzip's own files, OS junk)"))
+    if notes:
+        con.print()
+        for level, text in notes:
+            (warn if level == "warn" else info)(literal(text), con=con)
+    con.print()
+
+
 def print_apply_result(result, *, con: Console = console) -> None:
     """What was written, skipped, and where the zip went."""
+    if fancy():
+        n = len(result.written)
+        wrote = f"Wrote {n} file{'' if n == 1 else 's'}."
+        left = len(result.skipped)
+        if left:
+            need = "needs" if left == 1 else "need"
+            con.print(f"[green]✓[/] {wrote}   {left} {need} your call: run {prog_name()} apply-zip --review", highlight=False)
+        else:
+            con.print(f"[green]✓[/] {wrote} Nothing left to decide.", highlight=False)
+        removed = getattr(result, "removed", [])
+        if removed:
+            ok(f"Removed {len(removed)} old file{'s' if len(removed) != 1 else ''}", literal(", ".join(removed[:5])), con=con)
+        for path, reason in getattr(result, "not_removed", [])[:5]:
+            warn(literal(f"Kept {path} — {reason}"), con=con)
+        return
+
     ok(f"Applied {len(result.written)} file{'s' if len(result.written) != 1 else ''}", con=con)
     removed = getattr(result, "removed", [])
     if removed:

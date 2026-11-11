@@ -19,6 +19,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 - [`contextzip stacks`](#contextzip-stacks) — the languages and frameworks it recognises
 - [`contextzip update`](#contextzip-update)
 - [`contextzip setup-path`](#contextzip-setup-path)
+- [Errors](#errors) — what an error looks like, and CONTEXTZIP_DEBUG
 - [Global flags](#global-flags)
 - [JSON output](#json-output)
 - [In a browser or on a server](#in-a-browser-or-on-a-server)
@@ -244,7 +245,7 @@ Quote patterns that contain `*` so your shell doesn't expand them first.
 Apply an AI-returned ZIP back into your project.
 
 ```bash
-contextzip apply-zip [ZIP] [--manifest PATH] [-n] [-v] [--review | --editor | --safe-only | -y] [--json]
+contextzip apply-zip [ZIP] [--manifest PATH] [-n] [-v] [--review | --editor | --safe-only | -y] [--plain] [--json]
 ```
 
 | Argument / flag | Short | Description |
@@ -262,6 +263,7 @@ contextzip apply-zip [ZIP] [--manifest PATH] [-n] [-v] [--review | --editor | --
 | `--allow-delete` | | Delete files the AI asked to delete in `CONTEXTZIP.md` (only if you haven't changed them). |
 | `--pr` | | The reply is for a GitHub repository packaged with `contextzip github.com/user/repo`: open a pull request instead of writing files here. See below. |
 | `--from REPO` | | With `--pr`: the repository the reply is for, when the reply has no `CONTEXTZIP.md`. |
+| `--plain` | | One line per step, no table. This is also what you get when the output is piped. |
 | `--json` | | Print one JSON object with every file's status. Never prompts: if files need a decision, nothing is written unless `--safe-only`, `--yes` or `--review` says what to do. Can't be combined with `--editor`. |
 
 ```bash
@@ -272,6 +274,22 @@ contextzip apply-zip --review           # decide in the browser
 contextzip apply-zip --editor           # three-way merge in VS Code
 contextzip apply-zip --safe-only        # CI: only the safe changes
 ```
+
+In a terminal it first shows the plan: how many files it will write, how many need you, how many already match, then a line for each file worth a look (the ones that need a decision first, then merged, moved and matched-by-name files, at most 14; every file with `--verbose`):
+
+```text
+contextzip apply · reply.zip   compared with snapshot #14
+
+  Will write   9   6 modified · 2 new · 1 merged
+  Needs you    2   1 conflict · 1 partial
+  Unchanged   12
+
+  ! src/auth/login.ts   conflict   2 places where you and the AI changed the same or neighbouring lines
+  … src/api/client.ts   partial    contains "// rest unchanged" — applying it would delete code
+  ≈ src/db/schema.ts    merged     your edits and the AI's merged cleanly
+```
+
+After applying, one line says what happened: `✓ Wrote 9 files.   2 need your call: run cz apply-zip --review`. Piped output and `--plain` keep the one-line-per-step log.
 
 **Where each file goes.** The returned ZIP doesn't need to match your layout. Each file is matched to the project by its longest shared path suffix, so a ZIP wrapped in an extra folder, made relative to a subfolder (`src/...` for `frontend/src/...`), flattened to bare names, or using backslash separators still lands correctly. The layout learned from files that clearly match is applied to brand-new files too. A name that fits several files is settled by content; if it's still unclear the file is marked *ambiguous* and never written on a guess. `__MACOSX/`, `.DS_Store` and contextzip's own `prompt.txt` are ignored.
 
@@ -499,6 +517,17 @@ python -m contextzip setup-path [--yes]     # macOS / Linux: python3 -m …
 - **pipx / uv tool / virtualenv installs:** nothing to change; it tells you to run `pipx ensurepath` or `uv tool update-shell`, or to activate the environment.
 
 It never adds the folder twice. Open a new terminal afterwards. `python -m contextzip` works anywhere, and when you use it while `cz` isn't on PATH it prints a one-line tip pointing here.
+
+## Errors
+
+Every error has the same shape: what went wrong, why when it's known, and what to try:
+
+```text
+✗ Not a valid zip file: reply.zip (File is not a zip file)
+  Try: contextzip apply-zip PATH/TO/reply.zip
+```
+
+If contextzip itself crashes, it says so in three lines instead of a traceback, with a link to report it. Set `CONTEXTZIP_DEBUG=1` to see the full traceback. Under `--json` the error is the `error` field, and the why and the fix are in the last `log` entry's `detail`.
 
 ## Global flags
 

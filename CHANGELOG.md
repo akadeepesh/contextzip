@@ -1431,5 +1431,21 @@ This project uses [Semantic Versioning](https://semver.org/).
   points to it. Dry runs get the same block. Piped or redirected output,
   CI logs and the new `--plain` flag keep the old one-line-per-step log,
   and `--json` is unchanged.
+- **A readable apply plan.** In a terminal, `apply-zip` shows how many
+  files it will write, how many need you and how many already match, then
+  one aligned line per file worth a look (decisions first, at most 14;
+  every file with `--verbose`). After applying, one line says what was
+  written and what's left. `--plain` (new on `apply-zip`) and piped output
+  keep the old log.
+- **One shape for every error:** what went wrong, why, and a "Try:" line
+  with what to do. Under `--json` the why and the fix are the error's
+  `detail`. An empty folder now says there are no files to package instead
+  of "all files were excluded".
 - Sizes from one megabyte up keep a decimal below ten: "1.4 MB" instead of
   "1 MB". Larger ones stay whole ("14 MB").
+
+### Fixed
+- **No more raw tracebacks.** An unexpected error prints what happened,
+  that it's a bug, where to report it, and how to see the traceback
+  (`CONTEXTZIP_DEBUG=1`). Under `--json` the JSON error object is still the
+  only output.

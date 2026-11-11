@@ -69,6 +69,8 @@ from contextzip.cli_display import (
     print_package_summary,
     plain_output,
     fancy,
+    fail,
+    prog_name,
 )
 from contextzip.report import write_scan_report, write_apply_report
 from contextzip.applier import (
@@ -293,19 +295,43 @@ class _MainGroup(click.Group):
     def main(self, *args, **kwargs):
         _printable_streams()
         try:
-            return super().main(*args, **kwargs)
-        except OSError:
-            # `cz -v | head`: the reader went away. Click exits quietly on
-            # EPIPE; Windows reports the same thing as EINVAL instead.
-            import sys
-
-            if os.name != "nt" or not _stdout_closed():
-                raise
             try:
-                sys.stdout = open(os.devnull, "w")  # nothing left to flush at exit
+                return super().main(*args, **kwargs)
             except OSError:
-                pass
-            sys.exit(1)
+                # `cz -v | head`: the reader went away. Click exits quietly on
+                # EPIPE; Windows reports the same thing as EINVAL instead.
+                import sys
+
+                if os.name != "nt" or not _stdout_closed():
+                    raise
+                try:
+                    sys.stdout = open(os.devnull, "w")  # nothing left to flush at exit
+                except OSError:
+                    pass
+                sys.exit(1)
+        except (click.exceptions.ClickException, click.exceptions.Abort, click.exceptions.Exit):
+            raise  # only reaches here with standalone_mode=False; click's to handle
+        except Exception as exc:  # noqa: BLE001 — a bug gets a message, not a traceback
+            if os.environ.get("CONTEXTZIP_DEBUG", "").strip():
+                raise
+            _report_unexpected(exc)
+            raise SystemExit(1)
+
+
+ISSUES_URL = "https://github.com/akadeepesh/contextzip/issues/new/choose"
+
+
+def _report_unexpected(exc: BaseException) -> None:
+    """What a crash prints instead of a traceback (CONTEXTZIP_DEBUG=1 shows the traceback)."""
+    try:
+        message = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+        err(literal(f"contextzip hit an unexpected error: {message}"))
+        info(f"This is a bug. Please report it: {ISSUES_URL}")
+        info("Run again with CONTEXTZIP_DEBUG=1 to see the full traceback.")
+    except Exception:  # noqa: BLE001 — never let the report itself crash
+        import sys
+
+        sys.stderr.write(f"contextzip hit an unexpected error: {exc!r}\n")
 
 
 def _stdout_closed() -> bool:
@@ -634,6 +660,12 @@ def cmd_include(
     ),
 )
 @click.option(
+    "--plain",
+    is_flag=True,
+    default=False,
+    help="One line per step, no table. This is also what you get when the output is piped.",
+)
+@click.option(
     "--pr",
     "as_pr",
     is_flag=True,
@@ -664,6 +696,7 @@ def cmd_apply_zip(
     safe_only: bool,
     yes: bool,
     json_output: bool,
+    plain: bool,
     as_pr: bool,
     pr_repo: str | None,
 ) -> None:
@@ -705,7 +738,7 @@ def cmd_apply_zip(
     """
     if pr_repo and not as_pr:
         raise click.UsageError("--from goes with --pr: apply-zip --pr --from github.com/user/repo")
-    with _json_session("apply-zip", json_output):
+    with _json_session("apply-zip", json_output), plain_output(plain):
         if as_pr:
             _apply_as_pull_request(
                 zip_path,
@@ -771,7 +804,7 @@ def _apply_as_pull_request(
             plan.snapshot = plan.snapshot or cached.snapshot.label
             plan.matched_by_guide = True
     except ApplyError as exc:
-        err(str(exc))
+        fail(str(exc), fix=f"{prog_name()} apply-zip PATH/TO/reply.zip --pr")
         raise SystemExit(1)
 
     try:
@@ -855,7 +888,9 @@ def _apply_zip(
     try:
         resolved_zip = find_zip_to_apply(project_dir, zip_path)
     except ApplyError as exc:
-        err(str(exc))
+        message = str(exc)
+        # "No zip found…" already says how to pass one.
+        fail(message, fix=None if "apply-zip <path>" in message else f"{prog_name()} apply-zip PATH/TO/reply.zip")
         raise SystemExit(1)
 
     explicit_manifest = None
@@ -877,7 +912,7 @@ def _apply_zip(
         with status("[cyan]Matching files and comparing versions…[/]"):
             plan = build_plan(resolved_zip, project_dir, explicit_manifest)
     except ApplyError as exc:
-        err(str(exc))
+        fail(str(exc), fix=f"{prog_name()} apply-zip PATH/TO/reply.zip")
         raise SystemExit(1)
 
     print_apply_plan(plan, project_dir, verbose=verbose)
@@ -1703,7 +1738,7 @@ def cmd_setup_path(yes: bool) -> None:
     try:
         changed = pathsetup.add_to_path(st.directory)
     except OSError as exc:
-        err(f"Couldn't update {target}: {exc}")
+        fail(f"Couldn't update {target}.", why=str(exc), fix="python -m contextzip works without PATH")
         console.print()
         raise SystemExit(1)
 
@@ -1947,13 +1982,6 @@ def _run(*, json_output: bool = False, plain: bool = False, **kwargs) -> None:
         _package(**kwargs)
 
 
-def _prog_name() -> str:
-    """The name the user typed, cz or contextzip, for the commands contextzip suggests."""
-    ctx = click.get_current_context(silent=True)
-    name = ctx.find_root().info_name if ctx is not None else None
-    stem = os.path.splitext(os.path.basename(name or ""))[0].lower()
-    return "cz" if stem == "cz" else "contextzip"
-
 
 def _fetch_remote(target: str, ref: str | None):
     """Fetch a GitHub repository into the cache (see remote.py), or exit with why not."""
@@ -1988,7 +2016,11 @@ def _gemini_key_or_exit() -> str:
     if api_key:
         return api_key
     if jsonout.active() is not None:
-        err("No Gemini API key set. Set GEMINI_API_KEY, or run contextzip --prompt once in a terminal to set one up.")
+        fail(
+            "No Gemini API key set.",
+            why="Set GEMINI_API_KEY, or run contextzip --prompt once in a terminal to set one up.",
+            fix="contextzip config --reset-key",
+        )
         raise SystemExit(1)
     api_key = onboard_api_key()
     if not api_key:
@@ -2190,7 +2222,10 @@ def _scan(
     fetched = None
     if remote:
         if git_changes:
-            err("--git-changes needs a local checkout — it can't be combined with a remote repository.")
+            fail(
+                "--git-changes needs a local checkout — it can't be combined with a remote repository.",
+                fix="clone it, then run contextzip --git-changes in the clone",
+            )
             raise SystemExit(1)
         fetched = _fetch_remote(remote, ref)
         # A /tree/<branch>/<folder> link acts like running from that folder.
@@ -2202,7 +2237,10 @@ def _scan(
         )
     else:
         if ref:
-            err("--ref picks a branch of a remote repository — use it with --from github.com/user/repo.")
+            fail(
+                "--ref picks a branch of a remote repository — use it with --from github.com/user/repo.",
+                fix="contextzip --from github.com/user/repo --ref BRANCH",
+            )
             raise SystemExit(1)
         project_root = _resolve_root()
     project_dir = project_root.root
@@ -2278,7 +2316,7 @@ def _scan(
             git_result = get_changed_files(project_dir)
 
         if isinstance(git_result, GitError):
-            err(f"Git error: {git_result.message}")
+            fail("Git error: couldn't list the changed files.", why=git_result.message)
             raise SystemExit(1)
 
         if not quiet:
@@ -2480,8 +2518,14 @@ def _package(
         return
 
     if not resolved.included:
-        err("Nothing to compress in this one — all files were excluded.")
-        info("Try contextzip include PATH or -i PATH to override.")
+        if not resolved.excluded and not resolved.skipped:
+            fail(
+                "No files found to package.",
+                why=f"There are no files in {project_dir}.",
+                fix="cd into your project folder, then run contextzip again",
+            )
+        else:
+            fail("Nothing to compress in this one — all files were excluded.", fix="contextzip include PATH")
         return
 
     if over_budget:
@@ -2552,7 +2596,7 @@ def _package(
         else:
             result = create_zip(console=console, **zip_options)
     except Exception as exc:
-        err(f"Failed to create ZIP: {exc}")
+        fail("Failed to create ZIP.", why=str(exc))
         raise SystemExit(1)
 
     if use_fancy:
@@ -2676,7 +2720,7 @@ def _finish_fancy(
         verbose=verbose,
         warnings=package_warnings,
         clipboard=cb,
-        hint=None if scan.fetched is not None else f"When the AI replies, run: {_prog_name()} apply-zip",
+        hint=None if scan.fetched is not None else f"When the AI replies, run: {prog_name()} apply-zip",
         report_path=report_path if see_report else None,
     )
     if scan.fetched is not None:

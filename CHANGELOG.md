@@ -1378,6 +1378,15 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Does it fit?** After the summary, one line shows how much of Claude's,
+  ChatGPT's and Gemini's context window the ZIP takes ("Fits  Claude ≈23%
+  ·  ChatGPT ≈36%  ·  Gemini ≈5%"), and warns when one is over 100%.
+  `--for claude` (repeatable) picks the models; `--json` adds `fit`. A
+  project can set its own windows, or add a target, with
+  `"tokens": {"windows": {...}}` in `.contextzip/config.json`, and hide the
+  line with `"show_fit": false`.
+
 ### Changed
 - **Real token counts.** The summary line, `--json`, the report and
   CONTEXTZIP.md now count tokens with `o200k_base`, the tokenizer of

@@ -324,9 +324,10 @@ class TokenOutputTests(CliTestCase):
 
         result = CliRunner().invoke(cli.main, ["--dry-run"], catch_exceptions=False)
         self.assertEqual(result.exit_code, 0)
-        self.assertRegex(result.stdout, r"\d tokens")
+        scan_line = next(line for line in result.stdout.splitlines() if "Scanned" in line)
+        self.assertRegex(scan_line, r"\d tokens")
         if tokenizer_available():
-            self.assertNotIn("≈", result.stdout)
+            self.assertNotIn("≈", scan_line)
 
     def test_verbose_lists_most_tokens(self):
         result = CliRunner().invoke(cli.main, ["--dry-run", "--verbose"], catch_exceptions=False)

@@ -323,6 +323,7 @@ contextzip runs your command and watches its output. When a stack trace appears 
 | `--here` | | Only package the folder you're in. |
 | `--from REPO` | | Package a remote repository (or just put the repo first: `cz github.com/user/repo`). |
 | `--ref REF` | | Branch, tag or commit for `--from`. |
+| `--for MODEL` | | Show whether the ZIP fits this model: `claude`, `chatgpt` or `gemini`. Repeatable. Default: all. |
 | `--json` | | Print one JSON object instead of terminal output, for editors and scripts. |
 
 </details>
@@ -348,7 +349,11 @@ Both config files are optional. Per-project settings live in `.contextzip/config
     "redact_secrets": false                    // also mask secret-looking values in ordinary files
   },
   "snapshots": { "keep": 10, "max_age_days": 14 },  // history apply-zip merges against
-  "zip_guide": true                            // add CONTEXTZIP.md to every ZIP
+  "zip_guide": true,                           // add CONTEXTZIP.md to every ZIP
+  "tokens": {
+    "windows": { "claude": 500000 },           // your own context window per --for name
+    "show_fit": true                           // print the "Fits" line
+  }
 }
 ```
 

@@ -162,6 +162,27 @@ def tokens_data(report, *, verbose: bool = False, depth: int = 1, top: int = 10,
     return out
 
 
+def fit_data(report, targets) -> list[dict]:
+    """Whether the counted files fit each target's context window (see models.py)."""
+    from contextzip.models import fit
+
+    rows = []
+    for target in targets:
+        tokens, share = fit(report.total, target)
+        rows.append(
+            {
+                "target": target.key,
+                "name": target.name,
+                "window": target.window,
+                "tokens": tokens,
+                "share": round(share, 4),
+                "exact": target.exact and report.exact,
+                "fits": tokens <= target.window,
+            }
+        )
+    return rows
+
+
 def files_data(resolved, project_dir: Path, *, verbose: bool, git_mode: bool, tokens=None) -> dict:
     """The scan result. *tokens*, a TokenReport for the included files, adds real counts."""
     from contextzip.tokens import estimate_tokens

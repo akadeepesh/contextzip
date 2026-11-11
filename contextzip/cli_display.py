@@ -265,6 +265,40 @@ def print_most_tokens(tokens, *, n: int = 5, con: Console = console) -> None:
     info(literal("Most tokens: " + " · ".join(f"{rel} {prefix}{count:,}" for rel, count in top)), con=con)
 
 
+def _share_text(share: float) -> str:
+    if share < 0.01:
+        return "<1%"
+    return f"{round(share * 100)}%"
+
+
+def print_fit(fit_rows: list[dict], *, con: Console = console) -> None:
+    """
+    One line saying whether the ZIP fits each model's context window:
+    "Fits  Claude ≈23%  ·  ChatGPT 36%  ·  Gemini 5%". Estimated shares get
+    "≈". When any target is over, the line is a warning plus what to do.
+    """
+    if not fit_rows:
+        return
+    parts = []
+    too_big = []
+    for row in fit_rows:
+        text = f"{row['name']} {'' if row['exact'] else '≈'}{_share_text(row['share'])}"
+        if not row["fits"]:
+            text += ", too big"
+            too_big.append(row["name"])
+        parts.append(text)
+    line = literal("Fits  " + "  ·  ".join(parts))
+    if not too_big:
+        info(line, con=con)
+        return
+    warn(line, con=con)
+    names = too_big[0] if len(too_big) == 1 else ", ".join(too_big[:-1]) + " and " + too_big[-1]
+    info(
+        literal(f"Too big for {names}. Narrow it with contextzip include PATH, or see the largest folders with --verbose."),
+        con=con,
+    )
+
+
 # ---------------------------------------------------------------------------
 # File warnings (large / binary / skipped)
 # ---------------------------------------------------------------------------

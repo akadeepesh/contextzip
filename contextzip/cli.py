@@ -62,6 +62,7 @@ from contextzip.cli_display import (
     print_redaction_summary,
     print_root_notice,
     print_most_tokens,
+    print_fit,
 )
 from contextzip.report import write_scan_report, write_apply_report
 from contextzip.applier import (
@@ -80,6 +81,7 @@ from contextzip.cli_ai import (
 from contextzip.cli_onboard import onboard_api_key
 from contextzip import cleanup as cleanup_mod
 from contextzip import jsonout
+from contextzip import models as models_mod
 from contextzip import tokens as tokens_mod
 from contextzip import updater as updater_mod
 from contextzip import remote as remote_mod
@@ -200,6 +202,13 @@ def _modifier_options(f):
             default=None,
             metavar="REF",
             help="Branch, tag or commit to package with --from (default: the repo's default branch).",
+        ),
+        click.option(
+            "--for",
+            "fit_for",
+            multiple=True,
+            metavar="MODEL",
+            help="Show whether the ZIP fits this model: claude, chatgpt or gemini. Repeatable. Default: all.",
         ),
         click.option(
             "--json",
@@ -343,6 +352,7 @@ def main(
     here: bool,
     remote: str | None,
     ref: str | None,
+    fit_for: tuple[str, ...],
     json_output: bool,
 ) -> None:
     """
@@ -376,6 +386,7 @@ def main(
         here=here,
         remote=remote,
         ref=ref,
+        fit_for=list(fit_for),
         json_output=json_output,
     )
 
@@ -400,6 +411,7 @@ def cmd_exclude(
     here: bool,
     remote: str | None,
     ref: str | None,
+    fit_for: tuple[str, ...],
     json_output: bool,
 ) -> None:
     """
@@ -428,6 +440,7 @@ def cmd_exclude(
         here=here,
         remote=remote,
         ref=ref,
+        fit_for=list(fit_for),
         json_output=json_output,
     )
 
@@ -452,6 +465,7 @@ def cmd_include(
     here: bool,
     remote: str | None,
     ref: str | None,
+    fit_for: tuple[str, ...],
     json_output: bool,
 ) -> None:
     """
@@ -479,6 +493,7 @@ def cmd_include(
         here=here,
         remote=remote,
         ref=ref,
+        fit_for=list(fit_for),
         json_output=json_output,
     )
 
@@ -1915,6 +1930,7 @@ def _package(
     here: bool = False,
     remote: str | None = None,
     ref: str | None = None,
+    fit_for: list[str] | None = None,
 ) -> None:
     console.print()
     run_mode = "git-changes" if git_changes else ("prompt" if prompt else "standard")
@@ -1964,6 +1980,13 @@ def _package(
         warn(
             "Found the deprecated .contextzip.json — move it to .contextzip/config.json"
         )
+
+    # Checked before any scanning, so a typo in --for fails fast.
+    try:
+        fit_targets = models_mod.resolve(fit_for or None, project_cfg.tokens.windows)
+    except ValueError as exc:
+        err(str(exc))
+        raise SystemExit(1)
 
     # ── Detection ────────────────────────────────────────────────────────────
     with status("[cyan]Detecting project ecosystem…[/]"):
@@ -2070,6 +2093,7 @@ def _package(
         "files",
         jsonout.files_data(resolved, project_dir, verbose=verbose, git_mode=git_changes, tokens=token_report),
     )
+    jsonout.put("fit", jsonout.fit_data(token_report, fit_targets))
 
     # ── Dry run ──────────────────────────────────────────────────────────────
     if dry_run:
@@ -2090,6 +2114,8 @@ def _package(
             )
         else:
             print_scan_summary(resolved, project_dir, verbose, git_mode=git_changes, tokens=token_report)
+            if project_cfg.tokens.show_fit:
+                print_fit(jsonout.fit_data(token_report, fit_targets))
             print_file_warnings(
                 resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
             )
@@ -2127,6 +2153,7 @@ def _package(
 
         resolved.included = selected_paths
         token_report = _narrow_tokens(token_report, resolved, project_dir)
+        jsonout.put("fit", jsonout.fit_data(token_report, fit_targets))
         jsonout.put(
             "ai",
             {"prompt": prompt, "selected": [p.relative_to(project_dir).as_posix() for p in selected_paths]},
@@ -2161,6 +2188,8 @@ def _package(
     print_scan_and_pack(scan_label, scan_detail, result, tokens=token_report)
     if verbose:
         print_most_tokens(token_report)
+    if project_cfg.tokens.show_fit:
+        print_fit(jsonout.fit_data(token_report, fit_targets))
     print_file_warnings(
         resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
     )

@@ -57,6 +57,7 @@ These flags work on the main command **and** on `include` and `exclude`. Flags g
 | `--here` | | Only package the folder you're in. Paths in the ZIP stay relative to the project root. |
 | `--from REPO` | | Package a remote repository instead of the local project. See [Remote repositories](#remote-repositories). |
 | `--ref REF` | | Branch, tag or commit to package with `--from`. Defaults to the repository's default branch. |
+| `--for MODEL` | | Show whether the ZIP fits this model: `claude`, `chatgpt` or `gemini`. Repeatable. Default: all. See [Does it fit?](#does-it-fit). |
 | `--json` | | Print one JSON object instead of terminal output. Never prompts. See [JSON output](#json-output). |
 
 `--include` and `--exclude` (and the `include` / `exclude` subcommands) also work together with `--git-changes`, and are combined with `always_include` / `always_exclude` from `.contextzip/config.json`.
@@ -99,6 +100,28 @@ contextzip --no-clipboard                   # build the ZIP, skip clipboard
 ```
 
 The summary line ends with the token count (`46,210 tokens`), so you can tell whether the ZIP will fit before you upload it. It is counted with `o200k_base`, the tokenizer of OpenAI's current models, which ships with contextzip and works offline. Other vendors' tokenizers differ by some percent. If the tokenizer can't be loaded, the count falls back to an estimate from file sizes and is shown with `≈` (`≈ 46k tokens`). `--verbose` adds the files with the most tokens, and the report next to the ZIP breaks the count down by folder and by file. Counts are cached in `.contextzip/cache/`, so a second run only counts the files that changed.
+
+### Does it fit?
+
+After the summary, one line says how much of each chat app's context window the ZIP takes:
+
+```text
+  Fits  Claude ≈23%  ·  ChatGPT ≈36%  ·  Gemini ≈5%
+```
+
+| `--for` | Window | How the count is scaled |
+|---|---|---|
+| `claude` | 1,000,000 (current models on paid plans) | o200k × 1.20: Anthropic says o200k undercounts Claude's tokenizer by about 15–20% |
+| `chatgpt` | 256,000 (Plus, with reasoning) | o200k × 1.00 |
+| `gemini` | 1,000,000 (Google AI Pro and Ultra) | o200k × 1.00 |
+
+The windows are the apps' limits on their roughly $20-a-month plans, not the larger API limits, so "fits" doesn't over-promise. Every share is an estimate (`≈`), because no vendor publishes how its tokenizer compares with o200k for code. When a target is over 100% the line becomes a warning, with a hint to narrow the ZIP. `--for claude` limits the line to the models you use; repeat it for more than one.
+
+Set your own windows in `.contextzip/config.json`, for a different plan or a local model; a new name adds a target. `"show_fit": false` hides the line (`--json` still has `fit`):
+
+```json
+{ "tokens": { "windows": { "chatgpt": 400000, "local": 32000 }, "show_fit": true } }
+```
 
 ## Remote repositories
 
@@ -405,7 +428,7 @@ Every object has `ok`, `command`, `version`, `warnings` (strings) and `log` (eac
 
 | Command | Fields |
 |---|---|
-| `contextzip`, `include`, `exclude` | `mode`, `dry_run`, `project` (`root`, `kind`), `remote` (with `--from`), `detection`, `files` (counts, `included_bytes`, `estimated_tokens`, `tokens`, `included_files`, warnings; `excluded_files` with `--verbose`), `ai` (with `--prompt`), `zip` (path, sizes, `estimated_tokens`, `tokens`, `snapshot`, `redacted`; `null` on a dry run), `report`, `clipboard` |
+| `contextzip`, `include`, `exclude` | `mode`, `dry_run`, `project` (`root`, `kind`), `remote` (with `--from`), `detection`, `files` (counts, `included_bytes`, `estimated_tokens`, `tokens`, `included_files`, warnings; `excluded_files` with `--verbose`), `ai` (with `--prompt`), `zip` (path, sizes, `estimated_tokens`, `tokens`, `snapshot`, `redacted`; `null` on a dry run), `fit`, `report`, `clipboard` |
 | `apply-zip` | `project`, `plan` (`snapshot`, `remap`, `needs_decision`, `counts`, and `files`: each with `path`, `source`, `status`, `safe`, `reason`, `moved_from`, …), `result` (`written`, `skipped`, `removed`, `zip_kept`, `archived_to`; `null` when nothing was written), `report` |
 | `snapshots` | `project`, `snapshots` (`id`, `token`, `label`, `mode`, `files`, `status`, `created`) |
 | `stacks` | `stacks`, or `stack` when one is named (`name`, `slug`, `rules`, `markers`, `dependencies`, `manifests`, `extensions`, `excludes`) |
@@ -422,6 +445,8 @@ Every object has `ok`, `command`, `version`, `warnings` (strings) and `log` (eac
 | `by_dir` | Up to 12 top-level folders, largest first: `[{"path": "src/", "tokens": 30100}, …]`. Files in the project root are grouped as `"(root)"`. |
 | `top_files` | The 10 files with the most tokens: `[{"path": "src/app.py", "tokens": 9100}, …]`. |
 | `by_file` | Only with `--verbose`: every included file's count, `{"src/app.py": 9100, …}`. |
+
+`fit`, also on a dry run, has one entry per `--for` target: `{"target": "claude", "name": "Claude", "window": 1000000, "tokens": 277452, "share": 0.2775, "exact": false, "fits": true}`. `tokens` is the count scaled to that model, `share` is `tokens / window`, and `exact` is true only when the model is known to use o200k_base and the count isn't an estimate.
 
 When `--from` can't fetch a repository, the result also has `error_kind`: `invalid`, `not_found`, `private`, `too_big`, `rate_limited`, `auth` or `unavailable`.
 

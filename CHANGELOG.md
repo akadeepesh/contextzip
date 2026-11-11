@@ -1395,6 +1395,8 @@ This project uses [Semantic Versioning](https://semver.org/).
 - **`contextzip tokens [PATH…]`** shows where the tokens are, per folder
   with a bar for each, the largest files, and whether it fits each model,
   without writing anything. `--depth`, `--top`, `--for` and `--json`.
+- **MCP:** `package_project` and `package_repository` take `max_tokens`
+  and `trim`, and their results carry the token breakdown and model fit.
 
 ### Changed
 - **Real token counts.** The summary line, `--json`, the report and

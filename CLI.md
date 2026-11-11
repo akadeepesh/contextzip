@@ -441,14 +441,14 @@ Register it in your MCP client:
 
 | Tool | What it does |
 |---|---|
-| `package_project` | Package a local project (`include`, `exclude`, `git_changes`, `task`, `dry_run`) |
-| `package_repository` | Package a GitHub, GitLab or Bitbucket repository |
+| `package_project` | Package a local project (`include`, `exclude`, `git_changes`, `task`, `dry_run`, `max_tokens`, `trim`) |
+| `package_repository` | Package a GitHub, GitLab or Bitbucket repository (`ref`, `include`, `exclude`, `dry_run`, `max_tokens`, `trim`) |
 | `preview_apply` | What applying an AI's ZIP would do, writing nothing (read-only) |
 | `apply_changes` | Apply it: safe changes only by default, or `mode: "all"` (marked destructive) |
 | `open_pull_request` | `apply-zip --pr`; a dry run unless `dry_run: false` |
 | `list_snapshots` | A project's snapshots (read-only) |
 
-Each tool returns the same JSON as `--json` (see [JSON output](#json-output)), without the step-by-step log. The standalone builds (npm, Homebrew, Scoop) don't include the MCP server; install with pip for it.
+Each tool returns the same JSON as `--json` (see [JSON output](#json-output)), without the step-by-step log. For the packaging tools that includes `tokens` (exact counts per folder and file) and `fit` (whether it fits each model), so an agent can narrow a project before handing it on, or pass `max_tokens` and `trim` to keep it within a budget. The standalone builds (npm, Homebrew, Scoop) don't include the MCP server; install with pip for it.
 
 ## `contextzip setup-path`
 

@@ -15,6 +15,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 - [`contextzip apply-zip`](#contextzip-apply-zip)
 - [`contextzip watch`](#contextzip-watch)
 - [`contextzip config`](#contextzip-config)
+- [`contextzip tokens`](#contextzip-tokens) — where the tokens are, and whether it fits
 - [`contextzip stacks`](#contextzip-stacks) — the languages and frameworks it recognises
 - [`contextzip update`](#contextzip-update)
 - [`contextzip setup-path`](#contextzip-setup-path)
@@ -33,6 +34,8 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 | `contextzip exclude PATTERN…` | Package everything **except** these patterns |
 | `contextzip --prompt "task"` | Let Gemini pick only the files relevant to a task |
 | `contextzip --git-changes` | Package only modified / added / untracked files |
+| `contextzip tokens [PATH…]` | Show where the tokens are, per folder and file, and whether it fits each model |
+| `contextzip --max-tokens 150k --trim` | Keep the ZIP within a token budget, leaving out the least important files |
 | `contextzip apply-zip [ZIP]` | Write an AI-returned ZIP back into your project, safely (or `--pr`: as a GitHub pull request) |
 | `contextzip watch -- COMMAND` | Run a command and package debug context when an error appears |
 | `contextzip config …` | Gemini key, workspace location, visual include/exclude UI |
@@ -57,6 +60,9 @@ These flags work on the main command **and** on `include` and `exclude`. Flags g
 | `--here` | | Only package the folder you're in. Paths in the ZIP stay relative to the project root. |
 | `--from REPO` | | Package a remote repository instead of the local project. See [Remote repositories](#remote-repositories). |
 | `--ref REF` | | Branch, tag or commit to package with `--from`. Defaults to the repository's default branch. |
+| `--max-tokens N` | | A token budget: `150000`, `150k` or `1.5m`. Over it, nothing is written and the command exits 1; a dry run only reports it. Overrides `tokens.max` in the project config. See [Token budget](#token-budget). |
+| `--trim` | | With a budget: leave out the least important files until the ZIP fits. |
+| `--for MODEL` | | Show whether the ZIP fits this model: `claude`, `chatgpt` or `gemini`. Repeatable. Default: all. See [Does it fit?](#does-it-fit). |
 | `--json` | | Print one JSON object instead of terminal output. Never prompts. See [JSON output](#json-output). |
 
 `--include` and `--exclude` (and the `include` / `exclude` subcommands) also work together with `--git-changes`, and are combined with `always_include` / `always_exclude` from `.contextzip/config.json`.
@@ -98,7 +104,53 @@ contextzip -o ~/Desktop/project.zip         # write to an exact path
 contextzip --no-clipboard                   # build the ZIP, skip clipboard
 ```
 
-The summary line ends with an estimated token count (`≈ 46k tokens`), so you can tell whether the ZIP will fit before you upload it. It's bytes of text divided by four: a rough guide, since every model counts differently.
+The summary line ends with the token count (`46,210 tokens`), so you can tell whether the ZIP will fit before you upload it. It is counted with `o200k_base`, the tokenizer of OpenAI's current models, which ships with contextzip and works offline. Other vendors' tokenizers differ by some percent. If the tokenizer can't be loaded, the count falls back to an estimate from file sizes and is shown with `≈` (`≈ 46k tokens`). `--verbose` adds the files with the most tokens, and the report next to the ZIP breaks the count down by folder and by file. Counts are cached in `.contextzip/cache/`, so a second run only counts the files that changed.
+
+### Does it fit?
+
+After the summary, one line says how much of each chat app's context window the ZIP takes:
+
+```text
+  Fits  Claude ≈23%  ·  ChatGPT ≈36%  ·  Gemini ≈5%
+```
+
+| `--for` | Window | How the count is scaled |
+|---|---|---|
+| `claude` | 1,000,000 (current models on paid plans) | o200k × 1.20: Anthropic says o200k undercounts Claude's tokenizer by about 15–20% |
+| `chatgpt` | 256,000 (Plus, with reasoning) | o200k × 1.00 |
+| `gemini` | 1,000,000 (Google AI Pro and Ultra) | o200k × 1.00 |
+
+The windows are the apps' limits on their roughly $20-a-month plans, not the larger API limits, so "fits" doesn't over-promise. Every share is an estimate (`≈`), because no vendor publishes how its tokenizer compares with o200k for code. When a target is over 100% the line becomes a warning, with a hint to narrow the ZIP. `--for claude` limits the line to the models you use; repeat it for more than one.
+
+Set your own windows in `.contextzip/config.json`, for a different plan or a local model; a new name adds a target. `"show_fit": false` hides the line (`--json` still has `fit`):
+
+```json
+{ "tokens": { "windows": { "chatgpt": 400000, "local": 32000 }, "show_fit": true } }
+```
+
+### Token budget
+
+`--max-tokens N` (or `"tokens": {"max": N}` in `.contextzip/config.json`; the flag wins) caps the ZIP. When the files come to more, nothing is written, the command exits 1, and it shows where the tokens are:
+
+```text
+✗ 46,210 tokens is over the 30,000 budget by 16,210.
+    src/                30,100
+    tests/              12,000
+    …
+  Leave some out with contextzip exclude PATH, or add --trim to drop the least important files.
+```
+
+A dry run prints the same, but exits 0 (`"over_budget": true` in `--json`).
+
+`--trim` leaves files out until the ZIP fits, in this order, the largest first within each group:
+
+1. Generated or vendored: anything under `generated/`, `__generated__/`, `gen/`, `vendor/`, `third_party/`, `fixtures/`, `__snapshots__/`, `snapshots/`, `testdata/`, `mocks/` or `__mocks__/`, and `*.min.js`, `*.min.css`, `*.snap`, `*.lock`, `*.map`, `*.svg`.
+2. Data and documents: `.json` (but never `package.json`, `tsconfig.json`, `composer.json`, `deno.json` or `*.config.json`), `.csv`, `.tsv`, `.xml`, `.txt`, `.ipynb`.
+3. Tests: anything under `test/`, `tests/`, `__tests__/`, `spec/`, `specs/` or `e2e/`, and `test_*.py`, `*_test.py`, `*_test.go`, `*.test.*`, `*.spec.*`.
+4. Documentation: `.md`, `.mdx` and `.rst` outside the project root.
+5. Everything else.
+
+It never drops a file in the project root, a file you named with `include` / `--include`, or a file the config's `always_include` brings in. If the budget can't be met without those, nothing is dropped and the command fails. What was left out is listed in the report under "Trimmed to fit", line by line with `--verbose`, and in `--json` as `trimmed`.
 
 ## Remote repositories
 
@@ -281,6 +333,38 @@ contextzip snapshots [--json]
 
 Every package is kept as a numbered snapshot in `.contextzip/snapshots/` (local, never uploaded): a copy of the ZIP plus a manifest of what was sent. Each ZIP's `CONTEXTZIP.md` names its snapshot, e.g. `Snapshot: 14-k3f9a2`. Snapshots are kept while they're among the newest `snapshots.keep` (10), younger than `snapshots.max_age_days` (14), or still awaited by a reply in the inbox.
 
+## `contextzip tokens`
+
+Show where the tokens are, without writing anything: the total, each folder's share, the largest files, and whether it fits each model.
+
+```bash
+contextzip tokens [PATH…] [--top N] [--depth N] [--for MODEL] [--json]
+```
+
+```text
+✓ 44 files  · 46,210 tokens (o200k_base)
+
+  src/                   30,100  ████████████████░░░░░░░░   65%
+  tests/                 12,000  ██████░░░░░░░░░░░░░░░░░░   26%
+  (root)                  4,110  ██░░░░░░░░░░░░░░░░░░░░░░    9%
+
+  Largest files
+  src/app.py              9,100
+  src/db.py               4,020
+
+  Fits  Claude ≈6%  ·  ChatGPT ≈18%  ·  Gemini ≈5%
+```
+
+| Flag | Description |
+|---|---|
+| `PATH…` | Only count these paths, exactly like `contextzip include PATH`. |
+| `--top N` | How many of the largest files to list (default 15). |
+| `--depth N` | Group folders this many levels deep (default 1): `--depth 2` splits `src/` into `src/app/`, `src/db/`, … |
+| `--for MODEL` | Only these models in the "Fits" line. Repeatable. |
+| `--json` | `{"tokens": {…}, "fit": […]}`: `tokens` as in [JSON output](#json-output), with every folder at `--depth` and `--top` files. |
+
+The bars are drawn only on a terminal; piped output has the same rows without them. It uses the same rules as `contextzip`, including `.contextzip/config.json`.
+
 ## `contextzip stacks`
 
 List the languages and frameworks contextzip recognises, and what marks a project as each one.
@@ -357,14 +441,14 @@ Register it in your MCP client:
 
 | Tool | What it does |
 |---|---|
-| `package_project` | Package a local project (`include`, `exclude`, `git_changes`, `task`, `dry_run`) |
-| `package_repository` | Package a GitHub, GitLab or Bitbucket repository |
+| `package_project` | Package a local project (`include`, `exclude`, `git_changes`, `task`, `dry_run`, `max_tokens`, `trim`) |
+| `package_repository` | Package a GitHub, GitLab or Bitbucket repository (`ref`, `include`, `exclude`, `dry_run`, `max_tokens`, `trim`) |
 | `preview_apply` | What applying an AI's ZIP would do, writing nothing (read-only) |
 | `apply_changes` | Apply it: safe changes only by default, or `mode: "all"` (marked destructive) |
 | `open_pull_request` | `apply-zip --pr`; a dry run unless `dry_run: false` |
 | `list_snapshots` | A project's snapshots (read-only) |
 
-Each tool returns the same JSON as `--json` (see [JSON output](#json-output)), without the step-by-step log. The standalone builds (npm, Homebrew, Scoop) don't include the MCP server; install with pip for it.
+Each tool returns the same JSON as `--json` (see [JSON output](#json-output)), without the step-by-step log. For the packaging tools that includes `tokens` (exact counts per folder and file) and `fit` (whether it fits each model), so an agent can narrow a project before handing it on, or pass `max_tokens` and `trim` to keep it within a budget. The standalone builds (npm, Homebrew, Scoop) don't include the MCP server; install with pip for it.
 
 ## `contextzip setup-path`
 
@@ -405,12 +489,28 @@ Every object has `ok`, `command`, `version`, `warnings` (strings) and `log` (eac
 
 | Command | Fields |
 |---|---|
-| `contextzip`, `include`, `exclude` | `mode`, `dry_run`, `project` (`root`, `kind`), `remote` (with `--from`), `detection`, `files` (counts, `included_bytes`, `estimated_tokens`, `included_files`, warnings; `excluded_files` with `--verbose`), `ai` (with `--prompt`), `zip` (path, sizes, `estimated_tokens`, `snapshot`, `redacted`; `null` on a dry run), `report`, `clipboard` |
+| `contextzip`, `include`, `exclude` | `mode`, `dry_run`, `project` (`root`, `kind`), `remote` (with `--from`), `detection`, `files` (counts, `included_bytes`, `estimated_tokens`, `tokens`, `included_files`, warnings; `excluded_files` with `--verbose`), `ai` (with `--prompt`), `zip` (path, sizes, `estimated_tokens`, `tokens`, `snapshot`, `redacted`; `null` on a dry run), `fit`, `report`, `clipboard` |
 | `apply-zip` | `project`, `plan` (`snapshot`, `remap`, `needs_decision`, `counts`, and `files`: each with `path`, `source`, `status`, `safe`, `reason`, `moved_from`, …), `result` (`written`, `skipped`, `removed`, `zip_kept`, `archived_to`; `null` when nothing was written), `report` |
+| `tokens` | `project`, `detection`, `tokens` (as below, with every folder at `--depth` and `--top` files), `fit` |
 | `snapshots` | `project`, `snapshots` (`id`, `token`, `label`, `mode`, `files`, `status`, `created`) |
 | `stacks` | `stacks`, or `stack` when one is named (`name`, `slug`, `rules`, `markers`, `dependencies`, `manifests`, `extensions`, `excludes`) |
 
 `detection` has `ecosystems`, `display`, `confidence`, `rules`, `sources` (the folder each stack was found in) and `by_file_type` (stacks recognised only from file types, because the project has no project file).
+
+`tokens`, in both `files` and `zip`, says where the tokens are. `estimated_tokens` next to it is the same number as `total`:
+
+| Field | Contents |
+|---|---|
+| `total` | Tokens in all included files. Binary files count 0. |
+| `method` | `"o200k_base"` when counted with the tokenizer, `"estimate"` when estimated from file sizes. |
+| `exact` | `true` when `method` is `"o200k_base"`. |
+| `by_dir` | Up to 12 top-level folders, largest first: `[{"path": "src/", "tokens": 30100}, …]`. Files in the project root are grouped as `"(root)"`. |
+| `top_files` | The 10 files with the most tokens: `[{"path": "src/app.py", "tokens": 9100}, …]`. |
+| `by_file` | Only with `--verbose`: every included file's count, `{"src/app.py": 9100, …}`. |
+
+With a budget, the result also has `over_budget` (`true` when the files are over it; on a real run that is a failure with `ok: false`), and with `--trim`, `trimmed`: the files left out, `[{"path": "tests/fixtures/big.json", "tokens": 9100}, …]`, in the order they were dropped. `files` then describes what's left.
+
+`fit`, also on a dry run, has one entry per `--for` target: `{"target": "claude", "name": "Claude", "window": 1000000, "tokens": 277452, "share": 0.2775, "exact": false, "fits": true}`. `tokens` is the count scaled to that model, `share` is `tokens / window`, and `exact` is true only when the model is known to use o200k_base and the count isn't an estimate.
 
 When `--from` can't fetch a repository, the result also has `error_kind`: `invalid`, `not_found`, `private`, `too_big`, `rate_limited`, `auth` or `unavailable`.
 
@@ -441,6 +541,7 @@ Settings: `GITHUB_TOKEN` (optional, for GitHub's higher rate limit; prefer one t
 | `.contextzip/output/watch/` | Debug packages from `contextzip watch` |
 | `.contextzip/inbox/` | Where `apply-zip` looks for a returned ZIP when you don't pass a path |
 | `.contextzip/config.json` | Project config: `always_include`, `always_exclude`, `workspace_location`, `ai`, size limits |
+| `.contextzip/cache/` | Token counts per file, reused while a file is unchanged |
 | `.contextzip/snapshots/` | Numbered snapshots: a copy of each ZIP you sent and its manifest — what `apply-zip` merges against |
 | Your user cache folder | Repositories fetched with `--from`, one folder per commit, with the ZIP next to each (see [Remote repositories](#remote-repositories)) |
 

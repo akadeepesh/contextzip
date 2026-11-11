@@ -9,7 +9,7 @@ from click.testing import CliRunner
 from contextzip import cli
 from contextzip.remote import FetchedRemote, RemoteSpec
 from contextzip.tokens import estimate_tokens, format_tokens
-from tests.helpers import TempProject
+from tests.helpers import TempProject, backdate
 
 
 class CliTestCase(TempProject):
@@ -225,3 +225,130 @@ class TokenTests(TempProject):
         self.assertEqual(format_tokens(4_249), "≈ 4.2k tokens")
         self.assertEqual(format_tokens(46_400), "≈ 46k tokens")
         self.assertEqual(format_tokens(999_700), "≈ 1.0M tokens")
+
+
+class TokenOutputTests(CliTestCase):
+    """Release 0.8: the real token count in every result."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.write("src/util.ts", "export function add(a: number, b: number) { return a + b; }\n")
+        self.write("README.md", "# demo\n\nA small project.\n")
+        backdate(self.root)  # the token cache skips files changed in the last two seconds
+
+    def expected_method(self) -> str:
+        from contextzip.tokens import METHOD_ESTIMATE, METHOD_EXACT, tokenizer_available
+
+        return METHOD_EXACT if tokenizer_available() else METHOD_ESTIMATE
+
+    def assert_tokens_block(self, block: dict, estimated: int, *, verbose: bool) -> None:
+        self.assertEqual(block["total"], estimated)
+        self.assertEqual(block["method"], self.expected_method())
+        self.assertEqual(block["exact"], block["method"] == "o200k_base")
+        self.assertEqual(block["by_dir"][0]["path"], "src/")
+        self.assertEqual(sum(d["tokens"] for d in block["by_dir"]), block["total"])
+        self.assertLessEqual(len(block["top_files"]), 10)
+        self.assertEqual(
+            {f["path"] for f in block["top_files"]}, {"package.json", "src/index.ts", "src/util.ts", "README.md"}
+        )
+        if verbose:
+            self.assertEqual(sum(block["by_file"].values()), block["total"])
+            self.assertEqual(sorted(block["by_file"]), ["README.md", "package.json", "src/index.ts", "src/util.ts"])
+        else:
+            self.assertNotIn("by_file", block)
+
+    def test_package_json_has_tokens_in_files_and_zip(self):
+        code, data = self.run_json("--no-clipboard")
+        self.assertEqual(code, 0)
+        self.assert_tokens_block(data["files"]["tokens"], data["files"]["estimated_tokens"], verbose=False)
+        self.assert_tokens_block(data["zip"]["tokens"], data["zip"]["estimated_tokens"], verbose=False)
+        self.assertEqual(data["zip"]["tokens"]["total"], data["files"]["tokens"]["total"])
+
+    def test_by_file_only_with_verbose(self):
+        code, data = self.run_json("--no-clipboard", "--verbose")
+        self.assertEqual(code, 0)
+        self.assert_tokens_block(data["files"]["tokens"], data["files"]["estimated_tokens"], verbose=True)
+        self.assert_tokens_block(data["zip"]["tokens"], data["zip"]["estimated_tokens"], verbose=True)
+
+    def test_dry_run_has_tokens(self):
+        code, data = self.run_json("--dry-run")
+        self.assertEqual(code, 0)
+        self.assert_tokens_block(data["files"]["tokens"], data["files"]["estimated_tokens"], verbose=False)
+
+    def test_dry_run_never_creates_the_workspace(self):
+        code, _data = self.run_json("--dry-run")
+        self.assertEqual(code, 0)
+        result = CliRunner().invoke(cli.main, ["--dry-run"], catch_exceptions=False)
+        self.assertEqual(result.exit_code, 0)
+        self.assertFalse((self.root / ".contextzip").exists())
+
+    def test_dry_run_uses_an_existing_workspace_cache(self):
+        (self.root / ".contextzip").mkdir()
+        code, _data = self.run_json("--dry-run")
+        self.assertEqual(code, 0)
+        self.assertTrue((self.root / ".contextzip" / "cache" / "tokens.json").is_file())
+
+    def test_output_flag_never_creates_the_cache(self):
+        out = self.tmp / "out" / "x.zip"
+        code, data = self.run_json("--no-clipboard", "-o", str(out))
+        self.assertEqual(code, 0)
+        self.assertIn("tokens", data["zip"])
+        self.assertFalse((self.root / ".contextzip" / "cache").exists())
+
+    def test_package_run_caches_counts(self):
+        code, _data = self.run_json("--no-clipboard")
+        self.assertEqual(code, 0)
+        cached = json.loads((self.root / ".contextzip" / "cache" / "tokens.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(cached["files"]), {"package.json", "src/index.ts", "src/util.ts", "README.md"})
+
+    def test_report_and_guide_carry_the_count(self):
+        import zipfile
+
+        code, data = self.run_json("--no-clipboard")
+        self.assertEqual(code, 0)
+        block = data["zip"]["tokens"]
+        label = format_tokens(block["total"], exact=block["exact"])
+
+        with open(data["report"], encoding="utf-8") as f:
+            report = f.read()
+        self.assertIn(f"tokens   : {label}, counted with {block['method']}", report)
+        self.assertIn(f"Tokens ({block['method']})", report)
+        self.assertRegex(report, r"\n  src/\s+[\d,]+\s+\d+%\n")
+        self.assertRegex(report, r"\n  src/util\.ts\s+\d+ B\s+[\d,]+\n")
+
+        with zipfile.ZipFile(data["zip"]["path"]) as zf:
+            guide = zf.read("CONTEXTZIP.md").decode("utf-8")
+        self.assertIn(f"Size: 4 files, {label} ({block['method']}).", guide)
+
+    def test_terminal_line_shows_the_count(self):
+        from contextzip.tokens import tokenizer_available
+
+        result = CliRunner().invoke(cli.main, ["--dry-run"], catch_exceptions=False)
+        self.assertEqual(result.exit_code, 0)
+        scan_line = next(line for line in result.stdout.splitlines() if "Scanned" in line)
+        self.assertRegex(scan_line, r"\d tokens")
+        if tokenizer_available():
+            self.assertNotIn("≈", scan_line)
+
+    def test_verbose_lists_most_tokens(self):
+        result = CliRunner().invoke(cli.main, ["--dry-run", "--verbose"], catch_exceptions=False)
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Most tokens: src/util.ts", " ".join(result.stdout.split()))
+
+    def test_without_the_tokenizer_it_says_estimate(self):
+        from contextzip import tokens
+
+        with mock.patch.object(tokens, "tokenizer_available", return_value=False):
+            code, data = self.run_json("--no-clipboard")
+            result = CliRunner().invoke(cli.main, ["--dry-run"], catch_exceptions=False)
+        self.assertEqual(code, 0)
+        self.assertEqual(data["files"]["tokens"]["method"], "estimate")
+        self.assertFalse(data["zip"]["tokens"]["exact"])
+        self.assertIn("≈", result.stdout)
+
+    def test_bracketed_paths_print_safely(self):
+        self.write("app/[id]/page.tsx", "export default function Page() { return null; }\n" * 40)
+        self.write("app/[/b]/x.ts", "export const b = 2;\n")
+        result = CliRunner().invoke(cli.main, ["--dry-run", "--verbose"], catch_exceptions=False)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("app/[id]/page.tsx", result.stdout)

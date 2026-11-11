@@ -38,9 +38,15 @@ def write_scan_report(
     large_file_warn_bytes: int,
     redacted: list[tuple[Path, list[str]]] | None = None,
     skipped_in_zip: list[tuple[Path, str]] | None = None,
+    tokens=None,
+    trimmed: list[tuple[str, int]] | None = None,
 ) -> Path:
     """
     Write the full scan/package report next to *zip_path*.
+
+    *tokens*, a TokenReport for the included files, adds real counts: a
+    per-folder breakdown and a token column in the file list. *trimmed*,
+    [(path, tokens)] that --trim left out, gets its own section.
 
     Returns the report path. Never raises — a failure to write the report
     should never fail the actual packaging run, so callers may wrap this
@@ -74,12 +80,21 @@ def write_scan_report(
     w("Files")
     if mode != "git-changes":
         w(f"  scanned  : {total + len(resolved.skipped)}")
-    w(f"  included : {len(resolved.included)} ({human_size(included_size)}, {format_tokens(estimate_tokens(text_size))})")
+    token_text = tokens.label() if tokens is not None else format_tokens(estimate_tokens(text_size))
+    w(f"  included : {len(resolved.included)} ({human_size(included_size)}, {token_text})")
+    if tokens is not None:
+        w(f"  tokens   : {tokens.label()}, counted with {tokens.method}")
     if mode != "git-changes":
         w(f"  excluded : {len(resolved.excluded)}")
     if resolved.skipped:
         w(f"  skipped  : {len(resolved.skipped)}")
     w("")
+
+    if tokens is not None and tokens.by_file:
+        w(f"Tokens ({tokens.method})")
+        for path, n in tokens.by_dir(1):
+            w(f"  {path:<28} {n:>10,}  {_percent(n, tokens.total):>4}")
+        w("")
 
     if mode != "git-changes" and resolved.excluded:
         w("Excluded directories / files")
@@ -89,14 +104,25 @@ def write_scan_report(
         w("")
 
     w("Included files")
+    by_file = tokens.by_file if tokens is not None else None
     for p in sorted(resolved.included):
         try:
             rel = p.relative_to(project_dir).as_posix()
             size = human_size(resolved.size_of(p))
         except ValueError:
             rel, size = str(p), "?"
-        w(f"  {rel:<60} {size}")
+        if by_file is None:
+            w(f"  {rel:<60} {size}")
+        else:
+            count = by_file.get(rel)
+            w(f"  {rel:<60} {size:>10} {'' if count is None else f'{count:,}':>10}")
     w("")
+
+    if trimmed:
+        w(f"Trimmed to fit ({len(trimmed)} file{'' if len(trimmed) == 1 else 's'}, {sum(n for _r, n in trimmed):,} tokens)")
+        for rel, n in trimmed:
+            w(f"  {rel:<60} {n:>10,}")
+        w("")
 
     if ai_prompt is not None:
         w("AI selection")
@@ -158,6 +184,10 @@ def write_scan_report(
     except OSError:
         return None
     return report_path
+
+
+def _percent(part: int, total: int) -> str:
+    return f"{round(part * 100 / total)}%" if total else "0%"
 
 
 def write_apply_report(

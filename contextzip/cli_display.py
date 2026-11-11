@@ -21,6 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 
 from contextzip import jsonout
 from contextzip.clipboard import Tier
@@ -77,6 +78,17 @@ def status(text: str, *, con: Console = console):
 
         return contextlib.nullcontext()
     return con.status(text, spinner="dots")
+
+
+def literal(text: str) -> str:
+    """
+    *text* made safe to pass to ok/warn/err/info when it holds file paths:
+    a path like "app/[id]/page.tsx" must not be read as Rich markup.
+    Unchanged under --json, which collects plain text.
+    """
+    if jsonout.active() is not None:
+        return text
+    return escape(text)
 
 
 def info(text: str, *, con: Console = console) -> None:
@@ -187,7 +199,7 @@ def print_git_verbose_files(changes, *, con: Console = console) -> None:
         ("untracked", changes.untracked, "cyan"),
     ):
         for rel in paths:
-            con.print(f"  [{colour}]·[/] [dim]{rel}[/] [dim]({category})[/]")
+            con.print(f"  [{colour}]·[/] [dim]{escape(str(rel))}[/] [dim]({category})[/]")
 
 
 # ---------------------------------------------------------------------------
@@ -216,14 +228,21 @@ def print_scan_summary(
     verbose: bool,
     *,
     git_mode: bool = False,
+    tokens=None,
     con: Console = console,
 ) -> None:
-    """Scan-only line, used when no packaging happens (dry runs)."""
+    """
+    Scan-only line, used when no packaging happens (dry runs). *tokens*, a
+    TokenReport for the included files, replaces the byte-based estimate.
+    """
     label, detail = scan_label_and_detail(resolved, git_mode=git_mode)
-    binary = set(resolved.binary_files)
-    text_bytes = sum(resolved.size_of(p) for p in resolved.included if p not in binary)
-    tokens = format_tokens(estimate_tokens(text_bytes))
-    ok(label, f"{detail}, {tokens}" if detail else tokens, con=con)
+    if tokens is not None:
+        token_text = tokens.label()
+    else:
+        binary = set(resolved.binary_files)
+        text_bytes = sum(resolved.size_of(p) for p in resolved.included if p not in binary)
+        token_text = format_tokens(estimate_tokens(text_bytes))
+    ok(label, f"{detail}, {token_text}" if detail else token_text, con=con)
 
     if resolved.skipped and not verbose:
         info(f"{len(resolved.skipped)} file(s) skipped — see report", con=con)
@@ -232,7 +251,92 @@ def print_scan_summary(
         for p in sorted(resolved.included):
             size_str = human_size(resolved.size_of(p))
             rel = p.relative_to(project_dir).as_posix()
-            con.print(f"  [green]·[/] {rel}  [dim]{size_str}[/]")
+            con.print(f"  [green]·[/] {escape(rel)}  [dim]{size_str}[/]")
+        if tokens is not None:
+            print_most_tokens(tokens, con=con)
+
+
+def print_most_tokens(tokens, *, n: int = 5, con: Console = console) -> None:
+    """For --verbose: the files with the most tokens, on one line."""
+    top = [(rel, count) for rel, count in tokens.top_files(n) if count > 0]
+    if not top:
+        return
+    prefix = "" if tokens.exact else "≈ "
+    info(literal("Most tokens: " + " · ".join(f"{rel} {prefix}{count:,}" for rel, count in top)), con=con)
+
+
+def _share_text(share: float) -> str:
+    if share < 0.01:
+        return "<1%"
+    return f"{round(share * 100)}%"
+
+
+def print_fit(fit_rows: list[dict], *, con: Console = console) -> None:
+    """
+    One line saying whether the ZIP fits each model's context window:
+    "Fits  Claude ≈23%  ·  ChatGPT 36%  ·  Gemini 5%". Estimated shares get
+    "≈". When any target is over, the line is a warning plus what to do.
+    """
+    if not fit_rows:
+        return
+    parts = []
+    too_big = []
+    for row in fit_rows:
+        text = f"{row['name']} {'' if row['exact'] else '≈'}{_share_text(row['share'])}"
+        if not row["fits"]:
+            text += ", too big"
+            too_big.append(row["name"])
+        parts.append(text)
+    line = literal("Fits  " + "  ·  ".join(parts))
+    if not too_big:
+        info(line, con=con)
+        return
+    warn(line, con=con)
+    names = too_big[0] if len(too_big) == 1 else ", ".join(too_big[:-1]) + " and " + too_big[-1]
+    info(
+        literal(f"Too big for {names}. Narrow it with contextzip include PATH, or see the largest folders with --verbose."),
+        con=con,
+    )
+
+
+_BAR_CELLS = 24
+_MAX_FOLDER_ROWS = 30
+
+
+def print_token_breakdown(tokens, *, depth: int = 1, top: int = 15, con: Console = console) -> None:
+    """
+    `contextzip tokens`: the total, then folders with a bar for their share
+    and the largest files. Bars only on a terminal; piped output gets the
+    same rows without them.
+    """
+    n = len(tokens.by_file)
+    ok(f"{n} file{'' if n == 1 else 's'}", f"{tokens.label()} ({tokens.method})", con=con)
+    if jsonout.active() is not None or not tokens.by_file:
+        return
+
+    folders = tokens.by_dir(depth)
+    files = tokens.top_files(top)
+    shown = folders[:_MAX_FOLDER_ROWS]
+    width = min(48, max([16, *(len(path) for path, _ in shown), *(len(path) for path, _ in files)]))
+    bars = con.is_terminal
+    total = tokens.total
+
+    con.print()
+    for path, count in shown:
+        share = count / total if total else 0.0
+        cells = round(share * _BAR_CELLS)
+        bar = f"{'█' * cells}{'░' * (_BAR_CELLS - cells)}  " if bars else ""
+        con.print(f"  {escape(f'{path:<{width}}')} {count:>10,}  {bar}{_share_text(share):>4}", highlight=False)
+    if len(folders) > len(shown):
+        more = len(folders) - len(shown)
+        con.print(f"  [dim]and {more} more folder{'' if more == 1 else 's'} (all of them are in --json)[/]")
+
+    if files:
+        con.print()
+        con.print("  Largest files")
+        for path, count in files:
+            con.print(f"  {escape(f'{path:<{width}}')} {count:>10,}", highlight=False)
+    con.print()
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +417,7 @@ def print_scan_and_pack(
     scan_detail: str | None,
     result,
     *,
+    tokens=None,
     con: Console = console,
 ) -> None:
     """
@@ -325,10 +430,13 @@ def print_scan_and_pack(
         if result.grew
         else f"↓{result.compression_pct} smaller"
     )
+    if tokens is None:
+        tokens = getattr(result, "tokens", None)
+    token_text = tokens.label() if tokens is not None else format_tokens(result.estimated_tokens)
     pack_detail = (
         f"{human_size(result.uncompressed_bytes)} → "
         f"{human_size(result.compressed_bytes)}, {size_detail}, "
-        f"{format_tokens(result.estimated_tokens)}"
+        f"{token_text}"
     )
     detail = f"{scan_detail}, {pack_detail}" if scan_detail else pack_detail
     ok(f"{label} & Packed {result.file_count} files", detail, con=con)
@@ -395,7 +503,7 @@ def print_ai_selection(
                 size = human_size(p.stat().st_size)
             except (ValueError, OSError):
                 rel, size = str(p), "?"
-            con.print(f"  [cyan]·[/] {rel}  [dim]{size}[/]")
+            con.print(f"  [cyan]·[/] {escape(rel)}  [dim]{size}[/]")
 
 
 # ---------------------------------------------------------------------------

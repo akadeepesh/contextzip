@@ -7,8 +7,8 @@ lines from cli_display.py are collected instead of printed, nothing ever
 prompts, and the command prints exactly one object when it finishes —
 whether it succeeded or not:
 
-    {"ok": true,  "command": "package", "version": "0.7.0", ..., "warnings": [], "log": [...]}
-    {"ok": false, "command": "package", "version": "0.7.0", "error": "…", "warnings": [], "log": [...]}
+    {"ok": true,  "command": "package", "version": "0.8.0", ..., "warnings": [], "log": [...]}
+    {"ok": false, "command": "package", "version": "0.8.0", "error": "…", "warnings": [], "log": [...]}
 
 The exit code matches "ok": 0 when it's true, non-zero when it's false.
 
@@ -142,15 +142,58 @@ def detection_data(detection) -> dict:
     }
 
 
-def files_data(resolved, project_dir: Path, *, verbose: bool, git_mode: bool) -> dict:
+def tokens_data(report, *, verbose: bool = False, depth: int = 1, top: int = 10, max_dirs: int | None = 12) -> dict:
+    """
+    A TokenReport (see tokens.py) as JSON: the total, how it was counted,
+    the largest folders and files, and with *verbose* every file's count.
+    """
+    by_dir = report.by_dir(depth)
+    if max_dirs is not None:
+        by_dir = by_dir[:max_dirs]
+    out: dict = {
+        "total": report.total,
+        "method": report.method,
+        "exact": report.exact,
+        "by_dir": [{"path": path, "tokens": n} for path, n in by_dir],
+        "top_files": [{"path": path, "tokens": n} for path, n in report.top_files(top)],
+    }
+    if verbose:
+        out["by_file"] = dict(report.by_file)
+    return out
+
+
+def fit_data(report, targets) -> list[dict]:
+    """Whether the counted files fit each target's context window (see models.py)."""
+    from contextzip.models import fit
+
+    rows = []
+    for target in targets:
+        tokens, share = fit(report.total, target)
+        rows.append(
+            {
+                "target": target.key,
+                "name": target.name,
+                "window": target.window,
+                "tokens": tokens,
+                "share": round(share, 4),
+                "exact": target.exact and report.exact,
+                "fits": tokens <= target.window,
+            }
+        )
+    return rows
+
+
+def files_data(resolved, project_dir: Path, *, verbose: bool, git_mode: bool, tokens=None) -> dict:
+    """The scan result. *tokens*, a TokenReport for the included files, adds real counts."""
     from contextzip.tokens import estimate_tokens
 
     binary = set(resolved.binary_files)
     sizes = {p: resolved.size_of(p) for p in resolved.included}
+    estimated = tokens.total if tokens is not None else estimate_tokens(sum(n for p, n in sizes.items() if p not in binary))
     out: dict = {
         "included": len(resolved.included),
         "included_bytes": sum(sizes.values()),
-        "estimated_tokens": estimate_tokens(sum(n for p, n in sizes.items() if p not in binary)),
+        "estimated_tokens": estimated,
         "included_files": [_rel(p, project_dir) for p in sorted(resolved.included)],
         "large_files": [{"path": _rel(p, project_dir), "bytes": n} for p, n in resolved.large_files],
         "binary_files": [_rel(p, project_dir) for p in resolved.binary_files],
@@ -161,11 +204,13 @@ def files_data(resolved, project_dir: Path, *, verbose: bool, git_mode: bool) ->
         out["excluded"] = len(resolved.excluded)
     if verbose:
         out["excluded_files"] = [_rel(p, project_dir) for p in sorted(resolved.excluded)]
+    if tokens is not None:
+        out["tokens"] = tokens_data(tokens, verbose=verbose)
     return out
 
 
-def package_data(result, project_dir: Path) -> dict:
-    return {
+def package_data(result, project_dir: Path, *, verbose: bool = False) -> dict:
+    out = {
         "path": str(result.zip_path),
         "files": result.file_count,
         "bytes": result.uncompressed_bytes,
@@ -176,6 +221,9 @@ def package_data(result, project_dir: Path) -> dict:
         "redacted": [{"path": rel.as_posix(), "patterns": names} for rel, names in result.redacted],
         "skipped": [{"path": _rel(p, project_dir), "reason": r} for p, r in result.skipped_in_zip],
     }
+    if getattr(result, "tokens", None) is not None:
+        out["tokens"] = tokens_data(result.tokens, verbose=verbose)
+    return out
 
 
 def clipboard_data(cb) -> dict:

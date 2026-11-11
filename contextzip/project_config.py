@@ -43,7 +43,12 @@ Currently supports:
         "keep": 10,
         "max_age_days": 14
       },
-      "zip_guide": true
+      "zip_guide": true,
+      "tokens": {
+        "max": 150000,
+        "windows": {"claude": 500000},
+        "show_fit": true
+      }
     }
 
 All keys are optional. Missing or malformed values fall through to the
@@ -147,6 +152,17 @@ built-in default for the newer preference fields.
       snapshot ID plus short instructions that make AI replies easy to
       apply. Default true.
 
+  tokens
+      Token counts, budget and model fit (see tokens.py and models.py).
+        max       — a token budget for every run, like --max-tokens (which
+                    overrides it). A run over budget writes nothing, unless
+                    --trim is given. Must be at least 1; unset by default.
+        windows   — context windows in tokens, by --for name, replacing
+                    the built-in ones: {"claude": 500000}. A new name adds
+                    a target of your own. Values below 1000 are ignored.
+        show_fit  — if false, the "Fits" line isn't printed (--json still
+                    has "fit"). Default true.
+
 The schema is intentionally a flat, easily-extended dict so future
 preferences can be added without another migration.
 
@@ -189,6 +205,9 @@ _DEFAULT_SNAPSHOTS_KEEP = 10
 _DEFAULT_SNAPSHOTS_MAX_AGE_DAYS = 14
 _DEFAULT_ZIP_GUIDE = True
 
+_DEFAULT_SHOW_FIT = True
+_MIN_TOKEN_WINDOW = 1000
+
 
 @dataclass
 class AIConfig:
@@ -225,6 +244,15 @@ class SnapshotsConfig:
 
 
 @dataclass
+class TokensConfig:
+    """Model fit settings (see models.py)."""
+
+    windows: dict[str, int] = field(default_factory=dict)
+    show_fit: bool = _DEFAULT_SHOW_FIT
+    max: int | None = None
+
+
+@dataclass
 class ProjectConfig:
     workspace_location: str | None = None
     scan_depth: int | None = None
@@ -237,6 +265,7 @@ class ProjectConfig:
     cleanup: CleanupConfig = field(default_factory=CleanupConfig)
     snapshots: SnapshotsConfig = field(default_factory=SnapshotsConfig)
     zip_guide: bool = _DEFAULT_ZIP_GUIDE
+    tokens: TokensConfig = field(default_factory=TokensConfig)
 
     # Diagnostics — not part of the schema, set by load_project_config so
     # callers (the CLI) can decide whether to surface a deprecation notice.
@@ -357,6 +386,7 @@ def _parse_config_dict(data: dict) -> ProjectConfig:
         cleanup=cleanup_config,
         snapshots=snapshots_config,
         zip_guide=zip_guide,
+        tokens=_parse_tokens_config(data.get("tokens")),
     )
 
 
@@ -475,6 +505,34 @@ def _parse_snapshots_config(value: object) -> SnapshotsConfig:
         keep=_int("keep", _DEFAULT_SNAPSHOTS_KEEP, 1),
         max_age_days=_int("max_age_days", _DEFAULT_SNAPSHOTS_MAX_AGE_DAYS, 0),
     )
+
+
+def _parse_tokens_config(value: object) -> TokensConfig:
+    if not isinstance(value, dict):
+        return TokensConfig()
+
+    windows: dict[str, int] = {}
+    raw_windows = value.get("windows")
+    if isinstance(raw_windows, dict):
+        for key, window in raw_windows.items():
+            if (
+                isinstance(key, str)
+                and key.strip()
+                and isinstance(window, int)
+                and not isinstance(window, bool)
+                and window >= _MIN_TOKEN_WINDOW
+            ):
+                windows[key.strip().lower()] = window
+
+    show_fit = value.get("show_fit", _DEFAULT_SHOW_FIT)
+    if not isinstance(show_fit, bool):
+        show_fit = _DEFAULT_SHOW_FIT
+
+    budget = value.get("max")
+    if not isinstance(budget, int) or isinstance(budget, bool) or budget < 1:
+        budget = None
+
+    return TokensConfig(windows=windows, show_fit=show_fit, max=budget)
 
 
 def is_known_ai_provider(provider: str) -> bool:

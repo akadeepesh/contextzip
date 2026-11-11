@@ -324,7 +324,9 @@ def create_zip(
     -------
     PackageResult
         Contains ``zip_path`` (a :class:`~pathlib.Path`), ``file_count``,
-        ``compressed_bytes``, ``uncompressed_bytes``, and ``skipped_in_zip``.
+        ``compressed_bytes``, ``uncompressed_bytes``, ``skipped_in_zip``,
+        and ``tokens`` (a :class:`~contextzip.tokens.TokenReport` with the
+        count per file; ``estimated_tokens`` is its total).
 
     Raises
     ------
@@ -364,7 +366,10 @@ def create_zip(
 
     output_path = Path(output).resolve() if output is not None else None
 
+    from contextzip.tokens import count_files
+
     project_cfg = load_project_config(collection.project_dir)
+    token_report = count_files(collection.files, collection.project_dir, binary=collection.binary_files)
     return create_zip_silent(
         resolve_result=resolve_result,
         project_dir=collection.project_dir,
@@ -372,6 +377,7 @@ def create_zip(
         redact_secrets_enabled=project_cfg.limits.redact_secrets,
         ecosystem=collection.ecosystem,
         guide=project_cfg.zip_guide,
+        tokens=token_report,
     )
 
 

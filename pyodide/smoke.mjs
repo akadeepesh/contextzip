@@ -45,6 +45,8 @@ assert.equal(packaged.ok, true, JSON.stringify(packaged));
 assert.ok(packaged.detection.ecosystems.includes("Node.js"));
 assert.deepEqual(packaged.files.included_files, ["package.json", "src/index.js"]);
 assert.ok(packaged.zip.estimated_tokens > 0);
+assert.equal(packaged.zip.tokens.total, packaged.zip.estimated_tokens);
+assert.ok(["o200k_base", "estimate"].includes(packaged.zip.tokens.method));
 const zipBytes = py.FS.readFile(packaged.zip.path);
 assert.ok(zipBytes.length > 0);
 
@@ -59,4 +61,4 @@ assert.equal(applied.ok, true, JSON.stringify(applied));
 assert.deepEqual(applied.result.written, ["src/index.js"]);
 assert.equal(py.FS.readFile("/project/src/index.js", { encoding: "utf8" }), "module.exports = 2;\n");
 
-console.log(`contextzip ${packaged.version} works in Pyodide ${py.version}: packaged ${packaged.zip.files} files, applied a flattened reply`);
+console.log(`contextzip ${packaged.version} works in Pyodide ${py.version}: packaged ${packaged.zip.files} files (${packaged.zip.tokens.total} tokens, ${packaged.zip.tokens.method}), applied a flattened reply`);

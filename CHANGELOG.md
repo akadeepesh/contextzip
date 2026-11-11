@@ -1376,9 +1376,43 @@ This project uses [Semantic Versioning](https://semver.org/).
 - `contextzip -v | head` on Windows ended with a traceback when the reader
   closed the pipe. It now exits quietly, as it does on macOS and Linux.
 
-## [Unreleased]
+## [0.8.0] — 2026-11-12
+
+### Added
+- **Does it fit?** After the summary, one line shows how much of Claude's,
+  ChatGPT's and Gemini's context window the ZIP takes ("Fits  Claude ≈23%
+  ·  ChatGPT ≈36%  ·  Gemini ≈5%"), and warns when one is over 100%.
+  `--for claude` (repeatable) picks the models; `--json` adds `fit`. A
+  project can set its own windows, or add a target, with
+  `"tokens": {"windows": {...}}` in `.contextzip/config.json`, and hide the
+  line with `"show_fit": false`.
+- **A token budget.** `--max-tokens 150k` (or `"tokens": {"max": 150000}`
+  in the project config) refuses to write a ZIP that's over it, and shows
+  the largest folders and files instead. A dry run only reports it.
+  `--trim` leaves files out until it fits: generated and vendored files
+  first, then data, tests and docs, never root files or files you named.
+  The report lists them under "Trimmed to fit".
+- **`contextzip tokens [PATH…]`** shows where the tokens are, per folder
+  with a bar for each, the largest files, and whether it fits each model,
+  without writing anything. `--depth`, `--top`, `--for` and `--json`.
+- **MCP:** `package_project` and `package_repository` take `max_tokens`
+  and `trim`, and their results carry the token breakdown and model fit.
+
+### Changed
+- **Real token counts.** The summary line, `--json`, the report and
+  CONTEXTZIP.md now count tokens with `o200k_base`, the tokenizer of
+  OpenAI's current models, instead of dividing bytes by four, which was
+  about 12% high for code. The tokenizer and its vocabulary ship with
+  contextzip and never use the network. `--json` gains a `tokens` object in
+  `files` and `zip` with the largest folders and files (and every file's
+  count with `--verbose`), `--verbose` names the files with the most
+  tokens, and the report breaks the count down by folder. Counts are
+  cached in `.contextzip/cache/`. If the tokenizer can't be loaded, the
+  count falls back to an estimate per file type and is shown with `≈`.
 
 ### Fixed
+- File names with square brackets, such as `app/[/b]/x.ts`, no longer
+  crash the `--verbose` file list.
 - **The wheel no longer installs `tests` and `installers` packages.** Every
   release so far put those two folders into site-packages next to
   `contextzip`, where a top-level `tests` package can shadow your own. Only

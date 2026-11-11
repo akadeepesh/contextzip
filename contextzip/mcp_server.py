@@ -43,6 +43,21 @@ def _filters(include: list[str] | None, exclude: list[str] | None) -> list[str]:
     return args
 
 
+def _budget(max_tokens: int | None, trim: bool) -> list[str]:
+    args: list[str] = []
+    if max_tokens is not None:
+        args += ["--max-tokens", str(max_tokens)]
+    if trim:
+        args.append("--trim")
+    return args
+
+
+def _bad_budget(max_tokens: int | None) -> dict[str, Any] | None:
+    if max_tokens is not None and (isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens < 1):
+        return {"ok": False, "error": "max_tokens must be a whole number of at least 1"}
+    return None
+
+
 def package_project(
     path: str,
     include: list[str] | None = None,
@@ -51,6 +66,8 @@ def package_project(
     task: str | None = None,
     dry_run: bool = False,
     copy_to_clipboard: bool = False,
+    max_tokens: int | None = None,
+    trim: bool = False,
 ) -> dict[str, Any]:
     """
     Package a local project into a lean ZIP for an AI chat.
@@ -62,8 +79,15 @@ def package_project(
     task: describe a task to let Gemini pick only the relevant files (needs GEMINI_API_KEY).
     dry_run: report what would be included without writing the ZIP.
     copy_to_clipboard: also put the ZIP on the clipboard as a file.
-    Returns the ZIP's path, file counts, sizes and an estimated token count.
+    max_tokens: a token budget; over it no ZIP is written and the result says where the tokens are.
+    trim: with max_tokens, leave out generated files, data, tests and docs (in that order) until it fits;
+    never root files or files named in include. The result lists them under "trimmed".
+    Returns the ZIP's path, file counts and sizes; exact token counts ("tokens": total, the largest
+    folders and files); and "fit": whether it fits Claude's, ChatGPT's and Gemini's context window.
     """
+    bad = _bad_budget(max_tokens)
+    if bad:
+        return bad
     args = _filters(include, exclude)
     if git_changes:
         args.append("--git-changes")
@@ -73,6 +97,7 @@ def package_project(
         args.append("--dry-run")
     if not copy_to_clipboard:
         args.append("--no-clipboard")
+    args += _budget(max_tokens, trim)
     return _clean(run(args, cwd=path))
 
 
@@ -82,6 +107,8 @@ def package_repository(
     include: list[str] | None = None,
     exclude: list[str] | None = None,
     dry_run: bool = False,
+    max_tokens: int | None = None,
+    trim: bool = False,
 ) -> dict[str, Any]:
     """
     Package a GitHub, GitLab or Bitbucket repository without cloning it.
@@ -89,13 +116,20 @@ def package_repository(
     repo: github.com/user/repo, gitlab.com/group/project, bitbucket.org/team/repo, a link to a branch's folder, or gh:user/repo.
     ref: a branch, tag or commit (default: the repository's default branch).
     include / exclude: as for package_project, relative to the repository root.
+    max_tokens / trim: a token budget, as for package_project.
     Private repositories use GITHUB_TOKEN, GITLAB_TOKEN or BITBUCKET_TOKEN.
+    Returns the ZIP's path and sizes, exact token counts per folder and file ("tokens"), and
+    "fit": whether it fits Claude's, ChatGPT's and Gemini's context window.
     """
+    bad = _bad_budget(max_tokens)
+    if bad:
+        return bad
     args = ["--from", repo, "--no-clipboard", *_filters(include, exclude)]
     if ref:
         args += ["--ref", ref]
     if dry_run:
         args.append("--dry-run")
+    args += _budget(max_tokens, trim)
     return _clean(run(args))
 
 

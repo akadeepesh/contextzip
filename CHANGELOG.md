@@ -1376,7 +1376,7 @@ This project uses [Semantic Versioning](https://semver.org/).
 - `contextzip -v | head` on Windows ended with a traceback when the reader
   closed the pipe. It now exits quietly, as it does on macOS and Linux.
 
-## [Unreleased]
+## [0.8.0] — 2026-11-12
 
 ### Added
 - **Does it fit?** After the summary, one line shows how much of Claude's,

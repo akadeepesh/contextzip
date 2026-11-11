@@ -45,6 +45,7 @@ Currently supports:
       },
       "zip_guide": true,
       "tokens": {
+        "max": 150000,
         "windows": {"claude": 500000},
         "show_fit": true
       }
@@ -152,7 +153,10 @@ built-in default for the newer preference fields.
       apply. Default true.
 
   tokens
-      Token counts and model fit (see tokens.py and models.py).
+      Token counts, budget and model fit (see tokens.py and models.py).
+        max       — a token budget for every run, like --max-tokens (which
+                    overrides it). A run over budget writes nothing, unless
+                    --trim is given. Must be at least 1; unset by default.
         windows   — context windows in tokens, by --for name, replacing
                     the built-in ones: {"claude": 500000}. A new name adds
                     a target of your own. Values below 1000 are ignored.
@@ -245,6 +249,7 @@ class TokensConfig:
 
     windows: dict[str, int] = field(default_factory=dict)
     show_fit: bool = _DEFAULT_SHOW_FIT
+    max: int | None = None
 
 
 @dataclass
@@ -523,7 +528,11 @@ def _parse_tokens_config(value: object) -> TokensConfig:
     if not isinstance(show_fit, bool):
         show_fit = _DEFAULT_SHOW_FIT
 
-    return TokensConfig(windows=windows, show_fit=show_fit)
+    budget = value.get("max")
+    if not isinstance(budget, int) or isinstance(budget, bool) or budget < 1:
+        budget = None
+
+    return TokensConfig(windows=windows, show_fit=show_fit, max=budget)
 
 
 def is_known_ai_provider(provider: str) -> bool:

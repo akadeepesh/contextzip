@@ -293,6 +293,7 @@ contextzip runs your command and watches its output. When a stack trace appears 
 | `cz exclude PATTERN…` | Package everything **except** these patterns |
 | `cz --git-changes` | Package only modified, staged and untracked files |
 | `cz --prompt "task"` | Let Gemini pick only the files relevant to a task |
+| `cz tokens [PATH…]` | Show where the tokens are, and whether they fit Claude, ChatGPT and Gemini |
 | `cz github.com/user/repo` | Package a GitHub, GitLab or Bitbucket repository without cloning it |
 | `cz apply-zip [ZIP]` | Write an AI-returned ZIP back into your project, safely |
 | `cz apply-zip ZIP --pr` | Send an AI's reply to a GitHub repo back as a pull request |
@@ -323,6 +324,8 @@ contextzip runs your command and watches its output. When a stack trace appears 
 | `--here` | | Only package the folder you're in. |
 | `--from REPO` | | Package a remote repository (or just put the repo first: `cz github.com/user/repo`). |
 | `--ref REF` | | Branch, tag or commit for `--from`. |
+| `--max-tokens N` | | A token budget (`150k`, `1.5m`). Over it, nothing is written. |
+| `--trim` | | With a budget: leave out generated files, data, tests and docs, in that order, until it fits. |
 | `--for MODEL` | | Show whether the ZIP fits this model: `claude`, `chatgpt` or `gemini`. Repeatable. Default: all. |
 | `--json` | | Print one JSON object instead of terminal output, for editors and scripts. |
 
@@ -351,6 +354,7 @@ Both config files are optional. Per-project settings live in `.contextzip/config
   "snapshots": { "keep": 10, "max_age_days": 14 },  // history apply-zip merges against
   "zip_guide": true,                           // add CONTEXTZIP.md to every ZIP
   "tokens": {
+    "max": 150000,                             // a token budget for every run, like --max-tokens
     "windows": { "claude": 500000 },           // your own context window per --for name
     "show_fit": true                           // print the "Fits" line
   }

@@ -1386,6 +1386,15 @@ This project uses [Semantic Versioning](https://semver.org/).
   project can set its own windows, or add a target, with
   `"tokens": {"windows": {...}}` in `.contextzip/config.json`, and hide the
   line with `"show_fit": false`.
+- **A token budget.** `--max-tokens 150k` (or `"tokens": {"max": 150000}`
+  in the project config) refuses to write a ZIP that's over it, and shows
+  the largest folders and files instead. A dry run only reports it.
+  `--trim` leaves files out until it fits: generated and vendored files
+  first, then data, tests and docs, never root files or files you named.
+  The report lists them under "Trimmed to fit".
+- **`contextzip tokens [PATH…]`** shows where the tokens are, per folder
+  with a bar for each, the largest files, and whether it fits each model,
+  without writing anything. `--depth`, `--top`, `--for` and `--json`.
 
 ### Changed
 - **Real token counts.** The summary line, `--json`, the report and

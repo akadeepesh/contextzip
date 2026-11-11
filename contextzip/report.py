@@ -39,12 +39,14 @@ def write_scan_report(
     redacted: list[tuple[Path, list[str]]] | None = None,
     skipped_in_zip: list[tuple[Path, str]] | None = None,
     tokens=None,
+    trimmed: list[tuple[str, int]] | None = None,
 ) -> Path:
     """
     Write the full scan/package report next to *zip_path*.
 
     *tokens*, a TokenReport for the included files, adds real counts: a
-    per-folder breakdown and a token column in the file list.
+    per-folder breakdown and a token column in the file list. *trimmed*,
+    [(path, tokens)] that --trim left out, gets its own section.
 
     Returns the report path. Never raises — a failure to write the report
     should never fail the actual packaging run, so callers may wrap this
@@ -115,6 +117,12 @@ def write_scan_report(
             count = by_file.get(rel)
             w(f"  {rel:<60} {size:>10} {'' if count is None else f'{count:,}':>10}")
     w("")
+
+    if trimmed:
+        w(f"Trimmed to fit ({len(trimmed)} file{'' if len(trimmed) == 1 else 's'}, {sum(n for _r, n in trimmed):,} tokens)")
+        for rel, n in trimmed:
+            w(f"  {rel:<60} {n:>10,}")
+        w("")
 
     if ai_prompt is not None:
         w("AI selection")

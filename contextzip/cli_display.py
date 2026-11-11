@@ -299,6 +299,46 @@ def print_fit(fit_rows: list[dict], *, con: Console = console) -> None:
     )
 
 
+_BAR_CELLS = 24
+_MAX_FOLDER_ROWS = 30
+
+
+def print_token_breakdown(tokens, *, depth: int = 1, top: int = 15, con: Console = console) -> None:
+    """
+    `contextzip tokens`: the total, then folders with a bar for their share
+    and the largest files. Bars only on a terminal; piped output gets the
+    same rows without them.
+    """
+    n = len(tokens.by_file)
+    ok(f"{n} file{'' if n == 1 else 's'}", f"{tokens.label()} ({tokens.method})", con=con)
+    if jsonout.active() is not None or not tokens.by_file:
+        return
+
+    folders = tokens.by_dir(depth)
+    files = tokens.top_files(top)
+    shown = folders[:_MAX_FOLDER_ROWS]
+    width = min(48, max([16, *(len(path) for path, _ in shown), *(len(path) for path, _ in files)]))
+    bars = con.is_terminal
+    total = tokens.total
+
+    con.print()
+    for path, count in shown:
+        share = count / total if total else 0.0
+        cells = round(share * _BAR_CELLS)
+        bar = f"{'█' * cells}{'░' * (_BAR_CELLS - cells)}  " if bars else ""
+        con.print(f"  {escape(f'{path:<{width}}')} {count:>10,}  {bar}{_share_text(share):>4}", highlight=False)
+    if len(folders) > len(shown):
+        more = len(folders) - len(shown)
+        con.print(f"  [dim]and {more} more folder{'' if more == 1 else 's'} (all of them are in --json)[/]")
+
+    if files:
+        con.print()
+        con.print("  Largest files")
+        for path, count in files:
+            con.print(f"  {escape(f'{path:<{width}}')} {count:>10,}", highlight=False)
+    con.print()
+
+
 # ---------------------------------------------------------------------------
 # File warnings (large / binary / skipped)
 # ---------------------------------------------------------------------------

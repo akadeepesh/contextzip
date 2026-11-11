@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import click
@@ -63,6 +64,8 @@ from contextzip.cli_display import (
     print_root_notice,
     print_most_tokens,
     print_fit,
+    literal,
+    print_token_breakdown,
 )
 from contextzip.report import write_scan_report, write_apply_report
 from contextzip.applier import (
@@ -111,6 +114,11 @@ def _json_session(command: str, enabled: bool):
 # ---------------------------------------------------------------------------
 # Defined once so the main command and every subcommand declare exactly the
 # same flags without duplicating help strings.
+
+
+def _budget_option(_ctx, _param, value: str | None) -> int | None:
+    """--max-tokens: "150k" -> 150000 (see tokens.parse_budget)."""
+    return None if value is None else tokens_mod.parse_budget(value)
 
 
 def _modifier_options(f):
@@ -202,6 +210,26 @@ def _modifier_options(f):
             default=None,
             metavar="REF",
             help="Branch, tag or commit to package with --from (default: the repo's default branch).",
+        ),
+        click.option(
+            "--max-tokens",
+            "max_tokens",
+            default=None,
+            metavar="N",
+            callback=_budget_option,
+            help=(
+                "A token budget: 150000, 150k or 1.5m. Over it, nothing is written "
+                "(a dry run just reports it). Overrides tokens.max in the project config."
+            ),
+        ),
+        click.option(
+            "--trim",
+            is_flag=True,
+            default=False,
+            help=(
+                "With a budget: leave out the least important files until the ZIP fits. "
+                "Generated files go first, then data, tests and docs. Never root files or files you named."
+            ),
         ),
         click.option(
             "--for",
@@ -353,6 +381,8 @@ def main(
     remote: str | None,
     ref: str | None,
     fit_for: tuple[str, ...],
+    max_tokens: int | None,
+    trim: bool,
     json_output: bool,
 ) -> None:
     """
@@ -387,6 +417,8 @@ def main(
         remote=remote,
         ref=ref,
         fit_for=list(fit_for),
+        max_tokens=max_tokens,
+        trim=trim,
         json_output=json_output,
     )
 
@@ -412,6 +444,8 @@ def cmd_exclude(
     remote: str | None,
     ref: str | None,
     fit_for: tuple[str, ...],
+    max_tokens: int | None,
+    trim: bool,
     json_output: bool,
 ) -> None:
     """
@@ -441,6 +475,8 @@ def cmd_exclude(
         remote=remote,
         ref=ref,
         fit_for=list(fit_for),
+        max_tokens=max_tokens,
+        trim=trim,
         json_output=json_output,
     )
 
@@ -466,6 +502,8 @@ def cmd_include(
     remote: str | None,
     ref: str | None,
     fit_for: tuple[str, ...],
+    max_tokens: int | None,
+    trim: bool,
     json_output: bool,
 ) -> None:
     """
@@ -494,6 +532,8 @@ def cmd_include(
         remote=remote,
         ref=ref,
         fit_for=list(fit_for),
+        max_tokens=max_tokens,
+        trim=trim,
         json_output=json_output,
     )
 
@@ -1369,6 +1409,61 @@ def _list_snapshots() -> None:
     console.print()
 
 
+@main.command("tokens")
+@click.argument("paths", nargs=-1, metavar="[PATH…]")
+@click.option("--top", default=15, show_default=True, type=click.IntRange(min=1), help="How many of the largest files to list.")
+@click.option("--depth", default=1, show_default=True, type=click.IntRange(min=1), help="Group folders this many levels deep.")
+@click.option(
+    "--for",
+    "fit_for",
+    multiple=True,
+    metavar="MODEL",
+    help="Show whether it fits this model: claude, chatgpt or gemini. Repeatable. Default: all.",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help="Print one JSON object instead of terminal output, for editors and scripts.",
+)
+def cmd_tokens(paths: tuple[str, ...], top: int, depth: int, fit_for: tuple[str, ...], json_output: bool) -> None:
+    """
+    Show where the tokens are: per folder, the largest files, and whether
+    it fits each model. Writes nothing.
+
+    \b
+    EXAMPLES
+      contextzip tokens
+      contextzip tokens src/ --depth 2 --top 5
+      contextzip tokens --for claude --json
+
+    PATH arguments scope it exactly like contextzip include PATH.
+    """
+    with _json_session("tokens", json_output):
+        _tokens(list(paths), top=top, depth=depth, fit_for=list(fit_for))
+
+
+def _tokens(paths: list[str], *, top: int, depth: int, fit_for: list[str]) -> None:
+    console.print()
+    scan = _scan(extra_exclude=None, include_only=paths or None, fit_for=fit_for, quiet=True)
+    if scan is None:  # only --git-changes returns None, and it isn't an option here
+        return
+    if not scan.resolved.included:
+        err("Nothing to count — all files were excluded.")
+        info("Check the paths, or try contextzip tokens without them.")
+        raise SystemExit(1)
+
+    report = _count_tokens(scan.resolved, scan.project_dir, create_cache=False)
+    fit_rows = jsonout.fit_data(report, scan.fit_targets)
+    jsonout.put("tokens", jsonout.tokens_data(report, depth=depth, top=top, max_dirs=None))
+    jsonout.put("fit", fit_rows)
+
+    print_token_breakdown(report, depth=depth, top=top)
+    if scan.project_cfg.tokens.show_fit:
+        print_fit(fit_rows)
+
+
 @main.command("stacks")
 @click.argument("name", required=False, metavar="[STACK]")
 @click.option(
@@ -1902,6 +1997,109 @@ def _count_tokens(resolved, project_dir: Path, *, create_cache: bool):
         )
 
 
+def _protected_from_trim(scan: _Scan) -> set[str]:
+    """Files --trim must keep: the ones the user named, and the config's always_include."""
+    from contextzip.filters import _any_parent_excluded
+
+    project_dir = scan.project_dir
+    named = {p.strip("/") for p in scan.include_only or []}
+    protected: set[str] = set()
+    for p in getattr(scan.resolved, "explicitly_included", []):
+        try:
+            protected.add(p.relative_to(project_dir).as_posix())
+        except ValueError:
+            pass
+    for p in scan.resolved.included:
+        try:
+            rel = p.relative_to(project_dir)
+        except ValueError:
+            continue
+        rel_str = rel.as_posix()
+        if rel_str in named:
+            protected.add(rel_str)
+        elif scan.force_include is not None and (
+            scan.force_include.match_file(rel_str) or _any_parent_excluded(rel, scan.force_include)
+        ):
+            protected.add(rel_str)
+    return protected
+
+
+def _trim_if_asked(scan: _Scan, report, *, trim: bool):
+    """
+    With --trim and a report over budget, leave files out of scan.resolved
+    until it fits (see tokens.trim_to_budget). Returns (report, trimmed,
+    trim_failed): the report for what's left, [(path, tokens)] in drop
+    order, and whether --trim couldn't get under the budget.
+    """
+    budget = scan.budget
+    if not trim or budget is None or report.total <= budget:
+        return report, [], False
+    drop = tokens_mod.trim_to_budget(report, budget, protected=_protected_from_trim(scan))
+    if not drop:
+        return report, [], True
+
+    resolved, project_dir = scan.resolved, scan.project_dir
+    dropped = set(drop)
+
+    def rel(p: Path) -> str:
+        try:
+            return p.relative_to(project_dir).as_posix()
+        except ValueError:
+            return p.name
+
+    gone = [p for p in resolved.included if rel(p) in dropped]
+    gone_set = set(gone)
+    resolved.included = [p for p in resolved.included if p not in gone_set]
+    resolved.excluded = [*resolved.excluded, *gone]
+    resolved.large_files = [(p, n) for p, n in resolved.large_files if p not in gone_set]
+    resolved.explicitly_included = [p for p in resolved.explicitly_included if p not in gone_set]
+    trimmed = [(r, report.by_file[r]) for r in drop]
+    return report.subset(rel(p) for p in resolved.included), trimmed, False
+
+
+def _put_trimmed(scan: _Scan, report, trimmed, *, verbose: bool, git_mode: bool) -> None:
+    """Refresh the JSON result after --trim changed what goes in."""
+    jsonout.put("trimmed", [{"path": rel, "tokens": n} for rel, n in trimmed])
+    jsonout.put(
+        "files",
+        jsonout.files_data(scan.resolved, scan.project_dir, verbose=verbose, git_mode=git_mode, tokens=report),
+    )
+    jsonout.put("fit", jsonout.fit_data(report, scan.fit_targets))
+
+
+def _print_trimmed(trimmed, budget: int, *, verbose: bool, dry_run: bool) -> None:
+    count = len(trimmed)
+    total = sum(n for _rel, n in trimmed)
+    files = "file" if count == 1 else "files"
+    where = "" if dry_run else " — see report"
+    warn(f"Trimmed {count} {files} ({total:,} tokens) to fit the {budget:,} budget{where}")
+    if verbose:
+        for rel, n in trimmed:
+            info(literal(f"  trimmed {rel}  {n:,}"))
+
+
+def _print_over_budget(report, budget: int, *, dry_run: bool, trim_failed: bool) -> None:
+    """
+    Say how far over the budget the files are, and where the tokens are.
+    Exits 1 unless it's a dry run, which only reports it.
+    """
+    message = f"{report.label()} is over the {budget:,} budget by {report.total - budget:,}."
+    if dry_run:
+        warn(message)
+    else:
+        err(message)
+    rows = [*report.by_dir(1)[:5], *report.top_files(5)]
+    width = max([16, *(len(path) for path, _n in rows)])
+    for path, n in rows:
+        info(literal(f"  {path:<{width}} {n:>10,}"))
+    if trim_failed:
+        info("--trim could not get under the budget without dropping files you asked for.")
+    else:
+        info("Leave some out with contextzip exclude PATH, or add --trim to drop the least important files.")
+    if not dry_run:
+        raise SystemExit(1)
+
+
 def _narrow_tokens(report, resolved, project_dir: Path):
     """The token report for resolved.included after --prompt narrowed it to the AI's selection."""
     keys = []
@@ -1916,28 +2114,53 @@ def _narrow_tokens(report, resolved, project_dir: Path):
     return tokens_mod.count_files(resolved.included, project_dir, binary=resolved.binary_files)
 
 
-def _package(
+@dataclass
+class _Scan:
+    """What _scan found: where the project is, its settings, and the files to package."""
+
+    project_root: ProjectRoot
+    fetched: object | None
+    project_cfg: object
+    detection: object
+    resolved: object
+    scan_label: str
+    scan_detail: str | None
+    include_only: list[str] | None
+    force_include: object | None
+    fit_targets: list
+    budget: int | None
+
+    @property
+    def project_dir(self) -> Path:
+        return self.project_root.root
+
+
+def _scan(
     *,
     extra_exclude: list[str] | None,
     include_only: list[str] | None,
-    prompt: str | None,
-    dry_run: bool,
-    output: str | None,
-    no_clipboard: bool,
-    no_gitignore: bool,
-    git_changes: bool,
-    verbose: bool,
+    prompt: str | None = None,
+    output: str | None = None,
+    no_gitignore: bool = False,
+    git_changes: bool = False,
+    verbose: bool = False,
     here: bool = False,
     remote: str | None = None,
     ref: str | None = None,
     fit_for: list[str] | None = None,
-) -> None:
-    console.print()
-    run_mode = "git-changes" if git_changes else ("prompt" if prompt else "standard")
-    jsonout.put("mode", run_mode)
-    jsonout.put("dry_run", dry_run)
-    jsonout.put("zip", None)
+    max_tokens: int | None = None,
+    trim: bool = False,
+    quiet: bool = False,
+) -> _Scan | None:
+    """
+    Find the project (or fetch the remote one), load its config, detect the
+    stack and resolve which files go in: everything `contextzip` does before
+    counting tokens. Shared by the package commands and `contextzip tokens`.
 
+    *quiet* skips the progress lines (root notice, detection, git details)
+    and the first-run config UI offer. Returns None when --git-changes finds
+    nothing to package. Exits on a bad flag or a failed fetch.
+    """
     # ── Where to work: this project, or a GitHub repository ─────────────────
     fetched = None
     if remote:
@@ -1972,7 +2195,8 @@ def _package(
     else:
         if here and project_root.in_subdir:
             include_only = [*(include_only or []), project_root.subdir]
-        print_root_notice(project_root, here=here, packaging=True)
+        if not quiet:
+            print_root_notice(project_root, here=here, packaging=True)
 
     # ── Project config (.contextzip/config.json) ────────────────────────────
     project_cfg = load_project_config(project_dir)
@@ -1981,22 +2205,27 @@ def _package(
             "Found the deprecated .contextzip.json — move it to .contextzip/config.json"
         )
 
-    # Checked before any scanning, so a typo in --for fails fast.
+    # Checked before any scanning, so a mistake in a flag fails fast.
     try:
         fit_targets = models_mod.resolve(fit_for or None, project_cfg.tokens.windows)
     except ValueError as exc:
         err(str(exc))
+        raise SystemExit(1)
+    budget = max_tokens if max_tokens is not None else project_cfg.tokens.max
+    if trim and budget is None:
+        err("--trim needs a budget: add --max-tokens N.")
         raise SystemExit(1)
 
     # ── Detection ────────────────────────────────────────────────────────────
     with status("[cyan]Detecting project ecosystem…[/]"):
         detection = detect(project_dir)
 
-    print_detection(detection)
+    if not quiet:
+        print_detection(detection)
     jsonout.put("detection", jsonout.detection_data(detection))
 
     # ── First-run offer: visual config UI ────────────────────────────────────
-    if project_cfg.source_path is None and fetched is None:
+    if project_cfg.source_path is None and fetched is None and not quiet:
         saved = _maybe_offer_config_ui(
             project_dir, detection, prompt=prompt, output=output
         )
@@ -2027,14 +2256,15 @@ def _package(
             err(f"Git error: {git_result.message}")
             raise SystemExit(1)
 
-        print_git_deleted_and_submodules(git_result)
+        if not quiet:
+            print_git_deleted_and_submodules(git_result)
 
         if git_result.is_empty:
             info("Nothing to compress in this one — working tree is clean.")
-            return
+            return None
 
         scan_label, scan_detail = git_scan_label_and_detail(git_result)
-        if verbose:
+        if verbose and not quiet:
             print_git_verbose_files(git_result)
 
         with status("[cyan]Checking git-changed files…[/]"):
@@ -2079,6 +2309,67 @@ def _package(
         # the original, pre-selection counts.
         scan_label, scan_detail = scan_label_and_detail(resolved, git_mode=False)
 
+    return _Scan(
+        project_root=project_root,
+        fetched=fetched,
+        project_cfg=project_cfg,
+        detection=detection,
+        resolved=resolved,
+        scan_label=scan_label,
+        scan_detail=scan_detail,
+        include_only=include_only,
+        force_include=force_include,
+        fit_targets=fit_targets,
+        budget=budget,
+    )
+
+
+def _package(
+    *,
+    extra_exclude: list[str] | None,
+    include_only: list[str] | None,
+    prompt: str | None,
+    dry_run: bool,
+    output: str | None,
+    no_clipboard: bool,
+    no_gitignore: bool,
+    git_changes: bool,
+    verbose: bool,
+    here: bool = False,
+    remote: str | None = None,
+    ref: str | None = None,
+    fit_for: list[str] | None = None,
+    max_tokens: int | None = None,
+    trim: bool = False,
+) -> None:
+    console.print()
+    run_mode = "git-changes" if git_changes else ("prompt" if prompt else "standard")
+    jsonout.put("mode", run_mode)
+    jsonout.put("dry_run", dry_run)
+    jsonout.put("zip", None)
+
+    scan = _scan(
+        extra_exclude=extra_exclude,
+        include_only=include_only,
+        prompt=prompt,
+        output=output,
+        no_gitignore=no_gitignore,
+        git_changes=git_changes,
+        verbose=verbose,
+        here=here,
+        remote=remote,
+        ref=ref,
+        fit_for=fit_for,
+        max_tokens=max_tokens,
+        trim=trim,
+    )
+    if scan is None:
+        return
+    project_root, project_dir, fetched = scan.project_root, scan.project_dir, scan.fetched
+    project_cfg, detection, resolved = scan.project_cfg, scan.detection, scan.resolved
+    scan_label, scan_detail = scan.scan_label, scan.scan_detail
+    fit_targets = scan.fit_targets
+
     large_file_warn_bytes = int(project_cfg.limits.max_file_size_mb * 1024 * 1024)
 
     # ── Tokens ───────────────────────────────────────────────────────────────
@@ -2094,6 +2385,20 @@ def _package(
         jsonout.files_data(resolved, project_dir, verbose=verbose, git_mode=git_changes, tokens=token_report),
     )
     jsonout.put("fit", jsonout.fit_data(token_report, fit_targets))
+
+    # ── Token budget ─────────────────────────────────────────────────────────
+    # --prompt is checked after the AI has picked the files, below.
+    trimmed: list[tuple[str, int]] = []
+    over_budget = False
+    trim_failed = False
+    if scan.budget is not None and not prompt:
+        token_report, trimmed, trim_failed = _trim_if_asked(scan, token_report, trim=trim)
+        over_budget = token_report.total > scan.budget
+        if trimmed:
+            if not git_changes:
+                scan_label, scan_detail = scan_label_and_detail(resolved, git_mode=False)
+            _put_trimmed(scan, token_report, trimmed, verbose=verbose, git_mode=git_changes)
+        jsonout.put("over_budget", over_budget)
 
     # ── Dry run ──────────────────────────────────────────────────────────────
     if dry_run:
@@ -2116,6 +2421,10 @@ def _package(
             print_scan_summary(resolved, project_dir, verbose, git_mode=git_changes, tokens=token_report)
             if project_cfg.tokens.show_fit:
                 print_fit(jsonout.fit_data(token_report, fit_targets))
+            if trimmed:
+                _print_trimmed(trimmed, scan.budget, verbose=verbose, dry_run=True)
+            if over_budget:
+                _print_over_budget(token_report, scan.budget, dry_run=True, trim_failed=trim_failed)
             print_file_warnings(
                 resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
             )
@@ -2126,6 +2435,10 @@ def _package(
         err("Nothing to compress in this one — all files were excluded.")
         info("Try contextzip include PATH or -i PATH to override.")
         return
+
+    if over_budget:
+        ok(scan_label, f"{scan_detail}, {token_report.label()}" if scan_detail else token_report.label())
+        _print_over_budget(token_report, scan.budget, dry_run=False, trim_failed=trim_failed)
 
     # ── AI-powered file selection (--prompt mode) ────────────────────────────
     prompt_txt: str | None = None
@@ -2154,6 +2467,15 @@ def _package(
         resolved.included = selected_paths
         token_report = _narrow_tokens(token_report, resolved, project_dir)
         jsonout.put("fit", jsonout.fit_data(token_report, fit_targets))
+        if scan.budget is not None:
+            token_report, trimmed, trim_failed = _trim_if_asked(scan, token_report, trim=trim)
+            over_budget = token_report.total > scan.budget
+            jsonout.put("over_budget", over_budget)
+            if trimmed:
+                jsonout.put("trimmed", [{"path": rel, "tokens": n} for rel, n in trimmed])
+                jsonout.put("fit", jsonout.fit_data(token_report, fit_targets))
+            if over_budget:
+                _print_over_budget(token_report, scan.budget, dry_run=False, trim_failed=trim_failed)
         jsonout.put(
             "ai",
             {"prompt": prompt, "selected": [p.relative_to(project_dir).as_posix() for p in selected_paths]},
@@ -2190,6 +2512,8 @@ def _package(
         print_most_tokens(token_report)
     if project_cfg.tokens.show_fit:
         print_fit(jsonout.fit_data(token_report, fit_targets))
+    if trimmed:
+        _print_trimmed(trimmed, scan.budget, verbose=verbose, dry_run=False)
     print_file_warnings(
         resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
     )
@@ -2211,6 +2535,7 @@ def _package(
         redacted=result.redacted,
         skipped_in_zip=result.skipped_in_zip,
         tokens=token_report,
+        trimmed=trimmed,
     )
     print_report_hint(report_path)
     jsonout.put("report", str(report_path))

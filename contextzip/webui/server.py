@@ -37,12 +37,7 @@ from rich.console import Console
 
 from contextzip.cli_onboard import open_browser_silent
 from contextzip.cli_display import ok, warn, err, info
-from contextzip.filters import (
-    build_spec,
-    build_force_include_spec,
-    scan_all_files,
-    classify_scanned_files,
-)
+from contextzip.filters import classify_with_rules, scan_all_files
 from contextzip.project_config import load_project_config, project_config_path
 from contextzip.webui import suggestions as _suggestions
 from contextzip.webui.assets import INDEX_HTML, TOKEN_ERROR_HTML
@@ -105,14 +100,13 @@ class _ConfigUIState:
         self.last_activity = time.monotonic()
 
     def classify(self, always_include: list[str], always_exclude: list[str]):
-        spec = build_spec(
-            rule_modules=self.detection.rule_modules,
-            extra_exclude=always_exclude or None,
+        return classify_with_rules(
+            self.project_dir,
+            self.all_files,
+            self.detection.rule_modules,
+            always_include=always_include,
+            always_exclude=always_exclude,
             gitignore_path=self.gitignore_path,
-        )
-        force_include = build_force_include_spec(always_include or None)
-        return classify_scanned_files(
-            self.project_dir, self.all_files, spec, force_include
         )
 
 

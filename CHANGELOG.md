@@ -1457,6 +1457,15 @@ This project uses [Semantic Versioning](https://semver.org/).
   "1 MB". Larger ones stay whole ("14 MB").
 
 ### Added
+- **`contextzip pick`**, a file picker in the terminal. A full-screen tree
+  of the project where you tick files and folders (keyboard or mouse),
+  filter by path, review suggestions (PDFs, data, large files) and watch
+  the token total and model fit change as you go. Enter packages exactly
+  what's ticked, like `contextzip include`; `w` saves the selection to
+  `.contextzip/config.json` as `always_include` / `always_exclude`. Ticking
+  a folder never drags in what the rules or `.gitignore` leave out.
+  `contextzip include` and `contextzip exclude` with no arguments open it
+  in a terminal. Adds the `textual` dependency.
 - **`contextzip init`** sets a project up: it shows what would be packaged
   and asks once whether to save the defaults to `.contextzip/config.json`.
   `--yes` and `--json` for scripts.

@@ -12,6 +12,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 - [`contextzip`](#contextzip) — package the project
 - [Remote repositories](#remote-repositories) — package a GitHub, GitLab or Bitbucket repo without cloning it
 - [`contextzip include`](#contextzip-include) / [`exclude`](#contextzip-exclude)
+- [`contextzip pick`](#contextzip-pick) — choose files in a terminal tree
 - [`contextzip apply`](#contextzip-apply)
 - [`contextzip watch`](#contextzip-watch)
 - [`contextzip config`](#contextzip-config)
@@ -34,6 +35,7 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 |---|---|
 | `contextzip` | Detect the stack, exclude noise, package the project |
 | `contextzip github.com/user/repo` | Package a GitHub, GitLab or Bitbucket repository without cloning it |
+| `contextzip pick [PATH…]` | Choose files in a full-screen terminal tree, with live token totals |
 | `contextzip include PATH…` | Package **only** these paths |
 | `contextzip exclude PATTERN…` | Package everything **except** these patterns |
 | `contextzip --prompt "task"` | Let Gemini pick only the files relevant to a task |
@@ -245,6 +247,58 @@ contextzip exclude .github/ CHANGELOG.md --output ~/Desktop/out.zip
 ```
 
 Quote patterns that contain `*` so your shell doesn't expand them first.
+
+## `contextzip pick`
+
+Choose the files to package in a full-screen tree in the terminal.
+
+```bash
+contextzip pick [PATH…] [--save] [-o FILE] [--no-clipboard] [--max-tokens N] [--trim] [--for MODEL] [--here] [-v] [--plain]
+
+contextzip pick                  # start from what a normal run would package
+contextzip pick src/ app/        # start with only these ticked (the tree still shows everything)
+contextzip pick --save           # Enter saves the selection as the project's default, no ZIP
+```
+
+```text
+contextzip pick · my-app                    44 of 312 files · 186 KB · 46,210 tokens
+Fits  Claude ≈23% · ChatGPT 36% · Gemini ≈5%
+──────────────────────────────────────────────────────────────────────────────────────
+ ▾  [x] src/                                  38 files                    41,300
+    ▸  [x] app/                               12 files                    18,200
+    ▸  [-] components/                        9 of 14 files               12,100
+       [x] main.tsx                                                          420
+ ▸  [ ] docs/                                 left out
+    [ ] big-export.json                       large                       2.1 MB
+──────────────────────────────────────────────────────────────────────────────────────
+ 2 suggestions: PDFs (3 files, 3.6 MB) · Large files (4 files, 9.3 MB)    s to review
+──────────────────────────────────────────────────────────────────────────────────────
+ space tick · → open · ← close · / filter · a all · n none · s suggestions · e ignored · enter pack · w save as default · q quit
+```
+
+| Key | What it does |
+|---|---|
+| `↑` `↓`, `j` `k` | Move |
+| `→`, `l` | Open a folder, or move into it if it's open |
+| `←`, `h` | Close a folder, or move to the folder it's in |
+| `space` | Tick or untick a file or folder |
+| `/` | Filter by part of a path; `Esc` clears the filter |
+| `a` / `n` | Tick / untick everything shown |
+| `s` | Suggestions: PDFs, data, fonts, large files and more, each toggled with `space` |
+| `e` | Show files the rules and `.gitignore` leave out (dim, marked `[·]`, with the reason) |
+| `Enter` | Package what's ticked (with `--save`: save it and exit) |
+| `w` | Save what's ticked as this project's default and stay |
+| `q`, `Esc`, `Ctrl+C` | Quit without doing anything (exit code 1, "Nothing picked.") |
+
+With the mouse, click a folder's arrow to open or close it, the box to tick it, and the name to move there.
+
+- **Ticking a folder** brings in everything under it except files left out by the rules or `.gitignore` (`node_modules/`, build output, `.env`) that you haven't ticked yourself. Tick such a file directly to bring it in. A folder that holds only such files comes in whole when you tick it.
+- **Totals** at the top (files, size, tokens, and whether it fits each model) change with every tick. Tokens show `…` until they've been counted, which happens in the background; the picker works meanwhile.
+- **Enter** packages exactly what's ticked, the same way `contextzip include` does: the same summary, snapshot, clipboard and report. Secret files you tick are still redacted. The run flags above work as they do everywhere.
+- **`w`** writes the selection into `.contextzip/config.json` as `always_include` and `always_exclude` patterns (other settings are kept). The patterns are anchored to the project root and literal (a folder named `app/[id]/` is written as `/app/[[]id[]]/`), and only what differs from the rules is listed.
+- **`contextzip include`** with no path opens the picker with nothing ticked, and **`contextzip exclude`** with no pattern opens it with everything the rules allow ticked. Without a terminal (piped, CI, `--json`) both stay a usage error, and `pick` itself refuses to start.
+
+The picker needs an interactive terminal and works in a window as narrow as 60 columns.
 
 <a id="contextzip-apply-zip"></a>
 

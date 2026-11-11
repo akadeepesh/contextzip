@@ -77,6 +77,8 @@ def build() -> Path:
         "--collect-submodules", "tiktoken",
         "--collect-submodules", "tiktoken_ext",
         "--hidden-import", "tiktoken_ext.openai_public",
+        # `contextzip pick` (Textual imports its widgets lazily).
+        "--collect-submodules", "textual",
         "--exclude-module", "tkinter",
         # UTF-8 mode, as Python 3.15 does by default: output never depends on
         # the console's code page (cp1252 can't print ✓ and would crash).

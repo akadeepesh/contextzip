@@ -160,6 +160,7 @@ The commands you'll use most:
 ```bash
 cz --dry-run --verbose              # preview every included and excluded file, write nothing
 cz --git-changes                    # only what you've changed
+cz pick                             # choose files in a tree, then Enter packages them
 cz include src/ app/                # only these folders
 cz exclude tests/ '*.snap'          # everything except these
 cz include src/ .env                # .env too, with its values redacted
@@ -285,7 +286,27 @@ cz --prompt "add rate limiting to the login endpoint"
 
 Describe the task and [Gemini](https://ai.google.dev/) picks only the files that matter; the ZIP also gets a `prompt.txt` describing the task. It needs a free Gemini API key, which contextzip walks you through the first time. Only file **paths and sizes** plus your prompt are sent, never file contents. If Gemini is rate-limited, a local keyword-based selector takes over.
 
-### Choose files visually
+### Choose files by hand
+
+```bash
+cz pick
+```
+
+```text
+contextzip pick · my-app                    44 of 312 files · 186 KB · 46,210 tokens
+Fits  Claude ≈23% · ChatGPT 36% · Gemini ≈5%
+──────────────────────────────────────────────────────────────────────────────────────
+ ▾  [x] src/                                  38 files                    41,300
+    ▸  [x] app/                               12 files                    18,200
+    ▸  [-] components/                        9 of 14 files               12,100
+       [x] main.tsx                                                          420
+ ▸  [ ] docs/                                 left out
+    [ ] big-export.json                       large                       2.1 MB
+```
+
+A full-screen tree in the terminal: tick files and folders with the space bar (or the mouse), filter with `/`, and watch the token total and the model fit change as you go. Enter packages exactly what's ticked; `w` saves it as the project's default. Ticking a folder never drags in what the rules or `.gitignore` leave out (`node_modules/`, `.env`); tick such a file directly to bring it in, and secret files are still redacted. `cz include` and `cz exclude` with nothing after them open it too.
+
+Or set include/exclude in a browser tab:
 
 ```bash
 cz config --ui
@@ -310,6 +331,7 @@ contextzip runs your command and watches its output. When a stack trace appears 
 | Command | What it does |
 |---|---|
 | `cz` | Detect the stack, leave out the noise and package the project |
+| `cz pick` | Choose files in a terminal tree, with live token totals |
 | `cz include PATH…` | Package **only** these paths |
 | `cz exclude PATTERN…` | Package everything **except** these patterns |
 | `cz --git-changes` | Package only modified, staged and untracked files |

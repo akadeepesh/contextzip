@@ -262,6 +262,20 @@ def _modifier_options(f):
     return f
 
 
+# The run flags that make sense for `contextzip pick` (the picker decides
+# what goes in, so --prompt, --git-changes, --from and the like don't).
+_PICK_FLAGS = ("output", "no_clipboard", "verbose", "here", "max_tokens", "trim", "fit_for", "plain", "json_output")
+
+
+def _pick_options(f):
+    """Attach the run flags in _PICK_FLAGS, with the same help as everywhere else."""
+    probe = _modifier_options(lambda **kw: None)
+    for param in probe.__click_params__:  # click reverses the list when it builds the command
+        if param.name in _PICK_FLAGS:
+            f.__dict__.setdefault("__click_params__", []).append(param)
+    return f
+
+
 # ---------------------------------------------------------------------------
 # CLI group
 # ---------------------------------------------------------------------------
@@ -711,7 +725,7 @@ def main(
 
 
 @main.command("exclude", short_help="Package everything except these")
-@click.argument("patterns", nargs=-1, required=True, metavar="PATTERN…")
+@click.argument("patterns", nargs=-1, required=False, metavar="PATTERN…")
 @_modifier_options
 def cmd_exclude(
     patterns: tuple[str, ...],
@@ -741,8 +755,27 @@ def cmd_exclude(
       contextzip exclude docs/ --dry-run --verbose
 
     Patterns follow gitignore syntax. Folders are matched with or without
-    a trailing slash: both '.github' and '.github/' work.
+    a trailing slash: both '.github' and '.github/' work. Without a
+    pattern, in a terminal, it opens the picker with everything the rules
+    allow ticked.
     """
+    if not patterns:
+        _pick_or_missing(
+            "patterns",
+            start_empty=False,
+            blocked=bool(prompt or git_changes or remote or ref or no_gitignore),
+            json_output=json_output,
+            output=output,
+            no_clipboard=no_clipboard,
+            verbose=verbose,
+            here=here,
+            fit_for=fit_for,
+            max_tokens=max_tokens,
+            trim=trim,
+            plain=plain,
+            dry_run=dry_run,
+        )
+        return
     _run(
         extra_exclude=list(patterns),
         include_only=None,
@@ -770,7 +803,7 @@ def cmd_exclude(
 
 
 @main.command("include", short_help="Package only these paths")
-@click.argument("paths", nargs=-1, required=True, metavar="PATH…")
+@click.argument("paths", nargs=-1, required=False, metavar="PATH…")
 @_modifier_options
 def cmd_include(
     paths: tuple[str, ...],
@@ -800,8 +833,26 @@ def cmd_include(
       contextzip include src/ --output ~/Desktop/out.zip
 
     Paths are matched as exact prefixes at directory boundaries:
-    'src' matches 'src/index.ts' but not 'src2/index.ts'.
+    'src' matches 'src/index.ts' but not 'src2/index.ts'. Without a path,
+    in a terminal, it opens the picker with nothing ticked.
     """
+    if not paths:
+        _pick_or_missing(
+            "paths",
+            start_empty=True,
+            blocked=bool(prompt or git_changes or remote or ref or no_gitignore),
+            json_output=json_output,
+            output=output,
+            no_clipboard=no_clipboard,
+            verbose=verbose,
+            here=here,
+            fit_for=fit_for,
+            max_tokens=max_tokens,
+            trim=trim,
+            plain=plain,
+            dry_run=dry_run,
+        )
+        return
     _run(
         extra_exclude=None,
         include_only=list(paths),
@@ -821,6 +872,174 @@ def cmd_include(
         plain=plain,
         json_output=json_output,
     )
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: pick
+# ---------------------------------------------------------------------------
+
+
+@main.command("pick", short_help="Choose files in an interactive tree")
+@click.argument("paths", nargs=-1, metavar="[PATH…]")
+@click.option(
+    "--save",
+    "save_only",
+    is_flag=True,
+    default=False,
+    help="Don't package: Enter saves the selection as this project's default and exits.",
+)
+@_pick_options
+def cmd_pick(
+    paths: tuple[str, ...],
+    save_only: bool,
+    output: str | None,
+    no_clipboard: bool,
+    verbose: bool,
+    here: bool,
+    fit_for: tuple[str, ...],
+    max_tokens: int | None,
+    trim: bool,
+    plain: bool,
+    json_output: bool,
+) -> None:
+    """
+    Choose the files to package in a full-screen tree, with live token totals.
+
+    \b
+    Examples
+      contextzip pick                  # tick files, then Enter packages them
+      contextzip pick src/ app/        # start with only these ticked
+      contextzip pick --save           # save the selection as the default
+
+    \b
+    Keys
+      ↑ ↓ / j k     move            space    tick or untick
+      → / l         open a folder   ← / h    close it, or go to its folder
+      /             filter by path  esc      clear the filter
+      a / n         tick / untick everything shown
+      s             suggestions (PDFs, data, large files)
+      e             show files the rules and .gitignore leave out
+      enter         package what's ticked (with --save: save it)
+      w             save what's ticked as this project's default
+      q / esc       quit without doing anything
+
+    Enter packages exactly what's ticked, like contextzip include, with the
+    usual summary, snapshot and clipboard. Secret files you tick are still
+    redacted.
+    """
+    with _json_session("pick", json_output):
+        _pick(
+            list(paths),
+            start_empty=False,
+            save_only=save_only,
+            output=output,
+            no_clipboard=no_clipboard,
+            verbose=verbose,
+            here=here,
+            fit_for=list(fit_for),
+            max_tokens=max_tokens,
+            trim=trim,
+            plain=plain,
+        )
+
+
+def _pick_or_missing(param_name: str, *, start_empty: bool, blocked: bool, json_output: bool, dry_run: bool, **flags) -> None:
+    """`include` / `exclude` without arguments: the picker in a terminal, the usual usage error anywhere else."""
+    ctx = click.get_current_context()
+    if blocked or json_output or not _interactive():
+        param = next(p for p in ctx.command.params if p.name == param_name)
+        raise click.MissingParameter(ctx=ctx, param=param)
+    if dry_run:
+        raise click.UsageError("The picker has no dry run: name the paths, or leave out --dry-run.")
+    _pick([], start_empty=start_empty, save_only=False, **{**flags, "fit_for": list(flags["fit_for"])})
+
+
+def _pick(
+    paths: list[str],
+    *,
+    start_empty: bool,
+    save_only: bool,
+    output: str | None,
+    no_clipboard: bool,
+    verbose: bool,
+    here: bool,
+    fit_for: list[str],
+    max_tokens: int | None,
+    trim: bool,
+    plain: bool,
+) -> None:
+    """Run the picker, then package (or save) what was picked."""
+    if not _interactive():
+        fail(
+            "The picker needs an interactive terminal.",
+            fix="contextzip include PATH…   or   contextzip config --ui",
+        )
+        raise SystemExit(1)
+    try:
+        import textual  # noqa: F401
+    except ImportError:
+        fail('The picker needs the "textual" package.', fix="pip install textual   (or use contextzip config --ui in the browser)")
+        raise SystemExit(1)
+
+    from contextzip.picker import run_picker, save_selection
+    from contextzip.picker_model import PickerModel
+
+    project_root = _resolve_root()
+    project_dir = project_root.root
+    project_cfg = load_project_config(project_dir)
+    try:
+        fit_targets = models_mod.resolve(fit_for or None, project_cfg.tokens.windows)
+    except ValueError as exc:
+        fail(str(exc))
+        raise SystemExit(1)
+
+    include_only: list[str] | None = to_root_relative(paths, project_root) if paths else ([] if start_empty else None)
+    if here and project_root.in_subdir:
+        include_only = [*(include_only or []), project_root.subdir]
+
+    with status("[cyan]Scanning project files…[/]"):
+        detection = detect(project_dir)
+        model = PickerModel(project_dir, detection, project_cfg, include_only=include_only)
+
+    result = run_picker(
+        model,
+        title=project_dir.name,
+        fit_targets=fit_targets,
+        show_fit=project_cfg.tokens.show_fit,
+        save_only=save_only,
+        save=save_selection,
+    )
+    console.print()
+    if result is None:
+        info("Nothing picked.")
+        raise SystemExit(1)
+    if result == "save":
+        from contextzip.project_config import project_config_path
+
+        ok("Saved as this project's default", literal(str(project_config_path(project_dir))))
+        console.print()
+        return
+    picked = model.included()
+    if not picked:
+        info("Nothing picked.")
+        raise SystemExit(1)
+
+    with plain_output(plain):
+        _package(
+            extra_exclude=None,
+            include_only=None,
+            prompt=None,
+            dry_run=False,
+            output=output,
+            no_clipboard=no_clipboard,
+            no_gitignore=False,
+            git_changes=False,
+            verbose=verbose,
+            fit_for=fit_for,
+            max_tokens=max_tokens,
+            trim=trim,
+            picked=picked,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -2663,6 +2882,44 @@ def _narrow_tokens(report, resolved, project_dir: Path):
     return tokens_mod.count_files(resolved.included, project_dir, binary=resolved.binary_files)
 
 
+def _apply_picked(resolved, picked: list[Path], *, large_file_warn_bytes: int):
+    """
+    A ResolveResult whose included files are exactly *picked*, in the scan's
+    order. Picked files the rules would have left out are listed in
+    explicitly_included, so the run says so (and secret files among them
+    are still redacted by the packager).
+    """
+    from contextzip.filters import ResolveResult, _is_binary
+
+    picked_set = set(picked)
+    scanned_in = set(resolved.included)
+    known_binary = set(resolved.binary_files)
+    out = ResolveResult(skipped=list(resolved.skipped))
+    seen: set[Path] = set()
+    for path in [*resolved.included, *resolved.excluded]:
+        if path in picked_set and path not in seen:
+            out.included.append(path)
+            seen.add(path)
+        else:
+            out.excluded.append(path)
+    out.included.extend(p for p in picked if p not in seen and p.is_file())
+    for path in out.included:
+        size = resolved.sizes.get(path)
+        if size is None:
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
+        out.sizes[path] = size
+        if size >= large_file_warn_bytes:
+            out.large_files.append((path, size))
+        if path in known_binary or (path not in scanned_in and _is_binary(path)):
+            out.binary_files.append(path)
+        if path not in scanned_in:
+            out.explicitly_included.append(path)
+    return out
+
+
 @dataclass
 class _Scan:
     """What _scan found: where the project is, its settings, and the files to package."""
@@ -2701,6 +2958,7 @@ def _scan(
     trim: bool = False,
     quiet: bool = False,
     show_detection: bool = True,
+    first_run_hint: bool = True,
 ) -> _Scan | None:
     """
     Find the project (or fetch the remote one), load its config, detect the
@@ -2782,7 +3040,7 @@ def _scan(
     jsonout.put("detection", jsonout.detection_data(detection))
 
     # ── First run: one line about init and pick ──────────────────────────────
-    if project_cfg.source_path is None and fetched is None and not quiet:
+    if project_cfg.source_path is None and fetched is None and not quiet and first_run_hint:
         _first_run_hint(project_dir)
 
     # ── Include/exclude inputs shared by every scan mode ─────────────────────
@@ -2894,8 +3152,15 @@ def _package(
     fit_for: list[str] | None = None,
     max_tokens: int | None = None,
     trim: bool = False,
+    picked: list[Path] | None = None,
 ) -> None:
-    console.print()
+    """
+    *picked* (from `contextzip pick`) is the exact list of files to
+    package: it replaces what the scan included, and everything else the
+    scan saw counts as excluded.
+    """
+    if picked is None:
+        console.print()
     use_fancy = fancy()
     run_mode = "git-changes" if git_changes else ("prompt" if prompt else "standard")
     jsonout.put("mode", run_mode)
@@ -2917,9 +3182,14 @@ def _package(
         max_tokens=max_tokens,
         trim=trim,
         show_detection=not use_fancy,
+        first_run_hint=picked is None,
     )
     if scan is None:
         return
+    if picked is not None:
+        large = int(scan.project_cfg.limits.max_file_size_mb * 1024 * 1024)
+        scan.resolved = _apply_picked(scan.resolved, picked, large_file_warn_bytes=large)
+        scan.scan_label, scan.scan_detail = scan_label_and_detail(scan.resolved, git_mode=False)
     project_root, project_dir, fetched = scan.project_root, scan.project_dir, scan.fetched
     project_cfg, detection, resolved = scan.project_cfg, scan.detection, scan.resolved
     scan_label, scan_detail = scan.scan_label, scan.scan_detail

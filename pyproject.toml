@@ -32,6 +32,7 @@ dependencies = [
     "pathspec>=0.12",
     "httpx>=0.27",
     "tiktoken>=0.8",
+    "textual>=1.0; sys_platform != 'emscripten'",  # contextzip pick; never used in the browser build
 ]
 
 [project.optional-dependencies]

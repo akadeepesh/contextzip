@@ -2,6 +2,7 @@
 
 ## [0.1.3] — Unreleased
 
+- With contextzip 0.8, the "Packed" message shows the exact token count and whether the ZIP fits Claude, ChatGPT and Gemini ("Fits Claude ≈23% · ChatGPT ≈36%"), and becomes a warning when it's too big for one. Older CLIs show the same message as before.
 - Bundles the contextzip 0.6.2 CLI: Java, Kotlin and Spring Boot projects are detected and packaged, and secrets in Spring Boot config files are redacted.
 
 ## [0.1.2] — 2026-10-24

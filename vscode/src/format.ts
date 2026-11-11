@@ -1,6 +1,26 @@
 // The shapes of the CLI's --json results this extension reads (documented
 // in CLI.md under "JSON output"), and how they're summarised for people.
 
+/** Token counts (contextzip 0.8+; an older CLI doesn't send them). */
+export interface TokenInfo {
+  total: number;
+  method: "o200k_base" | "estimate";
+  exact: boolean;
+  by_dir: { path: string; tokens: number }[];
+  top_files: { path: string; tokens: number }[];
+}
+
+/** Whether the ZIP fits one model's context window (contextzip 0.8+). */
+export interface FitInfo {
+  target: string;
+  name: string;
+  window: number;
+  tokens: number;
+  share: number;
+  exact: boolean;
+  fits: boolean;
+}
+
 export interface ZipInfo {
   path: string;
   files: number;
@@ -8,6 +28,7 @@ export interface ZipInfo {
   compressed_bytes: number;
   estimated_tokens: number;
   snapshot: string | null;
+  tokens?: TokenInfo;
 }
 
 export interface ClipboardInfo {
@@ -76,8 +97,12 @@ export function humanSize(bytes: number): string {
   return `${n >= 10 ? Math.round(n) : n.toFixed(1)} ${units[unit]}`;
 }
 
-/** Same rounding as the CLI's tokens.format_tokens. */
-export function formatTokens(tokens: number): string {
+/**
+ * Same output as the CLI's tokens.format_tokens: "≈ 46k tokens", or with
+ * an exact count "46,210 tokens".
+ */
+export function formatTokens(tokens: number, exact = false): string {
+  if (exact) return `${tokens.toLocaleString("en-US")} token${tokens === 1 ? "" : "s"}`;
   let n: string;
   if (tokens < 1000) n = String(tokens);
   else if (tokens < 10_000) n = `${(tokens / 1000).toFixed(1)}k`;
@@ -88,7 +113,32 @@ export function formatTokens(tokens: number): string {
 
 export function packageSummary(zip: ZipInfo): string {
   const files = `${zip.files} file${zip.files === 1 ? "" : "s"}`;
-  return `Packed ${files} · ${humanSize(zip.compressed_bytes)} · ${formatTokens(zip.estimated_tokens)}`;
+  const tokens = zip.tokens ? formatTokens(zip.tokens.total, zip.tokens.exact) : formatTokens(zip.estimated_tokens);
+  return `Packed ${files} · ${humanSize(zip.compressed_bytes)} · ${tokens}`;
+}
+
+function sharePercent(share: number): string {
+  return share < 0.01 ? "<1%" : `${Math.round(share * 100)}%`;
+}
+
+/**
+ * "Fits Claude ≈23% · ChatGPT 36%", or "Too big for Claude (131%)" naming
+ * only the models it's too big for. Undefined without fit data (an older CLI).
+ */
+export function fitSummary(fit: FitInfo[] | undefined | null): string | undefined {
+  if (!fit || fit.length === 0) return undefined;
+  const tooBig = fit.filter((f) => !f.fits);
+  if (tooBig.length) {
+    const names = tooBig.map((f) => `${f.name} (${f.exact ? "" : "≈"}${sharePercent(f.share)})`);
+    const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    return `Too big for ${list}`;
+  }
+  return `Fits ${fit.map((f) => `${f.name} ${f.exact ? "" : "≈"}${sharePercent(f.share)}`).join(" · ")}`;
+}
+
+/** True when the fit data names a model the ZIP is too big for. */
+export function tooBigForAny(fit: FitInfo[] | undefined | null): boolean {
+  return !!fit && fit.some((f) => !f.fits);
 }
 
 const SAFE_ORDER: FileStatus[] = ["modified", "merged", "moved", "new"];

@@ -15,6 +15,9 @@ import {
   SnapshotInfo,
   ZipInfo,
   packageSummary,
+  fitSummary,
+  tooBigForAny,
+  FitInfo,
   planCounts,
   safeFiles,
   snapshotFromGuide,
@@ -237,12 +240,17 @@ async function packageProject(args: string[], title: string, cwd?: string): Prom
     return;
   }
   const clipboard = result.clipboard as ClipboardInfo | null;
+  const fit = result.fit as FitInfo[] | undefined;
   let message = packageSummary(zip);
+  const fitText = fitSummary(fit);
+  if (fitText) message += ` · ${fitText}`;
   if (clipboard?.copied) message += ". It's on your clipboard: paste it into Claude, ChatGPT or any upload box.";
   else if (clipboard) message += `. Couldn't copy it to the clipboard${clipboard.hint ? `: ${clipboard.hint}` : "."}`;
   const actions = ["Reveal ZIP", "Open Report"];
   if (result.warnings.length) actions.push("Show Warnings");
-  const choice = await vscode.window.showInformationMessage(message, ...actions);
+  const choice = tooBigForAny(fit)
+    ? await vscode.window.showWarningMessage(message, ...actions)
+    : await vscode.window.showInformationMessage(message, ...actions);
   if (choice === "Reveal ZIP") void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(zip.path));
   else if (choice === "Open Report" && typeof result.report === "string") {
     void vscode.window.showTextDocument(vscode.Uri.file(result.report));

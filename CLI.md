@@ -17,6 +17,9 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 - [`contextzip config`](#contextzip-config)
 - [`contextzip tokens`](#contextzip-tokens) — where the tokens are, and whether it fits
 - [`contextzip stacks`](#contextzip-stacks) — the languages and frameworks it recognises
+- [`contextzip init`](#contextzip-init) — set a project up
+- [`contextzip doctor`](#contextzip-doctor) — check that everything works
+- [`contextzip completions`](#contextzip-completions) — tab completion for your shell
 - [`contextzip update`](#contextzip-update)
 - [`contextzip setup-path`](#contextzip-setup-path)
 - [Errors](#errors) — what an error looks like, and CONTEXTZIP_DEBUG
@@ -40,6 +43,9 @@ Every command and flag in one place. `cz` is a short alias for `contextzip` — 
 | `contextzip apply [ZIP]` | Write an AI-returned ZIP back into your project, safely (or `--pr`: as a GitHub pull request) |
 | `contextzip watch -- COMMAND` | Run a command and package debug context when an error appears |
 | `contextzip config …` | Gemini key, workspace location, visual include/exclude UI |
+| `contextzip init` | Set a project up: see what would be packaged, save the defaults |
+| `contextzip doctor` | Check that everything contextzip needs works on this machine |
+| `contextzip completions [SHELL]` | Tab completion for bash, zsh, fish or PowerShell |
 | `contextzip update` | Check PyPI for a newer release and update in place |
 | `contextzip setup-path` | Put `cz` on your PATH when the terminal can't find it |
 
@@ -432,6 +438,65 @@ contextzip stacks --json       # the same as data
 ```
 
 A stack is recognised by a marker file (`Cargo.toml`, `*.csproj`), by a dependency in its manifest (`next` in `package.json`), or, when a project has no project file at all, by its file types. A framework's own exclusions apply from the folder it was found in, so one app's `storage/` or `public/` doesn't affect the rest of a monorepo. Missing a stack? [Request it](https://www.contextzipcli.com/request-language).
+
+## `contextzip init`
+
+Set a project up. contextzip shows what it would package (the same summary as a dry run), then asks one question: "Save these defaults for this project?". Yes writes a minimal `.contextzip/config.json` (`{"always_include": [], "always_exclude": []}`), git-ignored like the rest of `.contextzip/`, and prints what to run next.
+
+```bash
+contextzip init
+contextzip init --yes        # don't ask (also the default when there's no terminal)
+contextzip init --json
+```
+
+A project that already has `.contextzip/config.json` is left alone: `init` says where the file is and points to `contextzip pick` and `contextzip config --ui` to change it.
+
+`init` replaces the question older versions asked on a project's first run. Now the first package run in a project prints one line instead ("First run here. cz init sets defaults, cz pick chooses files by hand.") and never waits for an answer.
+
+## `contextzip doctor`
+
+Check that everything contextzip needs works on this machine. One line per check: `✓` when it's fine, `!` with what to try when it isn't.
+
+```bash
+contextzip doctor
+contextzip doctor --online     # also ask PyPI whether a newer release exists
+contextzip doctor --json       # {"checks": [{"name", "ok", "detail", "fix"}]}
+```
+
+| Check | What it looks at |
+|---|---|
+| Version | The installed version and how it was installed. With `--online`, whether a newer release exists. |
+| PATH | Whether `cz` and `contextzip` are on PATH (fix: `contextzip setup-path`). |
+| Python | The version; below 3.10 the MCP server isn't available. |
+| Clipboard | How the ZIP would reach the clipboard here. Nothing is copied. |
+| Tokenizer | Whether exact token counts work, or only estimates. |
+| git | Whether git is installed; only `--git-changes` needs it. |
+| Project | The project root from here, its stacks, whether it has a config, and the size of `.contextzip/` and its snapshots. |
+| Gemini key | Whether one is set (it's never printed); only `--prompt` needs it. |
+| Terminal | The output encoding, whether it's a terminal, its width, and `NO_COLOR`. |
+
+It ends with "✓ Everything looks fine." or "! N things to look at." and exits 0 either way; `--strict` exits 1 when anything needs a look. A check that fails to run says "could not check" instead of stopping the rest. `doctor` never changes anything, and only uses the network with `--online`.
+
+## `contextzip completions`
+
+Tab completion for bash, zsh, fish and PowerShell, for both `cz` and `contextzip`.
+
+```bash
+contextzip completions --install          # your current shell, for new terminals
+contextzip completions zsh > ~/.zfunc/_cz # or print the script and put it where you like
+contextzip completions powershell
+```
+
+Without a shell name, contextzip uses your current one (`$SHELL`; PowerShell on Windows). `--install` writes the script between `# >>> contextzip completions >>>` and `# <<< contextzip completions <<<` in your shell's startup file, and running it again replaces that block instead of adding a second one:
+
+| Shell | Where `--install` writes |
+|---|---|
+| bash | `~/.bashrc` (`~/.bash_profile` on macOS) |
+| zsh | `~/.zshrc` (or `$ZDOTDIR/.zshrc`) |
+| fish | `~/.config/fish/completions/cz.fish` and `contextzip.fish` |
+| PowerShell | The profile each installed PowerShell reports (`$PROFILE.CurrentUserAllHosts`) |
+
+If PowerShell's execution policy blocks profile scripts, `--install` says so and shows the command that allows your own scripts. Open a new terminal afterwards: `cz ap<Tab>` completes to `cz apply`, `cz --dr<Tab>` to `--dry-run`.
 
 ## `CONTEXTZIP.md`
 

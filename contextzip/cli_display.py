@@ -748,6 +748,7 @@ def print_package_summary(
     clipboard=None,
     hint: str | None = None,
     report_path=None,
+    footer: str | None = "Nothing was written. Run it again without --dry-run to make the ZIP.",
     con: Console = console,
 ) -> None:
     """
@@ -769,7 +770,8 @@ def print_package_summary(
     *result* is the PackageResult, or None for a dry run. *warnings* is a
     callable that prints the run's `!` lines; they go between the block and
     the final lines. *clipboard* is the ClipboardResult, or None after
-    --no-clipboard. *report_path* is printed only when given.
+    --no-clipboard. *report_path* is printed only when given. *footer* is
+    a dry run's last line (None for none).
     """
     if jsonout.active() is not None:
         return
@@ -830,7 +832,8 @@ def print_package_summary(
 
     # ── Final lines ───────────────────────────────────────────────────────
     if dry_run:
-        info("Nothing was written. Run it again without --dry-run to make the ZIP.", con=con)
+        if footer:
+            info(footer, con=con)
         return
 
     snapshot = getattr(result, "snapshot", None)

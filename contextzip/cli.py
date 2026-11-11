@@ -2033,6 +2033,248 @@ def cmd_setup_path(yes: bool) -> None:
     console.print()
 
 
+# ---------------------------------------------------------------------------
+# Subcommand: completions
+# ---------------------------------------------------------------------------
+
+
+@main.command(
+    "completions",
+    short_help="Tab completion for your shell",
+    context_settings={"ignore_unknown_options": True},
+)
+@click.argument("args", nargs=-1, metavar="[SHELL]")
+@click.option(
+    "--install",
+    "do_install",
+    is_flag=True,
+    default=False,
+    help="Add them to your shell's startup file. Running it again updates them, never twice.",
+)
+@click.option("--complete", "complete_mode", is_flag=True, default=False, hidden=True)
+@click.option("--new", "new_word", is_flag=True, default=False, hidden=True)
+def cmd_completions(args: tuple[str, ...], do_install: bool, complete_mode: bool, new_word: bool) -> None:
+    """
+    Tab completion for bash, zsh, fish or PowerShell, for both cz and contextzip.
+
+    \b
+    Examples
+      contextzip completions --install          # your shell, set up for new terminals
+      contextzip completions zsh > ~/.zfunc/_cz
+      contextzip completions powershell
+
+    SHELL is bash, zsh, fish or powershell; without it, contextzip uses
+    your current shell. Without --install the script is printed, so you
+    can put it wherever you like.
+    """
+    from contextzip import completions as comp
+
+    if complete_mode:
+        for value in comp.candidates(main, list(args), new_word=new_word):
+            click.echo(value)
+        return
+
+    if len(args) > 1:
+        raise click.UsageError("Name one shell: bash, zsh, fish or powershell.")
+    shell = args[0].lower() if args else comp.detect_shell()
+    if shell in ("pwsh", "powershell.exe"):
+        shell = "powershell"
+    if shell is None:
+        fail("Couldn't tell which shell you use.", fix="contextzip completions bash   (or zsh, fish, powershell)")
+        raise SystemExit(1)
+    if shell not in comp.SHELLS:
+        fail(f"contextzip has no completions for {shell}.", why="It has them for bash, zsh, fish and powershell.")
+        raise SystemExit(1)
+
+    if not do_install:
+        click.echo(comp.script(main, shell), nl=False)
+        return
+
+    try:
+        written = comp.install(main, shell)
+    except OSError as exc:
+        fail(f"Couldn't install the {shell} completions.", why=str(exc))
+        raise SystemExit(1)
+    console.print()
+    ok(f"Completions installed for {shell}", literal(", ".join(comp.display(path) for path, _p in written)))
+    for path, policy in written:
+        if comp.blocks_policy(policy):
+            info(
+                f"PowerShell won't run {path.name} while scripts are blocked ({policy}). "
+                "To allow your own scripts: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned"
+            )
+            break
+    info("Open a new terminal to use them.")
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: init
+# ---------------------------------------------------------------------------
+
+
+@main.command("init", short_help="Set this project up")
+@click.option("--yes", "-y", is_flag=True, default=False, help="Save the defaults without asking.")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help="Print one JSON object instead of terminal output, for editors and scripts. Never prompts.",
+)
+def cmd_init(yes: bool, json_output: bool) -> None:
+    """
+    Set this project up: see what contextzip would package, and save the defaults.
+
+    \b
+    Examples
+      contextzip init
+      contextzip init --yes        # no question, for scripts
+      contextzip init --json
+
+    Writes .contextzip/config.json (git-ignored, like the rest of
+    .contextzip/). Change it later with contextzip pick or contextzip
+    config --ui.
+    """
+    with _json_session("init", json_output):
+        _init(yes=yes)
+
+
+def _init(*, yes: bool) -> None:
+    from contextzip.project_config import project_config_path
+
+    console.print()
+    project_root = _resolve_root()
+    project_dir = project_root.root
+    config_file = project_config_path(project_dir)
+    prog = prog_name()
+    jsonout.put("project", {"root": str(project_dir), "kind": project_root.kind})
+    jsonout.put("config", str(config_file))
+    jsonout.put("created", False)
+
+    if config_file.is_file():
+        info(literal(f"This project is already set up: {config_file}"))
+        info(f"Change what's included: {prog} pick")
+        info(f"Other settings: {prog} config --ui")
+        console.print()
+        return
+
+    scan = _scan(extra_exclude=None, include_only=None, quiet=True)
+    if scan is None:  # only --git-changes returns None
+        return
+    report = _count_tokens(scan.resolved, project_dir, create_cache=False)
+    fit_rows = jsonout.fit_data(report, scan.fit_targets)
+    jsonout.put("detection", jsonout.detection_data(scan.detection))
+    jsonout.put("files", jsonout.files_data(scan.resolved, project_dir, verbose=False, git_mode=False, tokens=report))
+    jsonout.put("fit", fit_rows)
+
+    if fancy():
+        print_package_summary(
+            name=project_dir.name,
+            detection=scan.detection,
+            resolved=scan.resolved,
+            project_dir=project_dir,
+            tokens=report,
+            fit_rows=fit_rows if scan.project_cfg.tokens.show_fit else None,
+            footer=None,
+        )
+    else:
+        print_detection(scan.detection)
+        print_scan_summary(scan.resolved, project_dir, False, tokens=report)
+        if scan.project_cfg.tokens.show_fit:
+            print_fit(fit_rows)
+
+    if not yes and _interactive():
+        if not click.confirm("  Save these defaults for this project?", default=True):
+            info("Nothing saved. Run it again any time.")
+            console.print()
+            return
+
+    from contextzip.webui.persist import save_config_from_ui
+
+    try:
+        written = save_config_from_ui(project_dir, always_include=[], always_exclude=[])
+    except OSError as exc:
+        fail("Couldn't save the project config.", why=str(exc))
+        raise SystemExit(1)
+    jsonout.put("config", str(written))
+    jsonout.put("created", True)
+    from contextzip.cli_display import _display_path
+
+    ok(literal(f"Saved {_display_path(written)}"))
+    info("Next:")
+    steps = ((prog, "package it"), (f"{prog} pick", "choose files by hand"), (f"{prog} apply", "write the AI's reply back"))
+    width = max(len(command) for command, _what in steps) + 3
+    for command, what in steps:
+        info(f"  {command:<{width}}{what}")
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: doctor
+# ---------------------------------------------------------------------------
+
+
+@main.command("doctor", short_help="Check that everything works on this machine")
+@click.option("--online", is_flag=True, default=False, help="Also ask PyPI whether a newer contextzip exists.")
+@click.option("--strict", is_flag=True, default=False, help="Exit 1 when any check has something to look at.")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help='Print {"checks": [{"name", "ok", "detail", "fix"}]} instead of terminal output.',
+)
+def cmd_doctor(online: bool, strict: bool, json_output: bool) -> None:
+    """
+    Check that everything contextzip needs works on this machine.
+
+    \b
+    Examples
+      contextzip doctor
+      contextzip doctor --online     # also check for a newer release
+      contextzip doctor --json
+
+    Looks at the version, PATH, Python, the clipboard, the tokenizer, git,
+    this project, the Gemini key and the terminal. Changes nothing, copies
+    nothing, and only uses the network with --online.
+    """
+    with _json_session("doctor", json_output):
+        _doctor(online=online, strict=strict)
+
+
+def _doctor(*, online: bool, strict: bool) -> None:
+    from contextzip import doctor
+
+    console.print()
+    if online:
+        with status("[cyan]Checking for a newer release…[/]"):
+            checks = doctor.run_checks(online=True)
+    else:
+        checks = doctor.run_checks()
+    jsonout.put("checks", [c.as_dict() for c in checks])
+
+    width = max(len(c.name) for c in checks)
+    for check in checks:
+        text = literal(f"{check.name:<{width}}  {check.detail}")
+        if check.ok:
+            ok(text)
+        else:
+            warn(text)
+            if check.fix:
+                info(literal(f"{'':<{width}}  Try: {check.fix}"))
+
+    problems = sum(1 for c in checks if not c.ok)
+    console.print()
+    if problems:
+        warn(f"{problems} thing{'s' if problems != 1 else ''} to look at.")
+    else:
+        ok("Everything looks fine.")
+    console.print()
+    if problems and strict:
+        raise SystemExit(1)
+
+
 @main.command("update", short_help="Update contextzip")
 @click.option(
     "--check",
@@ -2165,54 +2407,24 @@ def _enforce_ai_config(ai_cfg) -> None:
         raise SystemExit(1)
 
 
-def _maybe_offer_config_ui(
-    project_dir: Path,
-    detection,
-    *,
-    prompt: str | None,
-    output: str | None,
-) -> bool:
+def _first_run_hint(project_dir: Path) -> None:
     """
-    On a project's very first run — no .contextzip/config.json and no
-    legacy .contextzip.json at all — offer to open the local config UI
-    instead of silently proceeding with bare defaults.
-
-    Deliberately conservative about when to ask:
-      - never if --prompt or --output were given (the user is mid-task,
-        not exploring — don't interrupt with a browser tab)
-      - never outside an interactive terminal, or with CI set (scripted/
-        automated runs must never block on a prompt)
-      - never again once declined once (persisted personally, not per
-        project — see config.get_config_ui_dismissed)
-
-    Returns True if the user saved a config during the offered session
-    (the caller should reload project config before continuing).
+    One dim line on a project's first package run, pointing to init and
+    pick. "First" means no .contextzip/ existed before this run, so it's
+    shown once per project and never asks anything.
     """
-    if prompt or output:
-        return False
-    if not _interactive():
-        return False
-    if os.environ.get("CI"):
-        return False
+    from contextzip.packager import _workspace_dir
 
-    from contextzip.config import get_config_ui_dismissed, save_config_ui_dismissed
-
-    if get_config_ui_dismissed():
-        return False
-
-    info("No project config found yet.")
-    info("contextzip can open a local browser tab to set include/exclude visually.")
-    console.print()
-
-    if not click.confirm("  Set up include/exclude visually now?", default=True):
-        save_config_ui_dismissed()
-        info("No problem — run contextzip config --ui anytime.")
-        console.print()
-        return False
-
-    from contextzip.webui.server import launch_config_ui
-
-    return launch_config_ui(project_dir, detection, con=console)
+    if jsonout.active() is not None:
+        return  # terminal advice; an editor driving --json has its own UI
+    try:
+        workspace, _is_git = _workspace_dir(project_dir)
+    except (OSError, ValueError):
+        return
+    if workspace.exists() or (project_dir / ".contextzip").exists():
+        return
+    prog = prog_name()
+    info(f"First run here. {prog} init sets defaults, {prog} pick chooses files by hand.")
 
 
 def _auto_cleanup(project_dir: Path, project_cfg) -> None:
@@ -2496,7 +2708,7 @@ def _scan(
     counting tokens. Shared by the package commands and `contextzip tokens`.
 
     *quiet* skips the progress lines (root notice, detection, git details)
-    and the first-run config UI offer; *show_detection* False skips only the
+    and the first-run hint; *show_detection* False skips only the
     detection line, which the designed summary shows in its header. Returns None when --git-changes finds
     nothing to package. Exits on a bad flag or a failed fetch.
     """
@@ -2569,13 +2781,9 @@ def _scan(
         print_detection(detection)
     jsonout.put("detection", jsonout.detection_data(detection))
 
-    # ── First-run offer: visual config UI ────────────────────────────────────
+    # ── First run: one line about init and pick ──────────────────────────────
     if project_cfg.source_path is None and fetched is None and not quiet:
-        saved = _maybe_offer_config_ui(
-            project_dir, detection, prompt=prompt, output=output
-        )
-        if saved:
-            project_cfg = load_project_config(project_dir)
+        _first_run_hint(project_dir)
 
     # ── Include/exclude inputs shared by every scan mode ─────────────────────
     # CLI --exclude/-e patterns plus any standing always_exclude patterns from

@@ -1450,10 +1450,24 @@ This project uses [Semantic Versioning](https://semver.org/).
   line. Each command's own `--help` starts with examples.
 - `contextzip --version` prints `contextzip 0.9.0` and, on a second line,
   the Python version and how it was installed.
+- **No question on a project's first run.** The first package run in a
+  project used to offer to open the config UI and wait for an answer. It
+  now prints one line pointing to `cz init` and `cz pick`, and carries on.
 - Sizes from one megabyte up keep a decimal below ten: "1.4 MB" instead of
   "1 MB". Larger ones stay whole ("14 MB").
 
 ### Added
+- **`contextzip init`** sets a project up: it shows what would be packaged
+  and asks once whether to save the defaults to `.contextzip/config.json`.
+  `--yes` and `--json` for scripts.
+- **`contextzip doctor`** checks the install, PATH, Python, the clipboard,
+  the tokenizer, git, the project, the Gemini key and the terminal, one
+  line each with what to try when something's off. `--online` also checks
+  for a newer release, `--strict` exits 1 on any warning, `--json` for
+  scripts. It never copies anything and stays offline by default.
+- **`contextzip completions`** prints or installs (`--install`) tab
+  completion for bash, zsh, fish and PowerShell, for both `cz` and
+  `contextzip`. Installing again updates the block instead of adding one.
 - **Suggestions for typos.** `cz aply` says there's no such command and
   asks "Did you mean: apply?". A path typed where a command goes points to
   `cz include PATH`.

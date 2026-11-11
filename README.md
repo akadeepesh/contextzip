@@ -83,6 +83,8 @@ brew install akadeepesh/tap/contextzip    # macOS, Linux
 
 Every method installs two commands that do the same thing: `contextzip` and the shorter `cz`. To update later, run `contextzip update`.
 
+**Tab completion:** `cz completions --install` sets it up for your shell (bash, zsh, fish or PowerShell), for both names. Open a new terminal and `cz ap<Tab>` completes to `cz apply`. `cz doctor` checks the install if something doesn't work.
+
 <details>
 <summary><b>More ways to install</b>: Scoop, direct download, VS Code, MCP, or try it without installing</summary>
 
@@ -317,7 +319,10 @@ contextzip runs your command and watches its output. When a stack trace appears 
 | `cz apply [ZIP]` | Write an AI-returned ZIP back into your project, safely |
 | `cz apply ZIP --pr` | Send an AI's reply to a GitHub repo back as a pull request |
 | `cz snapshots` | List what you've sent, so a reply can be merged against it |
+| `cz init` | Set a project up: see what would be packaged and save the defaults |
 | `cz stacks` | List the languages and frameworks contextzip recognises |
+| `cz doctor` | Check that everything works on this machine |
+| `cz completions --install` | Tab completion for bash, zsh, fish or PowerShell |
 | `cz watch -- COMMAND` | Run a command and package debug context when an error appears |
 | `cz config …` | Gemini key, workspace location and the visual config UI |
 | `cz mcp` | Run the MCP server for AI agents |
@@ -346,6 +351,7 @@ contextzip runs your command and watches its output. When a stack trace appears 
 | `--max-tokens N` | | A token budget (`150k`, `1.5m`). Over it, nothing is written. |
 | `--trim` | | With a budget: leave out generated files, data, tests and docs, in that order, until it fits. |
 | `--for MODEL` | | Show whether the ZIP fits this model: `claude`, `chatgpt` or `gemini`. Repeatable. Default: all. |
+| `--plain` | | One line per step, no bars or colour. Also what you get when the output is piped. |
 | `--json` | | Print one JSON object instead of terminal output, for editors and scripts. |
 
 </details>

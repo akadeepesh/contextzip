@@ -30,7 +30,7 @@ This ZIP was packaged by contextzip from the project **{project}**{stack}.
 Paths are relative to the project root.
 
 Snapshot: {snapshot}
-
+{size}
 ## Replying with files
 
 If you return files as a ZIP, please make it easy to apply:
@@ -57,9 +57,24 @@ deleted: old/unused.ts
 """
 
 
-def render(*, snapshot: str, project: str, ecosystem: str | None = None) -> str:
+def render(
+    *,
+    snapshot: str,
+    project: str,
+    ecosystem: str | None = None,
+    tokens=None,
+    files: int | None = None,
+) -> str:
+    """
+    The guide's text. With *tokens* (a TokenReport) a size line follows the
+    snapshot line: "Size: 44 files, 46,210 tokens (o200k_base)."
+    """
     stack = f" ({ecosystem})" if ecosystem and ecosystem.lower() != "unknown" else ""
-    return _TEMPLATE.format(snapshot=snapshot, project=project or "this project", stack=stack)
+    size = ""
+    if tokens is not None:
+        count = len(tokens.by_file) if files is None else files
+        size = f"Size: {count} file{'' if count == 1 else 's'}, {tokens.label()} ({tokens.method}).\n"
+    return _TEMPLATE.format(snapshot=snapshot, project=project or "this project", stack=stack, size=size)
 
 
 @dataclass

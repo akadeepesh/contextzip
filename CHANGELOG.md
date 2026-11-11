@@ -1378,7 +1378,21 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Real token counts.** The summary line, `--json`, the report and
+  CONTEXTZIP.md now count tokens with `o200k_base`, the tokenizer of
+  OpenAI's current models, instead of dividing bytes by four, which was
+  about 12% high for code. The tokenizer and its vocabulary ship with
+  contextzip and never use the network. `--json` gains a `tokens` object in
+  `files` and `zip` with the largest folders and files (and every file's
+  count with `--verbose`), `--verbose` names the files with the most
+  tokens, and the report breaks the count down by folder. Counts are
+  cached in `.contextzip/cache/`. If the tokenizer can't be loaded, the
+  count falls back to an estimate per file type and is shown with `≈`.
+
 ### Fixed
+- File names with square brackets, such as `app/[/b]/x.ts`, no longer
+  crash the `--verbose` file list.
 - **The wheel no longer installs `tests` and `installers` packages.** Every
   release so far put those two folders into site-packages next to
   `contextzip`, where a top-level `tests` package can shadow your own. Only

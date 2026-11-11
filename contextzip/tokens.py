@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -205,6 +206,12 @@ class TokenReport:
     def label(self) -> str:
         return format_tokens(self.total, exact=self.exact)
 
+    def subset(self, keys: Iterable[str]) -> TokenReport:
+        """The same counts for only *keys* (in this report's order), without tokenizing again."""
+        wanted = set(keys)
+        by_file = {k: n for k, n in self.by_file.items() if k in wanted}
+        return TokenReport(total=sum(by_file.values()), method=self.method, by_file=by_file)
+
 
 def _rel_key(path: Path, project_dir: Path) -> str:
     try:
@@ -301,12 +308,17 @@ def count_files(
             return _estimate_for(len(data), path.suffix)
         return count_text(data.decode("utf-8", errors="replace"))
 
-    if len(todo) > _PARALLEL_THRESHOLD:
+    counted: list[int | None] | None = None
+    # tiktoken releases the GIL, so threads help. Pyodide can't start them.
+    if len(todo) > _PARALLEL_THRESHOLD and sys.platform != "emscripten":
         from concurrent.futures import ThreadPoolExecutor
 
-        with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as pool:
-            counted = list(pool.map(count_one, todo))
-    else:
+        try:
+            with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as pool:
+                counted = list(pool.map(count_one, todo))
+        except RuntimeError:  # "can't start new thread"
+            counted = None
+    if counted is None:
         counted = [count_one(i) for i in todo]
 
     for i, n in zip(todo, counted):

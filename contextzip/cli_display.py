@@ -80,6 +80,17 @@ def status(text: str, *, con: Console = console):
     return con.status(text, spinner="dots")
 
 
+def literal(text: str) -> str:
+    """
+    *text* made safe to pass to ok/warn/err/info when it holds file paths:
+    a path like "app/[id]/page.tsx" must not be read as Rich markup.
+    Unchanged under --json, which collects plain text.
+    """
+    if jsonout.active() is not None:
+        return text
+    return escape(text)
+
+
 def info(text: str, *, con: Console = console) -> None:
     """A quiet, dim aside — not a step, just context."""
     if _collected("info", text):
@@ -217,14 +228,21 @@ def print_scan_summary(
     verbose: bool,
     *,
     git_mode: bool = False,
+    tokens=None,
     con: Console = console,
 ) -> None:
-    """Scan-only line, used when no packaging happens (dry runs)."""
+    """
+    Scan-only line, used when no packaging happens (dry runs). *tokens*, a
+    TokenReport for the included files, replaces the byte-based estimate.
+    """
     label, detail = scan_label_and_detail(resolved, git_mode=git_mode)
-    binary = set(resolved.binary_files)
-    text_bytes = sum(resolved.size_of(p) for p in resolved.included if p not in binary)
-    tokens = format_tokens(estimate_tokens(text_bytes))
-    ok(label, f"{detail}, {tokens}" if detail else tokens, con=con)
+    if tokens is not None:
+        token_text = tokens.label()
+    else:
+        binary = set(resolved.binary_files)
+        text_bytes = sum(resolved.size_of(p) for p in resolved.included if p not in binary)
+        token_text = format_tokens(estimate_tokens(text_bytes))
+    ok(label, f"{detail}, {token_text}" if detail else token_text, con=con)
 
     if resolved.skipped and not verbose:
         info(f"{len(resolved.skipped)} file(s) skipped — see report", con=con)
@@ -234,6 +252,17 @@ def print_scan_summary(
             size_str = human_size(resolved.size_of(p))
             rel = p.relative_to(project_dir).as_posix()
             con.print(f"  [green]·[/] {escape(rel)}  [dim]{size_str}[/]")
+        if tokens is not None:
+            print_most_tokens(tokens, con=con)
+
+
+def print_most_tokens(tokens, *, n: int = 5, con: Console = console) -> None:
+    """For --verbose: the files with the most tokens, on one line."""
+    top = [(rel, count) for rel, count in tokens.top_files(n) if count > 0]
+    if not top:
+        return
+    prefix = "" if tokens.exact else "≈ "
+    info(literal("Most tokens: " + " · ".join(f"{rel} {prefix}{count:,}" for rel, count in top)), con=con)
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +343,7 @@ def print_scan_and_pack(
     scan_detail: str | None,
     result,
     *,
+    tokens=None,
     con: Console = console,
 ) -> None:
     """
@@ -326,10 +356,13 @@ def print_scan_and_pack(
         if result.grew
         else f"↓{result.compression_pct} smaller"
     )
+    if tokens is None:
+        tokens = getattr(result, "tokens", None)
+    token_text = tokens.label() if tokens is not None else format_tokens(result.estimated_tokens)
     pack_detail = (
         f"{human_size(result.uncompressed_bytes)} → "
         f"{human_size(result.compressed_bytes)}, {size_detail}, "
-        f"{format_tokens(result.estimated_tokens)}"
+        f"{token_text}"
     )
     detail = f"{scan_detail}, {pack_detail}" if scan_detail else pack_detail
     ok(f"{label} & Packed {result.file_count} files", detail, con=con)

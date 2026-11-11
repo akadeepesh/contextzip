@@ -69,7 +69,7 @@ Other tools turn a repository into one text file for an AI to read. contextzip s
 | Remote repos without cloning | GitHub, GitLab, Bitbucket | GitHub | GitHub | Not covered in its docs |
 | Runs in | Terminal, browser, VS Code, MCP | Terminal, browser, MCP | Terminal, browser | Terminal, MCP |
 
-If you only want an AI to *read* a repository, any of them works, and a single text file pastes into more places than a ZIP does. repomix also counts tokens exactly and can compress code down to its signatures, which contextzip doesn't do yet. If you want the AI's edits back in your code, that is what contextzip is for.
+If you only want an AI to *read* a repository, any of them works, and a single text file pastes into more places than a ZIP does. repomix can also compress code down to its signatures, which contextzip doesn't do yet. If you want the AI's edits back in your code, that is what contextzip is for.
 
 <sub>The other columns come from each project's own documentation as of October 2026. <a href="https://github.com/akadeepesh/contextzip/issues/new/choose">Corrections are welcome.</a></sub>
 

@@ -61,6 +61,7 @@ from contextzip.cli_display import (
     print_auto_cleanup,
     print_redaction_summary,
     print_root_notice,
+    print_most_tokens,
 )
 from contextzip.report import write_scan_report, write_apply_report
 from contextzip.applier import (
@@ -79,6 +80,7 @@ from contextzip.cli_ai import (
 from contextzip.cli_onboard import onboard_api_key
 from contextzip import cleanup as cleanup_mod
 from contextzip import jsonout
+from contextzip import tokens as tokens_mod
 from contextzip import updater as updater_mod
 from contextzip import remote as remote_mod
 from contextzip import root as root_mod
@@ -1861,6 +1863,44 @@ def _gemini_key_or_exit() -> str:
     return api_key
 
 
+def _count_tokens(resolved, project_dir: Path, *, create_cache: bool):
+    """
+    Count the tokens in *resolved*'s included files (see tokens.py).
+
+    Counts are cached in the project's .contextzip/cache/ — but a run that
+    writes nothing there (a dry run, --output, a remote repository) only
+    uses the cache when the workspace already exists; it never creates
+    .contextzip/ just for the cache.
+    """
+    from contextzip.packager import _workspace_dir
+
+    cache_dir = None
+    try:
+        workspace, _is_git = _workspace_dir(project_dir)
+        if create_cache or workspace.is_dir():
+            cache_dir = workspace / "cache"
+    except (OSError, ValueError):
+        cache_dir = None  # no cache is slower, never wrong
+    with status("[cyan]Counting tokens…[/]"):
+        return tokens_mod.count_files(
+            resolved.included, project_dir, binary=resolved.binary_files, cache_dir=cache_dir
+        )
+
+
+def _narrow_tokens(report, resolved, project_dir: Path):
+    """The token report for resolved.included after --prompt narrowed it to the AI's selection."""
+    keys = []
+    for p in resolved.included:
+        try:
+            keys.append(p.relative_to(project_dir).as_posix())
+        except ValueError:
+            keys.append(p.name)
+    if all(k in report.by_file for k in keys):
+        return report.subset(keys)
+    # The selection named a file the scan didn't count: count it fresh.
+    return tokens_mod.count_files(resolved.included, project_dir, binary=resolved.binary_files)
+
+
 def _package(
     *,
     extra_exclude: list[str] | None,
@@ -2017,7 +2057,19 @@ def _package(
         scan_label, scan_detail = scan_label_and_detail(resolved, git_mode=False)
 
     large_file_warn_bytes = int(project_cfg.limits.max_file_size_mb * 1024 * 1024)
-    jsonout.put("files", jsonout.files_data(resolved, project_dir, verbose=verbose, git_mode=git_changes))
+
+    # ── Tokens ───────────────────────────────────────────────────────────────
+    # Counted once, for every file the scan included. --prompt narrows the
+    # report to the AI's selection below without counting again.
+    token_report = _count_tokens(
+        resolved,
+        project_dir,
+        create_cache=not dry_run and not output and fetched is None,
+    )
+    jsonout.put(
+        "files",
+        jsonout.files_data(resolved, project_dir, verbose=verbose, git_mode=git_changes, tokens=token_report),
+    )
 
     # ── Dry run ──────────────────────────────────────────────────────────────
     if dry_run:
@@ -2037,7 +2089,7 @@ def _package(
                 max_files=project_cfg.ai.max_files,
             )
         else:
-            print_scan_summary(resolved, project_dir, verbose, git_mode=git_changes)
+            print_scan_summary(resolved, project_dir, verbose, git_mode=git_changes, tokens=token_report)
             print_file_warnings(
                 resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
             )
@@ -2074,6 +2126,7 @@ def _package(
             raise SystemExit(1)
 
         resolved.included = selected_paths
+        token_report = _narrow_tokens(token_report, resolved, project_dir)
         jsonout.put(
             "ai",
             {"prompt": prompt, "selected": [p.relative_to(project_dir).as_posix() for p in selected_paths]},
@@ -2094,6 +2147,7 @@ def _package(
         redact_secrets_enabled=project_cfg.limits.redact_secrets,
         ecosystem=detection.display_name,
         guide=project_cfg.zip_guide,
+        tokens=token_report,
     )
     try:
         if jsonout.active() is not None:
@@ -2104,14 +2158,16 @@ def _package(
         err(f"Failed to create ZIP: {exc}")
         raise SystemExit(1)
 
-    print_scan_and_pack(scan_label, scan_detail, result)
+    print_scan_and_pack(scan_label, scan_detail, result, tokens=token_report)
+    if verbose:
+        print_most_tokens(token_report)
     print_file_warnings(
         resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes
     )
     print_zip_write_warnings(result)
     print_redaction_summary(result)
     print_package_result(result)
-    jsonout.put("zip", jsonout.package_data(result, project_dir))
+    jsonout.put("zip", jsonout.package_data(result, project_dir, verbose=verbose))
 
     # ── Report ───────────────────────────────────────────────────────────────
     report_path = write_scan_report(
@@ -2125,6 +2181,7 @@ def _package(
         large_file_warn_bytes=large_file_warn_bytes,
         redacted=result.redacted,
         skipped_in_zip=result.skipped_in_zip,
+        tokens=token_report,
     )
     print_report_hint(report_path)
     jsonout.put("report", str(report_path))

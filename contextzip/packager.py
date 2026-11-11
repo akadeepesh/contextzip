@@ -63,6 +63,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.progress import (
@@ -77,6 +78,9 @@ from rich.progress import (
 )
 
 from contextzip.filters import ResolveResult
+
+if TYPE_CHECKING:
+    from contextzip.tokens import TokenReport
 from contextzip.redact import (
     is_sensitive_path,
     is_spring_config,
@@ -175,9 +179,15 @@ class PackageResult:
     redacted: list[tuple[Path, list[str]]] = field(default_factory=list)
     text_bytes: int = 0
     """Bytes of the included text files (binary ones left out), for the token estimate."""
+    tokens: TokenReport | None = None
+    """Token counts per file (see tokens.py), when the caller counted them."""
 
     @property
     def estimated_tokens(self) -> int:
+        """The token count: the real one when counted, otherwise estimated from text_bytes."""
+        if self.tokens is not None:
+            return self.tokens.total
+
         from contextzip.tokens import estimate_tokens
 
         return estimate_tokens(self.text_bytes)
@@ -296,6 +306,7 @@ def create_zip_silent(
     redact_secrets_enabled: bool = False,
     ecosystem: str | None = None,
     guide: bool = True,
+    tokens: TokenReport | None = None,
 ) -> PackageResult:
     """
     Write the included files from *resolve_result* into a ZIP archive
@@ -311,7 +322,8 @@ def create_zip_silent(
 
     *redact_secrets_enabled* mirrors the project's `limits.redact_secrets`
     setting — see redact.py. *guide* adds CONTEXTZIP.md (see guide.py);
-    *ecosystem* is shown in it.
+    *ecosystem* is shown in it. *tokens*, a TokenReport for the included
+    files, is shown in the guide and stored on the result.
     """
     if output_path is not None:
         zip_path = output_path
@@ -338,7 +350,7 @@ def create_zip_silent(
     ) as zf:
         if prompt_txt is not None:
             zf.writestr("prompt.txt", prompt_txt.encode("utf-8"))
-        _write_guide(zf, snapshot, project_dir, included, ecosystem, guide)
+        _write_guide(zf, snapshot, project_dir, included, ecosystem, guide, tokens)
 
         for abs_path in included:
             if not abs_path.is_file():
@@ -383,6 +395,7 @@ def create_zip_silent(
         skipped_in_zip=skipped_in_zip,
         redacted=redacted,
         text_bytes=text_bytes,
+        tokens=tokens,
         snapshot=snapshot.label if snapshot is not None and snapshot.is_complete else None,
         snapshot_id=snapshot.id if snapshot is not None and snapshot.is_complete else None,
     )
@@ -398,6 +411,7 @@ def create_zip(
     redact_secrets_enabled: bool = False,
     ecosystem: str | None = None,
     guide: bool = True,
+    tokens: TokenReport | None = None,
 ) -> PackageResult:
     """
     Write the included files from *resolve_result* into a ZIP archive.
@@ -422,6 +436,8 @@ def create_zip(
 
     Every ZIP is also saved as a numbered snapshot (see snapshots.py) and,
     with *guide*, carries a CONTEXTZIP.md naming it (see guide.py).
+    *tokens*, a TokenReport for the included files, is shown in the guide
+    and stored on the result.
 
     Returns a :class:`PackageResult` with compression stats and any
     files that had to be skipped during writing (e.g. permission denied).
@@ -467,7 +483,7 @@ def create_zip(
             # Write prompt.txt first so it's the first thing AI tools see
             if prompt_txt is not None:
                 zf.writestr("prompt.txt", prompt_txt.encode("utf-8"))
-            _write_guide(zf, snapshot, project_dir, included, ecosystem, guide)
+            _write_guide(zf, snapshot, project_dir, included, ecosystem, guide, tokens)
 
             for abs_path in included:
                 if not abs_path.is_file():
@@ -514,6 +530,7 @@ def create_zip(
         skipped_in_zip=skipped_in_zip,
         redacted=redacted,
         text_bytes=text_bytes,
+        tokens=tokens,
         snapshot=snapshot.label if snapshot is not None and snapshot.is_complete else None,
         snapshot_id=snapshot.id if snapshot is not None and snapshot.is_complete else None,
     )
@@ -535,7 +552,15 @@ def _reserve_snapshot(project_dir: Path):
         return None
 
 
-def _write_guide(zf, snapshot, project_dir: Path, included: list[Path], ecosystem: str | None, enabled: bool) -> None:
+def _write_guide(
+    zf,
+    snapshot,
+    project_dir: Path,
+    included: list[Path],
+    ecosystem: str | None,
+    enabled: bool,
+    tokens: TokenReport | None = None,
+) -> None:
     """
     Add CONTEXTZIP.md to the ZIP — unless it's turned off, the snapshot
     couldn't be reserved, or the project has its own file by that name.
@@ -550,7 +575,16 @@ def _write_guide(zf, snapshot, project_dir: Path, included: list[Path], ecosyste
                 return
         except ValueError:
             continue
-    zf.writestr(GUIDE_NAME, render(snapshot=snapshot.label, project=project_dir.name, ecosystem=ecosystem))
+    zf.writestr(
+        GUIDE_NAME,
+        render(
+            snapshot=snapshot.label,
+            project=project_dir.name,
+            ecosystem=ecosystem,
+            tokens=tokens,
+            files=len(included),
+        ),
+    )
 
 
 def _record_snapshot(

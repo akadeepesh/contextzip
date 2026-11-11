@@ -92,6 +92,12 @@ class TokenReportTests(unittest.TestCase):
         self.assertEqual(self.report.top_files(6)[-3:], [("setup.py", 10), ("src/app/util.py", 10), ("README.md", 5)])
         self.assertEqual(self.report.top_files(0), [])
 
+    def test_subset_keeps_order_and_recounts(self):
+        sub = self.report.subset(["src/db.py", "README.md", "not-there.py"])
+        self.assertEqual(sub.by_file, {"README.md": 5, "src/db.py": 20})
+        self.assertEqual(sub.total, 25)
+        self.assertEqual(sub.method, METHOD_EXACT)
+
     def test_exact_and_label(self):
         self.assertTrue(self.report.exact)
         self.assertEqual(self.report.label(), "100 tokens")
@@ -124,6 +130,16 @@ class CountFilesTests(TempProject):
         self.assertEqual(list(report.by_file), names)
         self.assertEqual([report.by_file[n] for n in names], list(range(1, 41)))
         self.assertEqual(report.total, sum(range(1, 41)))
+
+    def test_no_threads_counts_serially(self):
+        paths = [self.write(f"f{i:02d}.txt", "a b") for i in range(40)]
+        with _exact_mode(), mock.patch("concurrent.futures.ThreadPoolExecutor", side_effect=RuntimeError("can't start new thread")):
+            report = count_files(paths, self.root)
+        self.assertEqual(report.total, 80)
+        with _exact_mode(), mock.patch.object(tokens.sys, "platform", "emscripten"), mock.patch(
+            "concurrent.futures.ThreadPoolExecutor", side_effect=AssertionError("no threads in Pyodide")
+        ):
+            self.assertEqual(count_files(paths, self.root).total, 80)
 
     def test_path_outside_project_keyed_by_name(self):
         outside = self.write("elsewhere/notes.txt", "a b c", base=self.tmp)

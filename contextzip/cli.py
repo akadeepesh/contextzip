@@ -66,6 +66,9 @@ from contextzip.cli_display import (
     print_fit,
     literal,
     print_token_breakdown,
+    print_package_summary,
+    plain_output,
+    fancy,
 )
 from contextzip.report import write_scan_report, write_apply_report
 from contextzip.applier import (
@@ -239,6 +242,12 @@ def _modifier_options(f):
             help="Show whether the ZIP fits this model: claude, chatgpt or gemini. Repeatable. Default: all.",
         ),
         click.option(
+            "--plain",
+            is_flag=True,
+            default=False,
+            help="One line per step, no bars or colour blocks. This is also what you get when the output is piped.",
+        ),
+        click.option(
             "--json",
             "json_output",
             is_flag=True,
@@ -383,6 +392,7 @@ def main(
     fit_for: tuple[str, ...],
     max_tokens: int | None,
     trim: bool,
+    plain: bool,
     json_output: bool,
 ) -> None:
     """
@@ -419,6 +429,7 @@ def main(
         fit_for=list(fit_for),
         max_tokens=max_tokens,
         trim=trim,
+        plain=plain,
         json_output=json_output,
     )
 
@@ -446,6 +457,7 @@ def cmd_exclude(
     fit_for: tuple[str, ...],
     max_tokens: int | None,
     trim: bool,
+    plain: bool,
     json_output: bool,
 ) -> None:
     """
@@ -477,6 +489,7 @@ def cmd_exclude(
         fit_for=list(fit_for),
         max_tokens=max_tokens,
         trim=trim,
+        plain=plain,
         json_output=json_output,
     )
 
@@ -504,6 +517,7 @@ def cmd_include(
     fit_for: tuple[str, ...],
     max_tokens: int | None,
     trim: bool,
+    plain: bool,
     json_output: bool,
 ) -> None:
     """
@@ -534,6 +548,7 @@ def cmd_include(
         fit_for=list(fit_for),
         max_tokens=max_tokens,
         trim=trim,
+        plain=plain,
         json_output=json_output,
     )
 
@@ -1922,14 +1937,22 @@ def _auto_cleanup(project_dir: Path, project_cfg) -> None:
     print_auto_cleanup(result)
 
 
-def _run(*, json_output: bool = False, **kwargs) -> None:
+def _run(*, json_output: bool = False, plain: bool = False, **kwargs) -> None:
     """
     All packaging work lives in _package. The main command and every
     subcommand delegate here after collecting their arguments/flags,
     keeping the CLI surface thin and the logic testable in isolation.
     """
-    with _json_session("package", json_output):
+    with _json_session("package", json_output), plain_output(plain):
         _package(**kwargs)
+
+
+def _prog_name() -> str:
+    """The name the user typed, cz or contextzip, for the commands contextzip suggests."""
+    ctx = click.get_current_context(silent=True)
+    name = ctx.find_root().info_name if ctx is not None else None
+    stem = os.path.splitext(os.path.basename(name or ""))[0].lower()
+    return "cz" if stem == "cz" else "contextzip"
 
 
 def _fetch_remote(target: str, ref: str | None):
@@ -2151,6 +2174,7 @@ def _scan(
     max_tokens: int | None = None,
     trim: bool = False,
     quiet: bool = False,
+    show_detection: bool = True,
 ) -> _Scan | None:
     """
     Find the project (or fetch the remote one), load its config, detect the
@@ -2158,7 +2182,8 @@ def _scan(
     counting tokens. Shared by the package commands and `contextzip tokens`.
 
     *quiet* skips the progress lines (root notice, detection, git details)
-    and the first-run config UI offer. Returns None when --git-changes finds
+    and the first-run config UI offer; *show_detection* False skips only the
+    detection line, which the designed summary shows in its header. Returns None when --git-changes finds
     nothing to package. Exits on a bad flag or a failed fetch.
     """
     # ── Where to work: this project, or a GitHub repository ─────────────────
@@ -2220,7 +2245,7 @@ def _scan(
     with status("[cyan]Detecting project ecosystem…[/]"):
         detection = detect(project_dir)
 
-    if not quiet:
+    if not quiet and show_detection:
         print_detection(detection)
     jsonout.put("detection", jsonout.detection_data(detection))
 
@@ -2343,6 +2368,7 @@ def _package(
     trim: bool = False,
 ) -> None:
     console.print()
+    use_fancy = fancy()
     run_mode = "git-changes" if git_changes else ("prompt" if prompt else "standard")
     jsonout.put("mode", run_mode)
     jsonout.put("dry_run", dry_run)
@@ -2362,6 +2388,7 @@ def _package(
         fit_for=fit_for,
         max_tokens=max_tokens,
         trim=trim,
+        show_detection=not use_fancy,
     )
     if scan is None:
         return
@@ -2371,6 +2398,7 @@ def _package(
     fit_targets = scan.fit_targets
 
     large_file_warn_bytes = int(project_cfg.limits.max_file_size_mb * 1024 * 1024)
+    summary_name = fetched.label if fetched is not None else project_dir.name
 
     # ── Tokens ───────────────────────────────────────────────────────────────
     # Counted once, for every file the scan included. --prompt narrows the
@@ -2416,6 +2444,26 @@ def _package(
                 ecosystem=detection.display_name,
                 api_key=api_key,
                 max_files=project_cfg.ai.max_files,
+            )
+        elif use_fancy:
+
+            def dry_run_warnings() -> None:
+                if trimmed:
+                    _print_trimmed(trimmed, scan.budget, verbose=verbose, dry_run=True)
+                if over_budget:
+                    _print_over_budget(token_report, scan.budget, dry_run=True, trim_failed=trim_failed)
+                print_file_warnings(resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes)
+
+            print_package_summary(
+                name=summary_name,
+                detection=detection,
+                resolved=resolved,
+                project_dir=project_dir,
+                tokens=token_report,
+                fit_rows=jsonout.fit_data(token_report, fit_targets) if project_cfg.tokens.show_fit else None,
+                git_mode=git_changes,
+                verbose=verbose,
+                warnings=dry_run_warnings,
             )
         else:
             print_scan_summary(resolved, project_dir, verbose, git_mode=git_changes, tokens=token_report)
@@ -2507,6 +2555,20 @@ def _package(
         err(f"Failed to create ZIP: {exc}")
         raise SystemExit(1)
 
+    if use_fancy:
+        _finish_fancy(
+            scan,
+            result,
+            token_report,
+            name=summary_name,
+            run_mode=run_mode,
+            prompt=prompt,
+            trimmed=trimmed,
+            verbose=verbose,
+            no_clipboard=no_clipboard,
+        )
+        return
+
     print_scan_and_pack(scan_label, scan_detail, result, tokens=token_report)
     if verbose:
         print_most_tokens(token_report)
@@ -2551,4 +2613,73 @@ def _package(
         info("This is a copy of the repo at that commit. To apply the AI's changes, package from a clone and run contextzip apply-zip there.")
 
     # ── Auto-cleanup ─────────────────────────────────────────────────────────
+    _auto_cleanup(project_dir, project_cfg)
+
+
+def _finish_fancy(
+    scan: _Scan,
+    result,
+    token_report,
+    *,
+    name: str,
+    run_mode: str,
+    prompt: str | None,
+    trimmed: list[tuple[str, int]],
+    verbose: bool,
+    no_clipboard: bool,
+) -> None:
+    """
+    The end of a package run in a terminal: the same report, clipboard and
+    cleanup as the plain path, shown as one designed summary.
+    """
+    project_dir, resolved, project_cfg = scan.project_dir, scan.resolved, scan.project_cfg
+    large_file_warn_bytes = int(project_cfg.limits.max_file_size_mb * 1024 * 1024)
+
+    report_path = write_scan_report(
+        zip_path=result.zip_path,
+        project_dir=project_dir,
+        detection=scan.detection,
+        resolved=resolved,
+        mode=run_mode,
+        ai_prompt=prompt,
+        ai_selected=resolved.included if prompt else None,
+        large_file_warn_bytes=large_file_warn_bytes,
+        redacted=result.redacted,
+        skipped_in_zip=result.skipped_in_zip,
+        tokens=token_report,
+        trimmed=trimmed,
+    )
+
+    cb = None
+    if not no_clipboard:
+        with status("[cyan]Copying to the clipboard…[/]"):
+            cb = clipboard_handle(result.zip_path)
+
+    def package_warnings() -> None:
+        if trimmed:
+            _print_trimmed(trimmed, scan.budget, verbose=verbose, dry_run=False)
+        print_file_warnings(resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes)
+        print_zip_write_warnings(result)
+        print_redaction_summary(result)
+
+    # The report is mentioned only when something points to it.
+    see_report = verbose or bool(trimmed or result.skipped_in_zip or result.redacted)
+    print_package_summary(
+        name=name,
+        detection=scan.detection,
+        resolved=resolved,
+        project_dir=project_dir,
+        tokens=token_report,
+        fit_rows=jsonout.fit_data(token_report, scan.fit_targets) if project_cfg.tokens.show_fit else None,
+        result=result,
+        git_mode=run_mode == "git-changes",
+        verbose=verbose,
+        warnings=package_warnings,
+        clipboard=cb,
+        hint=None if scan.fetched is not None else f"When the AI replies, run: {_prog_name()} apply-zip",
+        report_path=report_path if see_report else None,
+    )
+    if scan.fetched is not None:
+        info("This is a copy of the repo at that commit. To apply the AI's changes, package from a clone and run contextzip apply-zip there.")
+
     _auto_cleanup(project_dir, project_cfg)

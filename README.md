@@ -128,7 +128,26 @@ cd ~/projects/my-app
 cz
 ```
 
-No flags needed. contextzip detects your framework, leaves out the noise, writes `codebase.zip` and copies it to your clipboard. Paste it into your AI tool, ask for what you want, and when it sends files back:
+No flags needed. contextzip detects your framework, leaves out the noise, writes `codebase.zip` and copies it to your clipboard:
+
+```text
+contextzip · my-app   Next.js + FastAPI (backend/)
+
+  44 files   186 KB → 63 KB zip   46,210 tokens
+
+  src/app/           18,200  ████████████░░░░░░░░  39%
+  src/components/    12,100  ████████░░░░░░░░░░░░  26%
+  backend/api/        9,800  ██████░░░░░░░░░░░░░░  21%
+  3 more folders      6,110  ████░░░░░░░░░░░░░░░░  14%
+
+  Fits      Claude ≈23%  ·  ChatGPT 36%  ·  Gemini ≈5%
+  Left out  36,176 files: node_modules/ (35,120), .next/ (904), 3 secret files
+
+✓ On your clipboard. Paste it into Claude or ChatGPT.   snapshot #14
+  When the AI replies, run: cz apply-zip
+```
+
+Piped or in CI, and with `--plain`, the same run prints one plain line per step instead. Paste the ZIP into your AI tool, ask for what you want, and when it sends files back:
 
 ```bash
 cz apply-zip

@@ -63,6 +63,7 @@ These flags work on the main command **and** on `include` and `exclude`. Flags g
 | `--max-tokens N` | | A token budget: `150000`, `150k` or `1.5m`. Over it, nothing is written and the command exits 1; a dry run only reports it. Overrides `tokens.max` in the project config. See [Token budget](#token-budget). |
 | `--trim` | | With a budget: leave out the least important files until the ZIP fits. |
 | `--for MODEL` | | Show whether the ZIP fits this model: `claude`, `chatgpt` or `gemini`. Repeatable. Default: all. See [Does it fit?](#does-it-fit). |
+| `--plain` | | One line per step, no bars or colour blocks. This is also what you get when the output is piped. |
 | `--json` | | Print one JSON object instead of terminal output. Never prompts. See [JSON output](#json-output). |
 
 `--include` and `--exclude` (and the `include` / `exclude` subcommands) also work together with `--git-changes`, and are combined with `always_include` / `always_exclude` from `.contextzip/config.json`.
@@ -104,7 +105,38 @@ contextzip -o ~/Desktop/project.zip         # write to an exact path
 contextzip --no-clipboard                   # build the ZIP, skip clipboard
 ```
 
-The summary line ends with the token count (`46,210 tokens`), so you can tell whether the ZIP will fit before you upload it. It is counted with `o200k_base`, the tokenizer of OpenAI's current models, which ships with contextzip and works offline. Other vendors' tokenizers differ by some percent. If the tokenizer can't be loaded, the count falls back to an estimate from file sizes and is shown with `≈` (`≈ 46k tokens`). `--verbose` adds the files with the most tokens, and the report next to the ZIP breaks the count down by folder and by file. Counts are cached in `.contextzip/cache/`, so a second run only counts the files that changed.
+In a terminal a run ends with a short summary: the project and its stacks, the file count and sizes, the token count, the folders with the most tokens, whether it fits each model, and what was left out:
+
+```text
+contextzip · my-app   Next.js + FastAPI (backend/)
+
+  44 files   186 KB → 63 KB zip   46,210 tokens
+
+  src/app/           18,200  ████████████░░░░░░░░  39%
+  src/components/    12,100  ████████░░░░░░░░░░░░  26%
+  backend/api/        9,800  ██████░░░░░░░░░░░░░░  21%
+  3 more folders      6,110  ████░░░░░░░░░░░░░░░░  14%
+
+  Fits      Claude ≈23%  ·  ChatGPT 36%  ·  Gemini ≈5%
+  Left out  36,176 files: node_modules/ (35,120), .next/ (904), 3 secret files
+
+✓ On your clipboard. Paste it into Claude or ChatGPT.   snapshot #14
+  When the AI replies, run: cz apply-zip
+```
+
+Warnings (large or binary files, redacted values, trimmed files) appear as `!` lines above the last line. The path of the full report is shown with `--verbose`, or when a warning points to it. Below 60 columns the bars are dropped. When the output is piped or redirected, in CI, and with `--plain`, contextzip prints one plain line per step instead, which is easier to read in a log or to parse:
+
+```text
+✓ Detected Next.js + FastAPI (backend/)  · high confidence
+✓ Scanned 36220 files & Packed 44 files  · 44 included (186 KB), 36176 excluded, 186 KB → 63 KB, ↓66% smaller, 46,210 tokens
+✓ Saved to  · C:\…\codebase.zip  · snapshot #14 (k3f9a2)
+  Full report: C:\…\codebase.report.txt
+✓ Ready to paste
+```
+
+Colour follows the [`NO_COLOR`](https://no-color.org) convention.
+
+The token count (`46,210 tokens`) tells you whether the ZIP will fit before you upload it. It is counted with `o200k_base`, the tokenizer of OpenAI's current models, which ships with contextzip and works offline. Other vendors' tokenizers differ by some percent. If the tokenizer can't be loaded, the count falls back to an estimate from file sizes and is shown with `≈` (`≈ 46k tokens`). `--verbose` adds the files with the most tokens, and the report next to the ZIP breaks the count down by folder and by file. Counts are cached in `.contextzip/cache/`, so a second run only counts the files that changed.
 
 ### Does it fit?
 

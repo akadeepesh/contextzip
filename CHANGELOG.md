@@ -1417,3 +1417,19 @@ This project uses [Semantic Versioning](https://semver.org/).
   release so far put those two folders into site-packages next to
   `contextzip`, where a top-level `tests` package can shadow your own. Only
   `contextzip` is installed now.
+
+## [Unreleased]
+
+### Changed
+- **A summary you can read.** In a terminal, a package run now ends with a
+  short block instead of one dense line: the project and its stacks, the
+  file count, sizes and token total, the four folders with the most tokens
+  with a bar for each, whether it fits each model, and what was left out
+  (the biggest folders and how many secret files). Then one line says the
+  ZIP is on your clipboard, with its snapshot, and what to run when the AI
+  replies. The report path is shown with `--verbose`, or when a warning
+  points to it. Dry runs get the same block. Piped or redirected output,
+  CI logs and the new `--plain` flag keep the old one-line-per-step log,
+  and `--json` is unchanged.
+- Sizes from one megabyte up keep a decimal below ten: "1.4 MB" instead of
+  "1 MB". Larger ones stay whole ("14 MB").

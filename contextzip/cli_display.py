@@ -1,5 +1,5 @@
 """
-cli_display.py — minimal, one-line-per-step terminal output for contextzip.
+cli_display.py — terminal output for contextzip.
 
 Design: every command prints a short, scannable log — one line per step,
 a checkmark, a dim detail. No boxed panels for routine runs; even the
@@ -12,12 +12,20 @@ Full detail that used to be printed here (excluded-directory
 breakdowns, per-file listings) is now written to a report file by
 report.py and only echoed inline when --verbose is passed.
 
+Two shapes of output, chosen once per run by fancy(): in a terminal, a
+package run ends with a short designed summary (print_package_summary);
+piped, in CI, with --plain or under --json, every step stays one plain
+line, which is what scripts and logs want.
+
 Imported by cli.py and watcher.py; nothing here imports from either
 (no circular deps).
 """
 
 from __future__ import annotations
 
+import os
+import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 from rich.console import Console
@@ -28,6 +36,56 @@ from contextzip.clipboard import Tier
 from contextzip.tokens import estimate_tokens, format_tokens
 
 console = Console()
+
+
+# ---------------------------------------------------------------------------
+# Plain or fancy
+# ---------------------------------------------------------------------------
+
+_plain_forced = False
+
+# Characters the designed output needs. A stream that can't encode them
+# (an old code page that _printable_streams couldn't switch) gets the plain
+# lines, which only need what that function already guarantees.
+_FANCY_CHARS = "✓█░→·…≈"
+
+
+@contextmanager
+def plain_output(enabled: bool):
+    """`--plain`: one line per step for the rest of the command, even in a terminal."""
+    global _plain_forced
+    previous = _plain_forced
+    _plain_forced = previous or enabled
+    try:
+        yield
+    finally:
+        _plain_forced = previous
+
+
+def fancy() -> bool:
+    """
+    True when output should be the designed blocks: stdout is a terminal,
+    not --json and not --plain. Piped, redirected and CI output keeps one
+    plain line per step. CONTEXTZIP_FANCY=1 / 0 forces the choice (tests).
+    """
+    if _plain_forced or jsonout.active() is not None:
+        return False
+    forced = os.environ.get("CONTEXTZIP_FANCY", "").strip()
+    if forced == "1":
+        return True
+    if forced == "0":
+        return False
+    stream = sys.stdout
+    try:
+        if stream is None or not stream.isatty():
+            return False
+    except (AttributeError, ValueError, OSError):
+        return False
+    try:
+        _FANCY_CHARS.encode(getattr(stream, "encoding", None) or "ascii")
+    except (UnicodeEncodeError, LookupError):
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +199,18 @@ def print_root_notice(project_root, *, here: bool = False, packaging: bool = Fal
             )
 
 
+def _ecosystem_text(detection) -> str:
+    """"Next.js + FastAPI (backend/)": the detected stacks, with the folder each came from."""
+    parts = []
+    for name in detection.ecosystems:
+        src = detection.sources.get(name)
+        if src and src != ".":
+            parts.append(f"{name} ({src}/)")
+        else:
+            parts.append(name)
+    return " + ".join(parts)
+
+
 def print_detection(detection, *, con: Console = console) -> None:
     """One line: what was detected and how confident contextzip is."""
     if detection.is_unknown:
@@ -151,14 +221,7 @@ def print_detection(detection, *, con: Console = console) -> None:
         )
         return
 
-    parts = []
-    for name in detection.ecosystems:
-        src = detection.sources.get(name)
-        if src and src != ".":
-            parts.append(f"{name} ({src}/)")
-        else:
-            parts.append(name)
-    ecosystem_str = " + ".join(parts)
+    ecosystem_str = _ecosystem_text(detection)
     if getattr(detection, "by_file_type", None):
         ok(f"Detected {ecosystem_str}", "from file types, no project file found", con=con)
         return
@@ -248,12 +311,17 @@ def print_scan_summary(
         info(f"{len(resolved.skipped)} file(s) skipped — see report", con=con)
 
     if verbose and resolved.included:
-        for p in sorted(resolved.included):
-            size_str = human_size(resolved.size_of(p))
-            rel = p.relative_to(project_dir).as_posix()
-            con.print(f"  [green]·[/] {escape(rel)}  [dim]{size_str}[/]")
+        _print_included_files(resolved, project_dir, con=con)
         if tokens is not None:
             print_most_tokens(tokens, con=con)
+
+
+def _print_included_files(resolved, project_dir: Path, *, con: Console = console) -> None:
+    """For --verbose dry runs: every included file and its size."""
+    for p in sorted(resolved.included):
+        size_str = human_size(resolved.size_of(p))
+        rel = p.relative_to(project_dir).as_posix()
+        con.print(f"  [green]·[/] {escape(rel)}  [dim]{size_str}[/]")
 
 
 def print_most_tokens(tokens, *, n: int = 5, con: Console = console) -> None:
@@ -476,6 +544,287 @@ def print_report_hint(report_path, *, con: Console = console) -> None:
 
 
 # ---------------------------------------------------------------------------
+# The designed package summary (fancy() only)
+# ---------------------------------------------------------------------------
+
+_SUMMARY_BAR_CELLS = 20
+_SUMMARY_FOLDER_ROWS = 4
+_SUMMARY_PATH_MAX = 28
+_SUMMARY_PATH_MIN = 8
+_SUMMARY_BARS_MIN_WIDTH = 60
+_SUMMARY_LABEL = 10  # "Left out" plus two spaces: where the Fits and Left out values start
+
+
+def _cells(text: str) -> int:
+    from rich.cells import cell_len
+
+    return cell_len(text)
+
+
+def _left_truncate(text: str, width: int) -> str:
+    """"…components/forms/": the end of a path is the part worth keeping."""
+    if _cells(text) <= width:
+        return text
+    while text and _cells(text) + 1 > width:
+        text = text[1:]
+    return "…" + text
+
+
+def _pad(text: str, width: int) -> str:
+    return text + " " * max(0, width - _cells(text))
+
+
+def _print_fitted(con: Console, *variants: str) -> None:
+    """
+    Print the first markup variant that fits on one line of the console;
+    when none does, crop the last one with "…". A designed block never wraps.
+    """
+    from rich.text import Text
+
+    width = max(con.width, 1)
+    text = None
+    for markup in variants:
+        text = Text.from_markup(markup)
+        if text.cell_len <= width:
+            con.print(text, no_wrap=True, overflow="ignore")
+            return
+    if text is not None:
+        text.truncate(width, overflow="ellipsis")
+        con.print(text, no_wrap=True, overflow="ellipsis")
+
+
+def _summary_header(name: str, detection) -> tuple[str, str]:
+    """The header line, wide and narrow."""
+    if detection is None or detection.is_unknown:
+        stacks = "no known stack, universal rules"
+    else:
+        stacks = _ecosystem_text(detection)
+        if getattr(detection, "by_file_type", None):
+            stacks += " (from file types)"
+    title = f"contextzip [dim]·[/] [bold]{escape(name)}[/]"
+    return f"{title}   {escape(stacks)}", f"{title}  {escape(stacks)}"
+
+
+def _summary_folder_rows(tokens, width: int) -> list[str]:
+    """
+    Up to four rows of the biggest folders (two levels deep): path, tokens,
+    a 20-cell bar and the share. The fourth row sums the rest when there
+    are more. Empty when there's nothing worth splitting up.
+    """
+    total = tokens.total
+    groups = tokens.by_dir(2)
+    if total <= 0 or len(groups) < 2:
+        return []
+    if len(groups) > _SUMMARY_FOLDER_ROWS:
+        rest = groups[_SUMMARY_FOLDER_ROWS - 1:]
+        rows = [*groups[: _SUMMARY_FOLDER_ROWS - 1], (f"{len(rest)} more folders", sum(n for _p, n in rest))]
+    else:
+        rows = groups
+
+    count_w = max(len(f"{n:,}") for _p, n in rows)
+    path_w = min(_SUMMARY_PATH_MAX, max(_cells(p) for p, _n in rows))
+    bar_w = 2 + _SUMMARY_BAR_CELLS
+    pct_w = 4
+    fixed = 2 + 2 + count_w + 2 + pct_w  # indent, the gaps, counts and the share
+    bars = width >= _SUMMARY_BARS_MIN_WIDTH and fixed + path_w + bar_w <= width
+    if not bars and fixed + path_w > width:
+        path_w = max(_SUMMARY_PATH_MIN, width - fixed)
+
+    lines = []
+    for path, count in rows:
+        share = count / total
+        label = escape(_pad(_left_truncate(path, path_w), path_w))
+        pct = f"[dim]{_share_text(share):>{pct_w}}[/]"
+        if bars:
+            filled = round(share * _SUMMARY_BAR_CELLS)
+            if count > 0 and filled == 0:
+                filled = 1
+            bar = "█" * filled + "░" * (_SUMMARY_BAR_CELLS - filled)
+            lines.append(f"  {label}  {count:>{count_w},}  {bar}  {pct}")
+        else:
+            lines.append(f"  {label}  {count:>{count_w},}  {pct}")
+    return lines
+
+
+def _summary_fits(fit_rows: list[dict]) -> tuple[list[str], list[str]]:
+    """The Fits line's variants (wide, then compact), and the targets it's too big for."""
+    parts = []
+    too_big = []
+    for row in fit_rows:
+        text = escape(f"{row['name']} {'' if row['exact'] else '≈'}{_share_text(row['share'])}")
+        if not row["fits"]:
+            text = f"[yellow]{text}, too big[/]"
+            too_big.append(row["name"])
+        parts.append(text)
+    label = f"  [dim]{_pad('Fits', _SUMMARY_LABEL)}[/]"
+    return [
+        label + "  [dim]·[/]  ".join(parts),
+        label + " [dim]·[/] ".join(parts),
+        "  [dim]Fits[/]  " + " [dim]·[/] ".join(parts),
+    ], too_big
+
+
+def _summary_left_out(excluded: list[Path], project_dir: Path) -> list[str]:
+    """
+    "Left out  36,176 files: node_modules/ (35,120), .next/ (904), 3 secret files",
+    then shorter variants with fewer groups, for narrow terminals.
+    """
+    from contextzip.filters import summarise_exclusions
+
+    n = len(excluded)
+    groups = []
+    for name, count in list(summarise_exclusions(excluded, project_dir).items())[:3]:
+        slash = "/" if (project_dir / name).is_dir() else ""
+        groups.append(f"{name}{slash} ({count:,})")
+    from contextzip.redact import count_sensitive_paths
+
+    rels = []
+    for p in excluded:
+        try:
+            rels.append(p.relative_to(project_dir).as_posix())
+        except ValueError:
+            continue
+    secrets = count_sensitive_paths(rels)
+    tail = [f"{secrets} secret file{'' if secrets == 1 else 's'}"] if secrets else []
+    head = f"  [dim]{_pad('Left out', _SUMMARY_LABEL)}[/]{n:,} file{'' if n == 1 else 's'}"
+    variants = []
+    for keep in range(len(groups), -1, -1):
+        bits = groups[:keep] + tail
+        variants.append(head + (": " + escape(", ".join(bits)) if bits else ""))
+    return variants
+
+
+def _display_path(path: Path) -> str:
+    """*path* relative to the current folder when it's inside it, otherwise absolute."""
+    try:
+        return str(Path(path).resolve().relative_to(Path.cwd().resolve()))
+    except (ValueError, OSError):
+        return str(path)
+
+
+def print_package_summary(
+    *,
+    name: str,
+    detection,
+    resolved,
+    project_dir: Path,
+    tokens,
+    fit_rows: list[dict] | None = None,
+    result=None,
+    git_mode: bool = False,
+    verbose: bool = False,
+    warnings=None,
+    clipboard=None,
+    hint: str | None = None,
+    report_path=None,
+    con: Console = console,
+) -> None:
+    """
+    The designed end of a package run, for a terminal (see fancy()):
+
+        contextzip · my-app   Next.js + FastAPI (backend/)
+
+          44 files   186 KB → 63 KB zip   46,210 tokens
+
+          src/app/           18,200  ████████████░░░░░░░░  39%
+          …
+
+          Fits      Claude ≈23%  ·  ChatGPT 36%  ·  Gemini ≈5%
+          Left out  36,176 files: node_modules/ (35,120), .next/ (904), 3 secret files
+
+        ✓ On your clipboard. Paste it into Claude or ChatGPT.   snapshot #14
+          When the AI replies, run: cz apply-zip
+
+    *result* is the PackageResult, or None for a dry run. *warnings* is a
+    callable that prints the run's `!` lines; they go between the block and
+    the final lines. *clipboard* is the ClipboardResult, or None after
+    --no-clipboard. *report_path* is printed only when given.
+    """
+    if jsonout.active() is not None:
+        return
+    from rich.text import Text
+
+    width = con.width
+    dry_run = result is None
+
+    _print_fitted(con, *_summary_header(name, detection))
+    con.print()
+
+    # ── Stats ─────────────────────────────────────────────────────────────
+    files = result.file_count if result is not None else len(resolved.included)
+    count = f"{files:,} file{'' if files == 1 else 's'}"
+    token_text = f"[bold]{escape(tokens.label())}[/]"
+    if dry_run:
+        size = human_size(sum(resolved.size_of(p) for p in resolved.included))
+        _print_fitted(
+            con,
+            f"  {count}   {size}   [dim]dry run[/]   {token_text}",
+            f"  {count}  {size}  [dim]dry run[/]  {token_text}",
+        )
+    else:
+        sizes = f"{human_size(result.uncompressed_bytes)} → {human_size(result.compressed_bytes)} zip"
+        _print_fitted(con, f"  {count}   {sizes}   {token_text}", f"  {count}  {sizes}  {token_text}")
+
+    # ── Folders ───────────────────────────────────────────────────────────
+    rows = _summary_folder_rows(tokens, width)
+    if rows:
+        con.print()
+        for row in rows:
+            _print_fitted(con, row)
+
+    # ── Fits and Left out ─────────────────────────────────────────────────
+    fits, too_big = _summary_fits(fit_rows) if fit_rows else (None, [])
+    left_out = _summary_left_out(resolved.excluded, project_dir) if not git_mode and resolved.excluded else None
+    if fits or left_out:
+        con.print()
+        if fits:
+            _print_fitted(con, *fits)
+        if left_out:
+            _print_fitted(con, *left_out)
+    con.print()
+
+    # ── Verbose detail and warnings ───────────────────────────────────────
+    if verbose:
+        if dry_run and resolved.included:
+            _print_included_files(resolved, project_dir, con=con)
+        print_most_tokens(tokens, con=con)
+    if too_big:
+        names = too_big[0] if len(too_big) == 1 else ", ".join(too_big[:-1]) + " and " + too_big[-1]
+        warn(
+            literal(f"Too big for {names}. Narrow it with contextzip include PATH, or see the largest folders with --verbose."),
+            con=con,
+        )
+    if warnings is not None:
+        warnings()
+
+    # ── Final lines ───────────────────────────────────────────────────────
+    if dry_run:
+        info("Nothing was written. Run it again without --dry-run to make the ZIP.", con=con)
+        return
+
+    snapshot = getattr(result, "snapshot", None)
+    snap = f"   [dim]snapshot #{escape(snapshot.partition('-')[0])}[/]" if snapshot else ""
+    if clipboard is not None and clipboard.tier == Tier.FILE_ON_CLIPBOARD:
+        _print_fitted(
+            con,
+            f"[green]✓[/] On your clipboard. Paste it into Claude or ChatGPT.{snap}",
+            f"[green]✓[/] On your clipboard.{snap}",
+            "[green]✓[/] On your clipboard.",
+        )
+    else:
+        saved = f"[green]✓[/] Saved to {escape(_display_path(result.zip_path))}"
+        if Text.from_markup(saved + snap).cell_len <= width:
+            saved += snap
+        con.print(saved, highlight=False)  # a long path may wrap; it's never cut short
+        if clipboard is not None:
+            print_clipboard_result(clipboard, con=con)
+    if hint:
+        info(hint, con=con)
+    if report_path:
+        info(literal(f"Full report: {report_path}"), con=con)
+
+
+# ---------------------------------------------------------------------------
 # AI selection
 # ---------------------------------------------------------------------------
 
@@ -676,9 +1025,17 @@ def print_auto_cleanup(result, *, con: Console = console) -> None:
 
 
 def human_size(n: int) -> str:
-    """Format *n* bytes as a human-readable string (B / KB / MB / GB / TB)."""
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024:
-            return f"{n:.0f} {unit}"
-        n /= 1024
-    return f"{n:.1f} TB"
+    """
+    *n* bytes, readable: "512 B", "186 KB", "1.4 MB", "14 MB", "2.1 GB".
+    One decimal from MB up while the number is below 10, none otherwise.
+    """
+    size = float(max(n, 0))
+    units = ("B", "KB", "MB", "GB", "TB")
+    for i, unit in enumerate(units):
+        last = i == len(units) - 1
+        if i >= 2 and round(size, 1) < 10:
+            return f"{size:.1f} {unit}"
+        if last or round(size) < 1024:
+            return f"{size:.0f} {unit}"
+        size /= 1024
+    return f"{size:.0f} TB"  # pragma: no cover - the loop always returns

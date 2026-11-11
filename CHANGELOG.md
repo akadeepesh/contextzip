@@ -1418,49 +1418,7 @@ This project uses [Semantic Versioning](https://semver.org/).
   `contextzip`, where a top-level `tests` package can shadow your own. Only
   `contextzip` is installed now.
 
-## [Unreleased]
-
-### Changed
-- **A summary you can read.** In a terminal, a package run now ends with a
-  short block instead of one dense line: the project and its stacks, the
-  file count, sizes and token total, the four folders with the most tokens
-  with a bar for each, whether it fits each model, and what was left out
-  (the biggest folders and how many secret files). Then one line says the
-  ZIP is on your clipboard, with its snapshot, and what to run when the AI
-  replies. The report path is shown with `--verbose`, or when a warning
-  points to it. Dry runs get the same block. Piped or redirected output,
-  CI logs and the new `--plain` flag keep the old one-line-per-step log,
-  and `--json` is unchanged.
-- **A readable apply plan.** In a terminal, `apply-zip` shows how many
-  files it will write, how many need you and how many already match, then
-  one aligned line per file worth a look (decisions first, at most 14;
-  every file with `--verbose`). After applying, one line says what was
-  written and what's left. `--plain` (new on `apply-zip`) and piped output
-  keep the old log.
-- **One shape for every error:** what went wrong, why, and a "Try:" line
-  with what to do. Under `--json` the why and the fix are the error's
-  `detail`. An empty folder now says there are no files to package instead
-  of "all files were excluded".
-- **`apply` is the command's name now.** `cz apply` writes an AI's reply
-  back; `apply-zip` keeps working as an alias, hidden from help. Messages
-  and docs say `apply`. The `--json` result still says
-  `"command": "apply-zip"`.
-- **Help you can scan.** `contextzip --help` lists the commands in groups
-  with one line each, examples of the common runs, and every option on one
-  line. Each command's own `--help` starts with examples.
-- `contextzip --version` prints `contextzip 0.9.0` and, on a second line,
-  the Python version and how it was installed.
-- **No question on a project's first run.** The first package run in a
-  project used to offer to open the config UI and wait for an answer. It
-  now prints one line pointing to `cz init` and `cz pick`, and carries on.
-- Sizes from one megabyte up keep a decimal below ten: "1.4 MB" instead of
-  "1 MB". Larger ones stay whole ("14 MB").
-- **Faster start.** Each command now imports only what it uses, so
-  `cz --version`, `cz --help`, `cz stacks` and tab completion no longer
-  load the packager, the applier, httpx or the tokenizer, and
-  `import contextzip` loads its public API on first use. On a Windows
-  laptop with Python 3.12: `cz --version` 224 ms → 160 ms, `cz --help`
-  222 ms → 147 ms, `import contextzip` 189 ms → 61 ms.
+## [0.9.0] — 2026-11-12
 
 ### Added
 - **`contextzip pick`**, a file picker in the terminal. A full-screen tree
@@ -1486,6 +1444,48 @@ This project uses [Semantic Versioning](https://semver.org/).
 - **Suggestions for typos.** `cz aply` says there's no such command and
   asks "Did you mean: apply?". A path typed where a command goes points to
   `cz include PATH`.
+
+### Changed
+- **A summary you can read.** In a terminal, a package run now ends with a
+  short block instead of one dense line: the project and its stacks, the
+  file count, sizes and token total, the four folders with the most tokens
+  with a bar for each, whether it fits each model, and what was left out
+  (the biggest folders and how many secret files). Then one line says the
+  ZIP is on your clipboard, with its snapshot, and what to run when the AI
+  replies. The report path is shown with `--verbose`, or when a warning
+  points to it. Dry runs get the same block. Piped or redirected output,
+  CI logs and the new `--plain` flag keep the old one-line-per-step log,
+  and `--json` is unchanged.
+- **A readable apply plan.** In a terminal, `apply` shows how many
+  files it will write, how many need you and how many already match, then
+  one aligned line per file worth a look (decisions first, at most 14;
+  every file with `--verbose`). After applying, one line says what was
+  written and what's left. `--plain` (new on `apply`) and piped output
+  keep the old log.
+- **One shape for every error:** what went wrong, why, and a "Try:" line
+  with what to do. Under `--json` the why and the fix are the error's
+  `detail`. An empty folder now says there are no files to package instead
+  of "all files were excluded".
+- **`apply` is the command's name now.** `cz apply` writes an AI's reply
+  back; `apply-zip` keeps working as an alias, hidden from help. Messages
+  and docs say `apply`. The `--json` result still says
+  `"command": "apply-zip"`.
+- **Help you can scan.** `contextzip --help` lists the commands in groups
+  with one line each, examples of the common runs, and every option on one
+  line. Each command's own `--help` starts with examples.
+- `contextzip --version` prints `contextzip 0.9.0` and, on a second line,
+  the Python version and how it was installed.
+- **No question on a project's first run.** The first package run in a
+  project used to offer to open the config UI and wait for an answer. It
+  now prints one line pointing to `cz init` and `cz pick`, and carries on.
+- Sizes from one megabyte up keep a decimal below ten: "1.4 MB" instead of
+  "1 MB". Larger ones stay whole ("14 MB").
+- **Faster start.** Each command now imports only what it uses, so
+  `cz --version`, `cz --help`, `cz stacks` and tab completion no longer
+  load the packager, the applier, httpx or the tokenizer, and
+  `import contextzip` loads its public API on first use. On a Windows
+  laptop with Python 3.12: `cz --version` 224 ms → 160 ms, `cz --help`
+  222 ms → 147 ms, `import contextzip` 189 ms → 61 ms.
 
 ### Fixed
 - **No more raw tracebacks.** An unexpected error prints what happened,

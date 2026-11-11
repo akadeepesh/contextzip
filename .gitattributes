@@ -17,3 +17,6 @@
 *.zip binary
 *.mp4 binary
 *.whl binary
+
+# The vendored tokenizer vocabulary: byte-exact or its hash check fails.
+contextzip/data/tiktoken/* binary

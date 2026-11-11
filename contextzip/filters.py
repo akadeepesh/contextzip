@@ -131,11 +131,17 @@ def make_spec(patterns) -> pathspec.PathSpec:
     supported API now that the "gitwildmatch" factory is deprecated — and
     falls back to the old factory on pathspec versions without it.
     """
+    import warnings
+
     lines = list(patterns)
     spec_cls = getattr(pathspec, "GitIgnoreSpec", None)
-    if spec_cls is not None:
-        return spec_cls.from_lines(lines)
-    return pathspec.PathSpec.from_lines("gitwildmatch", lines)
+    with warnings.catch_warnings():
+        # "[[]" (a literal "[", how `contextzip pick` writes names like
+        # app/[id]/) compiles to a regex Python flags as a possible nested set.
+        warnings.filterwarnings("ignore", message="Possible nested set", category=FutureWarning)
+        if spec_cls is not None:
+            return spec_cls.from_lines(lines)
+        return pathspec.PathSpec.from_lines("gitwildmatch", lines)
 
 
 def normalize_pattern(p: str) -> str:
@@ -259,7 +265,7 @@ def build_force_include_spec(patterns: list[str] | None) -> pathspec.PathSpec | 
     return make_spec(patterns)
 
 
-def scan_all_files(project_dir: Path) -> list[tuple[Path, int]]:
+def scan_all_files(project_dir: Path, pruned: list[str] | None = None) -> list[tuple[Path, int]]:
     """
     Lightweight full-tree walk that returns every regular file under
     *project_dir* once, as (abs_path, size_bytes) tuples, without
@@ -292,10 +298,18 @@ def scan_all_files(project_dir: Path) -> list[tuple[Path, int]]:
     actual packaging run, and still sees everything within the pruned
     dirs is excluded via the normal rules (rules/base.py etc.) whether or
     not the config UI ever looked at them.
+
+    *pruned*, when given, collects the POSIX path (relative to
+    *project_dir*) of every folder skipped this way, so a caller can tell
+    that a folder holds files it never saw.
     """
     files: list[tuple[Path, int]] = []
 
     for dirpath, dirnames, filenames in os.walk(project_dir, topdown=True):
+        if pruned is not None:
+            rel_dir = os.path.relpath(dirpath, project_dir).replace(os.sep, "/")
+            prefix = "" if rel_dir == "." else rel_dir + "/"
+            pruned.extend(prefix + d for d in dirnames if d in _ALWAYS_PRUNED_DIRNAMES)
         dirnames[:] = [d for d in dirnames if d not in _ALWAYS_PRUNED_DIRNAMES]
 
         for filename in filenames:
@@ -362,6 +376,30 @@ def classify_scanned_files(
         result[abs_path] = not excluded
 
     return result
+
+
+def classify_with_rules(
+    project_dir: Path,
+    files: list[tuple[Path, int]],
+    rule_modules: list[str],
+    *,
+    always_include: list[str] | None = None,
+    always_exclude: list[str] | None = None,
+    gitignore_path: Path | None = None,
+) -> dict[Path, bool]:
+    """
+    {abs_path: is_included} for files from scan_all_files(), the way a run
+    would decide: the stack's rules, the project's .gitignore files and
+    *always_exclude*, with *always_include* beating all three. Shared by
+    the config UI and `contextzip pick`.
+    """
+    spec = build_spec(
+        rule_modules=rule_modules,
+        extra_exclude=always_exclude or None,
+        gitignore_path=gitignore_path,
+    )
+    force_include = build_force_include_spec(always_include or None)
+    return classify_scanned_files(project_dir, files, spec, force_include)
 
 
 def resolve_files(

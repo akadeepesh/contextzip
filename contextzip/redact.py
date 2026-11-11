@@ -63,6 +63,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import PurePath
+from typing import Iterable
 
 from contextzip.filters import make_spec
 from contextzip.rules.base import SECRET_PATTERNS
@@ -224,6 +225,30 @@ def is_sensitive_path(rel: PurePath | str) -> bool:
     return any(
         _SECRET_SPEC.match_file("/".join(parts[: i + 1]) + "/") for i in range(len(parts))
     )
+
+
+def count_sensitive_paths(rels: Iterable[str]) -> int:
+    """
+    How many of *rels* (POSIX paths relative to the project root) are
+    secret files: the same test as is_sensitive_path, with each folder
+    checked once, so tens of thousands of left-out files stay fast.
+    """
+    folder_cache: dict[str, bool] = {}
+
+    def folder_is_secret(folder: str) -> bool:
+        hit = folder_cache.get(folder)
+        if hit is None:
+            parent, _, _name = folder.rpartition("/")
+            hit = (bool(parent) and folder_is_secret(parent)) or bool(_SECRET_SPEC.match_file(folder + "/"))
+            folder_cache[folder] = hit
+        return hit
+
+    count = 0
+    for rel in rels:
+        folder = rel.rpartition("/")[0]
+        if (folder and folder_is_secret(folder)) or _SECRET_SPEC.match_file(rel):
+            count += 1
+    return count
 
 
 def is_env_file(rel: PurePath | str) -> bool:

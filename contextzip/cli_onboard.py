@@ -18,7 +18,7 @@ from rich.console import Console
 from contextzip.config import save_api_key, config_path
 from contextzip.cli_display import ok, warn, info
 
-console = Console()
+from contextzip.cli_display import console  # noqa: E402  (one console, so --json silences it)
 
 GEMINI_KEY_URL = "https://aistudio.google.com/apikey"
 

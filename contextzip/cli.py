@@ -22,17 +22,7 @@ from contextzip.config import (
     save_workspace_location,
     delete_workspace_location,
 )
-from contextzip.detector import detect
-from contextzip.filters import (
-    build_spec,
-    build_force_include_spec,
-    make_spec,
-    resolve_files,
-    resolve_files_from_git,
-)
 from contextzip.git import get_changed_files, GitError
-from contextzip.packager import create_zip, create_zip_silent
-from contextzip.clipboard import handle as clipboard_handle
 from contextzip.project_config import (
     load_project_config,
     has_legacy_project_config,
@@ -66,32 +56,54 @@ from contextzip.cli_display import (
     print_fit,
     literal,
     print_token_breakdown,
+    print_package_summary,
+    plain_output,
+    fancy,
+    fail,
+    prog_name,
 )
-from contextzip.report import write_scan_report, write_apply_report
-from contextzip.applier import (
-    ApplyError,
-    build_plan,
-    discard_plan,
-    execute_plan,
-    find_latest_manifest,
-    find_zip_to_apply,
-)
-from contextzip.cli_ai import (
-    normalize_pattern,
-    run_ai_selection,
-    run_ai_selection_preview,
-)
-from contextzip.cli_onboard import onboard_api_key
-from contextzip import cleanup as cleanup_mod
 from contextzip import jsonout
 from contextzip import models as models_mod
 from contextzip import tokens as tokens_mod
-from contextzip import updater as updater_mod
-from contextzip import remote as remote_mod
 from contextzip import root as root_mod
+from contextzip.remote_names import looks_like_remote
 from contextzip.root import ROOT_KIND_LABELS, ProjectRoot, find_project_root, to_root_relative
 
 console = Console()
+
+
+class _LazyModule:
+    """
+    A module imported the first time one of its names is used. Each command
+    loads only what it needs, so `cz --version`, `cz --help` and shell
+    completion don't pay for the packager, the applier, httpx and the rest.
+    """
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self._module = None
+
+    def __getattr__(self, attr: str):
+        if attr.startswith("__"):
+            raise AttributeError(attr)
+        module = self._module
+        if module is None:
+            # __import__ rather than importlib, so -X importtime reports it.
+            module = self._module = __import__(self._name, fromlist=["_"])
+        return getattr(module, attr)
+
+
+_detector = _LazyModule("contextzip.detector")
+_filters = _LazyModule("contextzip.filters")
+_packager = _LazyModule("contextzip.packager")
+_applier = _LazyModule("contextzip.applier")
+_report = _LazyModule("contextzip.report")
+_clipboard = _LazyModule("contextzip.clipboard")
+_cli_ai = _LazyModule("contextzip.cli_ai")
+_onboard = _LazyModule("contextzip.cli_onboard")
+cleanup_mod = _LazyModule("contextzip.cleanup")
+updater_mod = _LazyModule("contextzip.updater")
+remote_mod = _LazyModule("contextzip.remote")
 
 
 def _interactive() -> bool:
@@ -103,9 +115,10 @@ def _interactive() -> bool:
 
 def _json_session(command: str, enabled: bool):
     """Run a command body under --json when *enabled* (see jsonout.py)."""
-    from contextzip import cli_ai, cli_display, cli_onboard
+    from contextzip import cli_display
 
-    consoles = (console, cli_display.console, cli_ai.console, cli_onboard.console)
+    # cli_ai and cli_onboard print through cli_display.console too.
+    consoles = (console, cli_display.console)
     return jsonout.session(command, enabled, consoles=consoles)
 
 
@@ -239,6 +252,12 @@ def _modifier_options(f):
             help="Show whether the ZIP fits this model: claude, chatgpt or gemini. Repeatable. Default: all.",
         ),
         click.option(
+            "--plain",
+            is_flag=True,
+            default=False,
+            help="One line per step, no bars or colour blocks. This is also what you get when the output is piped.",
+        ),
+        click.option(
             "--json",
             "json_output",
             is_flag=True,
@@ -248,6 +267,20 @@ def _modifier_options(f):
     ]
     for dec in reversed(decorators):
         f = dec(f)
+    return f
+
+
+# The run flags that make sense for `contextzip pick` (the picker decides
+# what goes in, so --prompt, --git-changes, --from and the like don't).
+_PICK_FLAGS = ("output", "no_clipboard", "verbose", "here", "max_tokens", "trim", "fit_for", "plain", "json_output")
+
+
+def _pick_options(f):
+    """Attach the run flags in _PICK_FLAGS, with the same help as everywhere else."""
+    probe = _modifier_options(lambda **kw: None)
+    for param in probe.__click_params__:  # click reverses the list when it builds the command
+        if param.name in _PICK_FLAGS:
+            f.__dict__.setdefault("__click_params__", []).append(param)
     return f
 
 
@@ -276,27 +309,299 @@ class _MainGroup(click.Group):
                 break
             if i and args[i - 1] in takes_value:
                 continue
-            if not arg.startswith("-") and remote_mod.looks_like_remote(arg):
+            if not arg.startswith("-") and looks_like_remote(arg):
                 args = [*args[:i], *args[i + 1:], "--from", arg]
                 break
         return super().parse_args(ctx, args)
 
+    def resolve_command(self, ctx: click.Context, args: list[str]):
+        """A mistyped command gets the closest names instead of click's bare "No such command"."""
+        name = args[0] if args else ""
+        if (
+            name
+            and not name.startswith("-")
+            and self.get_command(ctx, name) is None
+            and not ctx.resilient_parsing
+            and getattr(self, "_standalone", True)  # library callers get click's UsageError
+        ):
+            _unknown_command(ctx, name, self._visible_names(ctx))
+        return super().resolve_command(ctx, args)
+
+    def _visible_names(self, ctx: click.Context) -> list[str]:
+        names = []
+        for name in self.list_commands(ctx):
+            cmd = self.get_command(ctx, name)
+            if cmd is not None and not cmd.hidden:
+                names.append(name)
+        return names
+
+    def get_help_option(self, ctx: click.Context):
+        """-h / --help on the main command: the grouped help, styled in a terminal."""
+        option = super().get_help_option(ctx)
+        if option is None:
+            return None
+
+        def show(ctx: click.Context, _param, value: bool) -> None:
+            if not value or ctx.resilient_parsing:
+                return
+            _print_main_help(ctx, self)
+            ctx.exit()
+
+        option.callback = show
+        return option
+
+    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        """The grouped help as plain text, for ctx.get_help() and anything else that asks for it."""
+        formatter.write(_render_main_help(ctx, self, styled=False, width=formatter.width))
+
     def main(self, *args, **kwargs):
         _printable_streams()
+        # click's main(args, prog_name, complete_var, standalone_mode, ...)
+        standalone = kwargs.get("standalone_mode", args[3] if len(args) > 3 else True)
+        previous, self._standalone = getattr(self, "_standalone", True), standalone
         try:
-            return super().main(*args, **kwargs)
-        except OSError:
-            # `cz -v | head`: the reader went away. Click exits quietly on
-            # EPIPE; Windows reports the same thing as EINVAL instead.
-            import sys
+            return self._main(standalone, *args, **kwargs)
+        finally:
+            self._standalone = previous
 
-            if os.name != "nt" or not _stdout_closed():
-                raise
+    def _main(self, standalone: bool, *args, **kwargs):
+        try:
             try:
-                sys.stdout = open(os.devnull, "w")  # nothing left to flush at exit
+                return super().main(*args, **kwargs)
             except OSError:
-                pass
-            sys.exit(1)
+                # `cz -v | head`: the reader went away. Click exits quietly on
+                # EPIPE; Windows reports the same thing as EINVAL instead.
+                import sys
+
+                if os.name != "nt" or not _stdout_closed():
+                    raise
+                try:
+                    sys.stdout = open(os.devnull, "w")  # nothing left to flush at exit
+                except OSError:
+                    pass
+                sys.exit(1)
+        except (click.exceptions.ClickException, click.exceptions.Abort, click.exceptions.Exit):
+            raise  # only reaches here with standalone_mode=False; click's to handle
+        except Exception as exc:  # noqa: BLE001 — a bug gets a message, not a traceback
+            if not standalone or os.environ.get("CONTEXTZIP_DEBUG", "").strip():
+                raise  # a library caller (web.run) handles its own exceptions
+            _report_unexpected(exc)
+            raise SystemExit(1)
+
+
+ISSUES_URL = "https://github.com/akadeepesh/contextzip/issues/new/choose"
+DOCS_URL = "https://www.contextzipcli.com/docs/cli"
+
+
+def _print_version(ctx: click.Context, value: bool) -> None:
+    """--version: "contextzip 0.9.0", then the Python version and how it was installed."""
+    if not value or ctx.resilient_parsing:
+        return
+    import platform
+
+    from contextzip import install_info
+
+    try:
+        how = install_info.install_method()
+    except Exception:  # noqa: BLE001 — the version must print even if detection can't
+        how = "unknown install"
+    console.print(f"contextzip {__version__}", highlight=False)
+    console.print(f"[dim]Python {platform.python_version()} · {how}[/]", highlight=False)
+    ctx.exit()
+
+
+def _report_unexpected(exc: BaseException) -> None:
+    """What a crash prints instead of a traceback (CONTEXTZIP_DEBUG=1 shows the traceback)."""
+    try:
+        message = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+        err(literal(f"contextzip hit an unexpected error: {message}"))
+        info(f"This is a bug. Please report it: {ISSUES_URL}")
+        info("Run again with CONTEXTZIP_DEBUG=1 to see the full traceback.")
+    except Exception:  # noqa: BLE001 — never let the report itself crash
+        import sys
+
+        sys.stderr.write(f"contextzip hit an unexpected error: {exc!r}\n")
+
+
+# The main help's groups, in order. A registered command missing from this
+# table is listed under "More", so a new command can never vanish from help;
+# a name here that isn't registered (yet) is skipped.
+HELP_GROUPS: list[tuple[str, list[str]]] = [
+    ("Package", ["include", "exclude", "pick", "tokens"]),
+    ("Apply", ["apply", "snapshots"]),
+    ("Set up", ["init", "config", "stacks", "doctor", "completions", "update", "setup-path"]),
+    ("More", ["watch", "mcp"]),
+]
+
+# What follows a command's name in the list, when it takes something.
+_HELP_ARGS = {"include": "PATH…", "exclude": "PATTERN…", "apply": "[ZIP]", "watch": "-- COMMAND"}
+
+_HELP_USAGE = [
+    ("", "package this project and put the ZIP on your clipboard"),
+    ("include src/ app/", "only these paths"),
+    ("--git-changes", "only what you've changed"),
+    ("github.com/user/repo", "a repository, without cloning it"),
+    ("apply", "write the AI's reply back into the project"),
+]
+
+
+def _help_groups(ctx: click.Context, group: click.Group) -> list[tuple[str, list[tuple[str, str]]]]:
+    """[(title, [(label, description)])] for the commands that are registered and visible."""
+    visible = {}
+    for name in group.list_commands(ctx):
+        cmd = group.get_command(ctx, name)
+        if cmd is not None and not cmd.hidden:
+            visible[name] = cmd
+    listed: set[str] = set()
+    groups: list[tuple[str, list[tuple[str, str]]]] = []
+    for title, names in HELP_GROUPS:
+        rows = []
+        for name in names:
+            if name in visible and name not in listed:
+                listed.add(name)
+                rows.append(name)
+        groups.append((title, rows))
+    extra = [name for name in visible if name not in listed]
+    if extra:
+        for title, rows in groups:
+            if title == "More":
+                rows.extend(extra)
+                break
+        else:
+            groups.append(("More", extra))
+    out = []
+    for title, rows in groups:
+        if rows:
+            out.append(
+                (title, [(f"{name} {_HELP_ARGS[name]}" if name in _HELP_ARGS else name, visible[name].get_short_help_str(limit=200)) for name in rows])
+            )
+    return out
+
+
+def _render_main_help(ctx: click.Context, group: click.Group, *, styled: bool, width: int | None = None) -> str:
+    """
+    The main command's help as text: with rich markup when *styled* (bold
+    headings, command and option names in cyan), plain otherwise. Rows
+    wrap with a hanging indent under the description column.
+    """
+    import textwrap
+
+    width = max(40, width or console.width)
+    prog = ctx.find_root().info_name or "contextzip"
+    lines: list[str] = []
+
+    def style(text: str, how: str) -> str:
+        return f"[{how}]{escape(text)}[/]" if styled else text
+
+    def heading(text: str) -> None:
+        lines.append("")
+        lines.append(style(text, "bold"))
+
+    def rows(items: list[tuple[str, str]], label_w: int, label_style: str | None) -> None:
+        indent = 2 + label_w + 3
+        room = width - indent
+        for label, text in items:
+            left = style(label, label_style) if label_style else (escape(label) if styled else label)
+            pad = " " * (label_w - len(label))
+            if room < 20:
+                lines.append(f"  {left}")
+                lines.extend(" " * 6 + (escape(t) if styled else t) for t in textwrap.wrap(text, max(20, width - 6)))
+                continue
+            wrapped = textwrap.wrap(text, room) or [""]
+            body = [(escape(t) if styled else t) for t in wrapped]
+            lines.append(f"  {left}{pad}   {body[0]}".rstrip())
+            lines.extend(" " * indent + t for t in body[1:])
+
+    title = f"contextzip {__version__}"
+    tagline = "send the right files to an AI, and write its changes back"
+    if len(title) + 3 + len(tagline) <= width:
+        lines.append(f"{style(title, 'bold')} — {tagline}")
+    else:
+        lines.append(style(title, "bold"))
+        lines.extend(textwrap.wrap(tagline[0].upper() + tagline[1:] + ".", width))
+
+    heading("Usage")
+    usage = [(f"{prog} {cmd}".rstrip(), what) for cmd, what in _HELP_USAGE]
+    rows(usage, max(len(u) for u, _w in usage), None)
+
+    groups = _help_groups(ctx, group)
+    label_w = max([len(label) for _t, items in groups for label, _d in items] or [8])
+    for title, items in groups:
+        heading(title)
+        rows(items, label_w, "cyan")
+
+    heading("Options")
+    options = []
+    for param in group.get_params(ctx):
+        record = param.get_help_record(ctx)
+        if record is not None:
+            key = "help" if "--help" in getattr(param, "opts", ()) else (param.name or "")
+            options.append((record[0], _OPTION_SUMMARY.get(key, record[1])))
+    rows(options, max(len(o) for o, _h in options), "cyan")
+
+    lines.append("")
+    lines.append(f"Docs: {DOCS_URL}")
+    return "\n".join(lines) + "\n"
+
+
+# One line per option in the main help; `cz SUBCOMMAND --help` keeps the full text.
+_OPTION_SUMMARY = {
+    "include": "Only these paths (or: include PATH…)",
+    "exclude": "Leave these out too, gitignore syntax (or: exclude PATTERN…)",
+    "prompt": "Let Gemini pick the files for this task",
+    "dry_run": "Show what would be packed, write nothing",
+    "output": "Write the ZIP to FILE",
+    "no_clipboard": "Don't put the ZIP on the clipboard",
+    "no_gitignore": "Ignore the project's .gitignore",
+    "git_changes": "Only the files git reports as changed",
+    "verbose": "List every file",
+    "here": "Only the folder you're in",
+    "remote": "Package a GitHub, GitLab or Bitbucket repository",
+    "ref": "Branch, tag or commit for --from",
+    "max_tokens": "A token budget: 150000, 150k or 1.5m",
+    "trim": "Leave out the least important files to fit the budget",
+    "fit_for": "Show the fit for claude, chatgpt or gemini",
+    "plain": "One line per step, no bars or colour",
+    "json_output": "One JSON object, for editors and scripts",
+    "version": "Print the installed version",
+    "help": "Show this help",
+}
+
+
+def _print_main_help(ctx: click.Context, group: click.Group) -> None:
+    """Styled in a terminal (rich writes it, so old Windows consoles get colour too); plain text otherwise."""
+    if console.is_terminal:
+        console.print(_render_main_help(ctx, group, styled=True), end="", soft_wrap=True, highlight=False)
+    else:
+        click.echo(_render_main_help(ctx, group, styled=False), nl=False)
+
+
+def _looks_like_path(name: str) -> bool:
+    if "/" in name or "\\" in name or name in (".", "..") or name.startswith("."):
+        return True
+    if "." in name.strip("."):
+        return True  # main.py, src.old
+    try:
+        return Path(name).exists()
+    except (OSError, ValueError):
+        return False
+
+
+def _unknown_command(ctx: click.Context, name: str, commands: list[str]) -> None:
+    """`cz aply`: say so, suggest the closest commands, exit 2 like any usage error."""
+    import difflib
+
+    prog = prog_name()
+    out = Console(stderr=True, highlight=False)
+    err(f'contextzip has no command "{escape(name)}".', con=out)
+    if _looks_like_path(name):
+        info(f"To package only that path: {prog} include {escape(name)}", con=out)
+    elif not looks_like_remote(name):
+        close = difflib.get_close_matches(name, commands, n=3, cutoff=0.6)
+        if close:
+            info(f"Did you mean: {', '.join(close)}?", con=out)
+    info(f"Run {prog} --help to see them all.", con=out)
+    ctx.exit(2)
 
 
 def _stdout_closed() -> bool:
@@ -364,7 +669,14 @@ def _printable_streams() -> None:
     ),
 )
 @_modifier_options
-@click.version_option(version=__version__, prog_name="contextzip")
+@click.option(
+    "--version",
+    is_flag=True,
+    expose_value=False,
+    is_eager=True,
+    callback=lambda ctx, param, value: _print_version(ctx, value),
+    help="Print the installed version.",
+)
 @click.pass_context
 def main(
     ctx: click.Context,
@@ -383,6 +695,7 @@ def main(
     fit_for: tuple[str, ...],
     max_tokens: int | None,
     trim: bool,
+    plain: bool,
     json_output: bool,
 ) -> None:
     """
@@ -419,6 +732,7 @@ def main(
         fit_for=list(fit_for),
         max_tokens=max_tokens,
         trim=trim,
+        plain=plain,
         json_output=json_output,
     )
 
@@ -428,8 +742,8 @@ def main(
 # ---------------------------------------------------------------------------
 
 
-@main.command("exclude")
-@click.argument("patterns", nargs=-1, required=True, metavar="PATTERN…")
+@main.command("exclude", short_help="Package everything except these")
+@click.argument("patterns", nargs=-1, required=False, metavar="PATTERN…")
 @_modifier_options
 def cmd_exclude(
     patterns: tuple[str, ...],
@@ -446,21 +760,40 @@ def cmd_exclude(
     fit_for: tuple[str, ...],
     max_tokens: int | None,
     trim: bool,
+    plain: bool,
     json_output: bool,
 ) -> None:
     """
     Exclude specific files or patterns and package everything else.
 
     \b
-    EXAMPLES
-      contextzip exclude CHANGELOG.md CONTRIBUTING.md LICENSE
+    Examples
+      contextzip exclude CHANGELOG.md LICENSE
       contextzip exclude .github/ tests/ '*.log'
-      contextzip exclude CHANGELOG.md --dry-run --verbose
-      contextzip exclude .github/ CHANGELOG.md --output ~/Desktop/out.zip
+      contextzip exclude docs/ --dry-run --verbose
 
     Patterns follow gitignore syntax. Folders are matched with or without
-    a trailing slash: both '.github' and '.github/' work.
+    a trailing slash: both '.github' and '.github/' work. Without a
+    pattern, in a terminal, it opens the picker with everything the rules
+    allow ticked.
     """
+    if not patterns:
+        _pick_or_missing(
+            "patterns",
+            start_empty=False,
+            blocked=bool(prompt or git_changes or remote or ref or no_gitignore),
+            json_output=json_output,
+            output=output,
+            no_clipboard=no_clipboard,
+            verbose=verbose,
+            here=here,
+            fit_for=fit_for,
+            max_tokens=max_tokens,
+            trim=trim,
+            plain=plain,
+            dry_run=dry_run,
+        )
+        return
     _run(
         extra_exclude=list(patterns),
         include_only=None,
@@ -477,6 +810,7 @@ def cmd_exclude(
         fit_for=list(fit_for),
         max_tokens=max_tokens,
         trim=trim,
+        plain=plain,
         json_output=json_output,
     )
 
@@ -486,8 +820,8 @@ def cmd_exclude(
 # ---------------------------------------------------------------------------
 
 
-@main.command("include")
-@click.argument("paths", nargs=-1, required=True, metavar="PATH…")
+@main.command("include", short_help="Package only these paths")
+@click.argument("paths", nargs=-1, required=False, metavar="PATH…")
 @_modifier_options
 def cmd_include(
     paths: tuple[str, ...],
@@ -504,20 +838,39 @@ def cmd_include(
     fit_for: tuple[str, ...],
     max_tokens: int | None,
     trim: bool,
+    plain: bool,
     json_output: bool,
 ) -> None:
     """
     Package only the specified paths and skip everything else.
 
     \b
-    EXAMPLES
+    Examples
       contextzip include src/ app/
-      contextzip include src/ app/ --dry-run
-      contextzip include src/ --output ~/Desktop/out.zip --verbose
+      contextzip include src/ .env --dry-run
+      contextzip include src/ --output ~/Desktop/out.zip
 
     Paths are matched as exact prefixes at directory boundaries:
-    'src' matches 'src/index.ts' but not 'src2/index.ts'.
+    'src' matches 'src/index.ts' but not 'src2/index.ts'. Without a path,
+    in a terminal, it opens the picker with nothing ticked.
     """
+    if not paths:
+        _pick_or_missing(
+            "paths",
+            start_empty=True,
+            blocked=bool(prompt or git_changes or remote or ref or no_gitignore),
+            json_output=json_output,
+            output=output,
+            no_clipboard=no_clipboard,
+            verbose=verbose,
+            here=here,
+            fit_for=fit_for,
+            max_tokens=max_tokens,
+            trim=trim,
+            plain=plain,
+            dry_run=dry_run,
+        )
+        return
     _run(
         extra_exclude=None,
         include_only=list(paths),
@@ -534,16 +887,185 @@ def cmd_include(
         fit_for=list(fit_for),
         max_tokens=max_tokens,
         trim=trim,
+        plain=plain,
         json_output=json_output,
     )
 
 
 # ---------------------------------------------------------------------------
-# Subcommand: apply-zip
+# Subcommand: pick
 # ---------------------------------------------------------------------------
 
 
-@main.command("apply-zip")
+@main.command("pick", short_help="Choose files in an interactive tree")
+@click.argument("paths", nargs=-1, metavar="[PATH…]")
+@click.option(
+    "--save",
+    "save_only",
+    is_flag=True,
+    default=False,
+    help="Don't package: Enter saves the selection as this project's default and exits.",
+)
+@_pick_options
+def cmd_pick(
+    paths: tuple[str, ...],
+    save_only: bool,
+    output: str | None,
+    no_clipboard: bool,
+    verbose: bool,
+    here: bool,
+    fit_for: tuple[str, ...],
+    max_tokens: int | None,
+    trim: bool,
+    plain: bool,
+    json_output: bool,
+) -> None:
+    """
+    Choose the files to package in a full-screen tree, with live token totals.
+
+    \b
+    Examples
+      contextzip pick                  # tick files, then Enter packages them
+      contextzip pick src/ app/        # start with only these ticked
+      contextzip pick --save           # save the selection as the default
+
+    \b
+    Keys
+      ↑ ↓ / j k     move            space    tick or untick
+      → / l         open a folder   ← / h    close it, or go to its folder
+      /             filter by path  esc      clear the filter
+      a / n         tick / untick everything shown
+      s             suggestions (PDFs, data, large files)
+      e             show files the rules and .gitignore leave out
+      enter         package what's ticked (with --save: save it)
+      w             save what's ticked as this project's default
+      q / esc       quit without doing anything
+
+    Enter packages exactly what's ticked, like contextzip include, with the
+    usual summary, snapshot and clipboard. Secret files you tick are still
+    redacted.
+    """
+    with _json_session("pick", json_output):
+        _pick(
+            list(paths),
+            start_empty=False,
+            save_only=save_only,
+            output=output,
+            no_clipboard=no_clipboard,
+            verbose=verbose,
+            here=here,
+            fit_for=list(fit_for),
+            max_tokens=max_tokens,
+            trim=trim,
+            plain=plain,
+        )
+
+
+def _pick_or_missing(param_name: str, *, start_empty: bool, blocked: bool, json_output: bool, dry_run: bool, **flags) -> None:
+    """`include` / `exclude` without arguments: the picker in a terminal, the usual usage error anywhere else."""
+    ctx = click.get_current_context()
+    if blocked or json_output or not _interactive():
+        param = next(p for p in ctx.command.params if p.name == param_name)
+        raise click.MissingParameter(ctx=ctx, param=param)
+    if dry_run:
+        raise click.UsageError("The picker has no dry run: name the paths, or leave out --dry-run.")
+    _pick([], start_empty=start_empty, save_only=False, **{**flags, "fit_for": list(flags["fit_for"])})
+
+
+def _pick(
+    paths: list[str],
+    *,
+    start_empty: bool,
+    save_only: bool,
+    output: str | None,
+    no_clipboard: bool,
+    verbose: bool,
+    here: bool,
+    fit_for: list[str],
+    max_tokens: int | None,
+    trim: bool,
+    plain: bool,
+) -> None:
+    """Run the picker, then package (or save) what was picked."""
+    if not _interactive():
+        fail(
+            "The picker needs an interactive terminal.",
+            fix="contextzip include PATH…   or   contextzip config --ui",
+        )
+        raise SystemExit(1)
+    try:
+        import textual  # noqa: F401
+    except ImportError:
+        fail('The picker needs the "textual" package.', fix="pip install textual   (or use contextzip config --ui in the browser)")
+        raise SystemExit(1)
+
+    from contextzip.picker import run_picker, save_selection
+    from contextzip.picker_model import PickerModel
+
+    project_root = _resolve_root()
+    project_dir = project_root.root
+    project_cfg = load_project_config(project_dir)
+    try:
+        fit_targets = models_mod.resolve(fit_for or None, project_cfg.tokens.windows)
+    except ValueError as exc:
+        fail(str(exc))
+        raise SystemExit(1)
+
+    include_only: list[str] | None = to_root_relative(paths, project_root) if paths else ([] if start_empty else None)
+    if here and project_root.in_subdir:
+        include_only = [*(include_only or []), project_root.subdir]
+
+    with status("[cyan]Scanning project files…[/]"):
+        detection = _detector.detect(project_dir)
+        model = PickerModel(project_dir, detection, project_cfg, include_only=include_only)
+
+    result = run_picker(
+        model,
+        title=project_dir.name,
+        fit_targets=fit_targets,
+        show_fit=project_cfg.tokens.show_fit,
+        save_only=save_only,
+        save=save_selection,
+    )
+    console.print()
+    if result is None:
+        info("Nothing picked.")
+        raise SystemExit(1)
+    if result == "save":
+        from contextzip.project_config import project_config_path
+
+        ok("Saved as this project's default", literal(str(project_config_path(project_dir))))
+        console.print()
+        return
+    picked = model.included()
+    if not picked:
+        info("Nothing picked.")
+        raise SystemExit(1)
+
+    with plain_output(plain):
+        _package(
+            extra_exclude=None,
+            include_only=None,
+            prompt=None,
+            dry_run=False,
+            output=output,
+            no_clipboard=no_clipboard,
+            no_gitignore=False,
+            git_changes=False,
+            verbose=verbose,
+            fit_for=fit_for,
+            max_tokens=max_tokens,
+            trim=trim,
+            picked=picked,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: apply (apply-zip is its old name, kept as a hidden alias)
+# ---------------------------------------------------------------------------
+
+
+@main.command("apply", short_help="Write an AI-returned ZIP back, safely")
 @click.argument("zip_path", required=False, metavar="[ZIP]")
 @click.option(
     "--snapshot",
@@ -619,6 +1141,12 @@ def cmd_include(
     ),
 )
 @click.option(
+    "--plain",
+    is_flag=True,
+    default=False,
+    help="One line per step, no table. This is also what you get when the output is piped.",
+)
+@click.option(
     "--pr",
     "as_pr",
     is_flag=True,
@@ -649,6 +1177,7 @@ def cmd_apply_zip(
     safe_only: bool,
     yes: bool,
     json_output: bool,
+    plain: bool,
     as_pr: bool,
     pr_repo: str | None,
 ) -> None:
@@ -656,14 +1185,18 @@ def cmd_apply_zip(
     Apply an AI-returned ZIP back into the project.
 
     \b
-    EXAMPLES
-      contextzip apply-zip                  # picks up the zip in .contextzip/inbox/
-      contextzip apply-zip fix.zip          # or one anywhere on disk
-      contextzip apply-zip --dry-run -v     # see exactly what would happen
-      contextzip apply-zip --review         # decide file by file in the browser
-      contextzip apply-zip --editor         # resolve conflicts in VS Code
-      contextzip apply-zip --safe-only      # scripts/CI: only the safe changes
-      contextzip apply-zip reply.zip --pr   # a packaged GitHub repo: open a pull request
+    Examples
+      contextzip apply                  # picks up the zip in .contextzip/inbox/
+      contextzip apply fix.zip --dry-run -v
+      contextzip apply --review         # decide file by file in the browser
+
+    \b
+    More
+      contextzip apply --editor         # resolve conflicts in VS Code
+      contextzip apply --safe-only      # scripts/CI: only the safe changes
+      contextzip apply reply.zip --pr   # a packaged GitHub repo: open a pull request
+
+    The old name, apply-zip, still works.
 
     \b
     HOW IT WORKS
@@ -689,8 +1222,8 @@ def cmd_apply_zip(
       / --allow-delete), and never one you've changed since the snapshot.
     """
     if pr_repo and not as_pr:
-        raise click.UsageError("--from goes with --pr: apply-zip --pr --from github.com/user/repo")
-    with _json_session("apply-zip", json_output):
+        raise click.UsageError("--from goes with --pr: apply --pr --from github.com/user/repo")
+    with _json_session("apply-zip", json_output), plain_output(plain):
         if as_pr:
             _apply_as_pull_request(
                 zip_path,
@@ -717,6 +1250,18 @@ def cmd_apply_zip(
         )
 
 
+def _hidden_alias(command: click.Command) -> click.Command:
+    """A copy of *command* that runs the same code but isn't listed anywhere."""
+    import copy
+
+    alias = copy.copy(command)
+    alias.hidden = True
+    return alias
+
+
+main.add_command(_hidden_alias(cmd_apply_zip), "apply-zip")
+
+
 def _apply_as_pull_request(
     zip_path: str | None,
     *,
@@ -732,7 +1277,7 @@ def _apply_as_pull_request(
 
     console.print()
     if not zip_path:
-        err("Give the reply's ZIP: contextzip apply-zip reply.zip --pr")
+        err("Give the reply's ZIP: contextzip apply reply.zip --pr")
         raise SystemExit(1)
     zip_file = Path(zip_path).expanduser().resolve()
     if not zip_file.is_file():
@@ -751,12 +1296,12 @@ def _apply_as_pull_request(
 
     try:
         with status("[cyan]Matching files and comparing versions…[/]"):
-            plan = build_plan(zip_file, cached.project_dir, cached.snapshot.manifest_path if cached.snapshot else None)
+            plan = _applier.build_plan(zip_file, cached.project_dir, cached.snapshot.manifest_path if cached.snapshot else None)
         if cached.snapshot is not None:
             plan.snapshot = plan.snapshot or cached.snapshot.label
             plan.matched_by_guide = True
-    except ApplyError as exc:
-        err(str(exc))
+    except _applier.ApplyError as exc:
+        fail(str(exc), fix=f"{prog_name()} apply PATH/TO/reply.zip --pr")
         raise SystemExit(1)
 
     try:
@@ -809,7 +1354,7 @@ def _apply_as_pull_request(
             {**summary, "url": pr.url, "number": pr.number, "branch": pr.branch, "pushed_to": pr.repo, "forked": pr.forked},
         )
     finally:
-        discard_plan(plan)
+        _applier.discard_plan(plan)
 
 
 def _apply_zip(
@@ -838,9 +1383,11 @@ def _apply_zip(
     print_root_notice(project_root)
 
     try:
-        resolved_zip = find_zip_to_apply(project_dir, zip_path)
-    except ApplyError as exc:
-        err(str(exc))
+        resolved_zip = _applier.find_zip_to_apply(project_dir, zip_path)
+    except _applier.ApplyError as exc:
+        message = str(exc)
+        # "No zip found…" already says how to pass one.
+        fail(message, fix=None if "apply <path>" in message else f"{prog_name()} apply PATH/TO/reply.zip")
         raise SystemExit(1)
 
     explicit_manifest = None
@@ -853,20 +1400,20 @@ def _apply_zip(
             raise SystemExit(1)
         explicit_manifest = snap.manifest_path
     elif manifest_path is not None:
-        explicit_manifest = find_latest_manifest(project_dir, manifest_path)
+        explicit_manifest = _applier.find_latest_manifest(project_dir, manifest_path)
         if explicit_manifest is None:
             err(f"No such manifest: {manifest_path}")
             raise SystemExit(1)
 
     try:
         with status("[cyan]Matching files and comparing versions…[/]"):
-            plan = build_plan(resolved_zip, project_dir, explicit_manifest)
-    except ApplyError as exc:
-        err(str(exc))
+            plan = _applier.build_plan(resolved_zip, project_dir, explicit_manifest)
+    except _applier.ApplyError as exc:
+        fail(str(exc), fix=f"{prog_name()} apply PATH/TO/reply.zip")
         raise SystemExit(1)
 
     print_apply_plan(plan, project_dir, verbose=verbose)
-    report_path = write_apply_report(project_dir=project_dir, plan=plan)
+    report_path = _report.write_apply_report(project_dir=project_dir, plan=plan)
     jsonout.put("project", {"root": str(project_dir), "kind": project_root.kind})
     jsonout.put("plan", jsonout.plan_data(plan))
     jsonout.put("result", None)
@@ -874,14 +1421,14 @@ def _apply_zip(
 
     if not plan.writable_entries:
         info("Nothing to apply — every file already matches the project.")
-        discard_plan(plan)
+        _applier.discard_plan(plan)
         _archive_if_inbox(plan, project_dir, project_cfg)
         return
 
     if dry_run:
         info("Dry run — no files written. Remove --dry-run to apply these changes.")
         print_report_hint(report_path)
-        discard_plan(plan)
+        _applier.discard_plan(plan)
         return
 
     decisions: dict | None = None
@@ -895,7 +1442,7 @@ def _apply_zip(
 
     if mode == "quit":
         info("Cancelled — no files written.")
-        discard_plan(plan)
+        _applier.discard_plan(plan)
         return
     if mode == "all":
         include_risky = True
@@ -906,19 +1453,19 @@ def _apply_zip(
         decisions = review_in_browser(plan, project_dir, con=console)
         if decisions is None:
             info("Review closed without applying — no files written.")
-            discard_plan(plan)
+            _applier.discard_plan(plan)
             return
     elif mode == "editor":
         decisions = _resolve_in_editor(plan, project_dir)
         if decisions is None:
             info("Nothing applied.")
-            discard_plan(plan)
+            _applier.discard_plan(plan)
             return
 
     if mode != "review":
         remove_moved, allow_delete = _removal_consent(plan, remove_moved=remove_moved, allow_delete=allow_delete)
 
-    result = execute_plan(
+    result = _applier.execute_plan(
         plan,
         project_dir,
         retain=project_cfg.applied_zip_retention,
@@ -929,7 +1476,7 @@ def _apply_zip(
     )
     console.print()
     print_apply_result(result)
-    report_path = write_apply_report(project_dir=project_dir, plan=plan, result=result)
+    report_path = _report.write_apply_report(project_dir=project_dir, plan=plan, result=result)
     print_report_hint(report_path)
     jsonout.put("result", jsonout.apply_result_data(result))
     jsonout.put("report", str(report_path))
@@ -1034,7 +1581,7 @@ def _apply_mode(plan, *, review: bool, use_editor: bool, safe_only: bool, yes: b
     if not _interactive():
         err("Some files need a decision, and there's no one here to ask.")
         info("Re-run with --safe-only to apply just the safe changes, or --yes to apply everything.")
-        discard_plan(plan)
+        _applier.discard_plan(plan)
         raise SystemExit(1)
 
     from contextzip.editor import editor_name, find_editor
@@ -1086,7 +1633,9 @@ def _resolve_in_editor(plan, project_dir: Path) -> dict | None:
 
 
 @main.command(
-    "watch", context_settings={"ignore_unknown_options": True, "allow_extra_args": True}
+    "watch",
+    short_help="Package debug context when a command fails",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
 @click.argument("command", nargs=-1, required=True, metavar="-- COMMAND [ARGS]...")
 def cmd_watch(command: tuple[str, ...]) -> None:
@@ -1094,7 +1643,7 @@ def cmd_watch(command: tuple[str, ...]) -> None:
     Watch a process and auto-package debug context when errors are detected.
 
     \b
-    EXAMPLES
+    Examples
       contextzip watch -- npm run dev
       contextzip watch -- python manage.py runserver
       contextzip watch -- python -m pytest --tb=short
@@ -1138,7 +1687,7 @@ def cmd_watch(command: tuple[str, ...]) -> None:
     console.print()
 
     with status("[cyan]Detecting project ecosystem…[/]"):
-        detection = detect(project_dir)
+        detection = _detector.detect(project_dir)
 
     print_detection(detection)
 
@@ -1161,7 +1710,7 @@ def cmd_watch(command: tuple[str, ...]) -> None:
     raise SystemExit(exit_code)
 
 
-@main.command("config")
+@main.command("config", short_help="Settings, the Gemini key, the config UI")
 @click.option(
     "--reset-key",
     is_flag=True,
@@ -1206,14 +1755,18 @@ def cmd_config(
     Manage contextzip configuration.
 
     \b
-    EXAMPLES
-      contextzip config --reset-key                # clear Gemini key, re-onboard
+    Examples
+      contextzip config                             # what's set, and where
+      contextzip config --ui                        # visually set include/exclude
+      contextzip config --reset-key                 # clear Gemini key, re-onboard
+
+    \b
+    More
       contextzip config --set-workspace cwd         # always use ./.contextzip here
       contextzip config --set-workspace git-root    # back to the default
       contextzip config --set-workspace ~/zips      # a fixed custom location
       contextzip config --reset-workspace           # clear the personal override
       contextzip config --show-key-path             # print config file location
-      contextzip config --ui                        # visually set include/exclude
 
     \b
     A workspace location can also be pinned for the whole team by committing
@@ -1269,7 +1822,7 @@ def cmd_config(
             info("No API key was stored.")
 
         console.print()
-        new_key = onboard_api_key()
+        new_key = _onboard.onboard_api_key()
         if not new_key:
             info("You can set GEMINI_API_KEY as an environment variable instead.")
             console.print()
@@ -1340,7 +1893,7 @@ def cmd_config(
 # ---------------------------------------------------------------------------
 
 
-@main.command("snapshots")
+@main.command("snapshots", short_help="List what you've sent")
 @click.option(
     "--json",
     "json_output",
@@ -1353,8 +1906,14 @@ def cmd_snapshots(json_output: bool) -> None:
     List this project's snapshots.
 
     \b
+    Examples
+      contextzip snapshots
+      contextzip snapshots --json
+      contextzip apply --snapshot 14    # apply a reply against snapshot 14
+
+    \b
     Every package contextzip makes is kept as a numbered snapshot, so
-    apply-zip can merge an AI reply against exactly what you sent — even
+    apply can merge an AI reply against exactly what you sent — even
     after you've packaged again. The CONTEXTZIP.md inside each ZIP names
     its snapshot, so a reply that echoes it back is matched exactly.
 
@@ -1409,7 +1968,7 @@ def _list_snapshots() -> None:
     console.print()
 
 
-@main.command("tokens")
+@main.command("tokens", short_help="Show where the tokens are")
 @click.argument("paths", nargs=-1, metavar="[PATH…]")
 @click.option("--top", default=15, show_default=True, type=click.IntRange(min=1), help="How many of the largest files to list.")
 @click.option("--depth", default=1, show_default=True, type=click.IntRange(min=1), help="Group folders this many levels deep.")
@@ -1433,7 +1992,7 @@ def cmd_tokens(paths: tuple[str, ...], top: int, depth: int, fit_for: tuple[str,
     it fits each model. Writes nothing.
 
     \b
-    EXAMPLES
+    Examples
       contextzip tokens
       contextzip tokens src/ --depth 2 --top 5
       contextzip tokens --for claude --json
@@ -1464,7 +2023,7 @@ def _tokens(paths: list[str], *, top: int, depth: int, fit_for: list[str]) -> No
         print_fit(fit_rows)
 
 
-@main.command("stacks")
+@main.command("stacks", short_help="Languages and frameworks contextzip recognises")
 @click.argument("name", required=False, metavar="[STACK]")
 @click.option(
     "--json",
@@ -1478,13 +2037,14 @@ def cmd_stacks(name: str | None, json_output: bool) -> None:
     List the languages and frameworks contextzip recognises.
 
     \b
-    For each one: what marks a project as that stack, and how many
-    patterns it adds to what's left out. Name a stack to see every
-    pattern:
-
-    \b
+    Examples
       contextzip stacks
       contextzip stacks laravel
+      contextzip stacks --json
+
+    For each one: what marks a project as that stack, and how many
+    patterns it adds to what's left out. Name a stack to see every
+    pattern.
     """
     with _json_session("stacks", json_output):
         _list_stacks(name)
@@ -1565,10 +2125,15 @@ def _ago(seconds: float) -> str:
     return "just now"
 
 
-@main.command("mcp")
+@main.command("mcp", short_help="Run as an MCP server for AI agents")
 def cmd_mcp() -> None:
     """
     Run contextzip as an MCP server (stdio), for AI agents and editors.
+
+    \b
+    Examples
+      pip install "contextzip[mcp]"
+      contextzip mcp
 
     
     Needs the optional extra, on Python 3.10 or newer:
@@ -1599,7 +2164,7 @@ def cmd_mcp() -> None:
     serve()
 
 
-@main.command("setup-path")
+@main.command("setup-path", short_help="Put cz on your PATH")
 @click.option(
     "--yes",
     "-y",
@@ -1610,6 +2175,11 @@ def cmd_mcp() -> None:
 def cmd_setup_path(yes: bool) -> None:
     """
     Put the cz and contextzip commands on your PATH.
+
+    \b
+    Examples
+      python -m contextzip setup-path
+      python -m contextzip setup-path --yes
 
     \b
     If your terminal says "cz is not recognized" or "command not found",
@@ -1688,7 +2258,7 @@ def cmd_setup_path(yes: bool) -> None:
     try:
         changed = pathsetup.add_to_path(st.directory)
     except OSError as exc:
-        err(f"Couldn't update {target}: {exc}")
+        fail(f"Couldn't update {target}.", why=str(exc), fix="python -m contextzip works without PATH")
         console.print()
         raise SystemExit(1)
 
@@ -1700,7 +2270,249 @@ def cmd_setup_path(yes: bool) -> None:
     console.print()
 
 
-@main.command("update")
+# ---------------------------------------------------------------------------
+# Subcommand: completions
+# ---------------------------------------------------------------------------
+
+
+@main.command(
+    "completions",
+    short_help="Tab completion for your shell",
+    context_settings={"ignore_unknown_options": True},
+)
+@click.argument("args", nargs=-1, metavar="[SHELL]")
+@click.option(
+    "--install",
+    "do_install",
+    is_flag=True,
+    default=False,
+    help="Add them to your shell's startup file. Running it again updates them, never twice.",
+)
+@click.option("--complete", "complete_mode", is_flag=True, default=False, hidden=True)
+@click.option("--new", "new_word", is_flag=True, default=False, hidden=True)
+def cmd_completions(args: tuple[str, ...], do_install: bool, complete_mode: bool, new_word: bool) -> None:
+    """
+    Tab completion for bash, zsh, fish or PowerShell, for both cz and contextzip.
+
+    \b
+    Examples
+      contextzip completions --install          # your shell, set up for new terminals
+      contextzip completions zsh > ~/.zfunc/_cz
+      contextzip completions powershell
+
+    SHELL is bash, zsh, fish or powershell; without it, contextzip uses
+    your current shell. Without --install the script is printed, so you
+    can put it wherever you like.
+    """
+    from contextzip import completions as comp
+
+    if complete_mode:
+        for value in comp.candidates(main, list(args), new_word=new_word):
+            click.echo(value)
+        return
+
+    if len(args) > 1:
+        raise click.UsageError("Name one shell: bash, zsh, fish or powershell.")
+    shell = args[0].lower() if args else comp.detect_shell()
+    if shell in ("pwsh", "powershell.exe"):
+        shell = "powershell"
+    if shell is None:
+        fail("Couldn't tell which shell you use.", fix="contextzip completions bash   (or zsh, fish, powershell)")
+        raise SystemExit(1)
+    if shell not in comp.SHELLS:
+        fail(f"contextzip has no completions for {shell}.", why="It has them for bash, zsh, fish and powershell.")
+        raise SystemExit(1)
+
+    if not do_install:
+        click.echo(comp.script(main, shell), nl=False)
+        return
+
+    try:
+        written = comp.install(main, shell)
+    except OSError as exc:
+        fail(f"Couldn't install the {shell} completions.", why=str(exc))
+        raise SystemExit(1)
+    console.print()
+    ok(f"Completions installed for {shell}", literal(", ".join(comp.display(path) for path, _p in written)))
+    for path, policy in written:
+        if comp.blocks_policy(policy):
+            info(
+                f"PowerShell won't run {path.name} while scripts are blocked ({policy}). "
+                "To allow your own scripts: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned"
+            )
+            break
+    info("Open a new terminal to use them.")
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: init
+# ---------------------------------------------------------------------------
+
+
+@main.command("init", short_help="Set this project up")
+@click.option("--yes", "-y", is_flag=True, default=False, help="Save the defaults without asking.")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help="Print one JSON object instead of terminal output, for editors and scripts. Never prompts.",
+)
+def cmd_init(yes: bool, json_output: bool) -> None:
+    """
+    Set this project up: see what contextzip would package, and save the defaults.
+
+    \b
+    Examples
+      contextzip init
+      contextzip init --yes        # no question, for scripts
+      contextzip init --json
+
+    Writes .contextzip/config.json (git-ignored, like the rest of
+    .contextzip/). Change it later with contextzip pick or contextzip
+    config --ui.
+    """
+    with _json_session("init", json_output):
+        _init(yes=yes)
+
+
+def _init(*, yes: bool) -> None:
+    from contextzip.project_config import project_config_path
+
+    console.print()
+    project_root = _resolve_root()
+    project_dir = project_root.root
+    config_file = project_config_path(project_dir)
+    prog = prog_name()
+    jsonout.put("project", {"root": str(project_dir), "kind": project_root.kind})
+    jsonout.put("config", str(config_file))
+    jsonout.put("created", False)
+
+    if config_file.is_file():
+        info(literal(f"This project is already set up: {config_file}"))
+        info(f"Change what's included: {prog} pick")
+        info(f"Other settings: {prog} config --ui")
+        console.print()
+        return
+
+    scan = _scan(extra_exclude=None, include_only=None, quiet=True)
+    if scan is None:  # only --git-changes returns None
+        return
+    report = _count_tokens(scan.resolved, project_dir, create_cache=False)
+    fit_rows = jsonout.fit_data(report, scan.fit_targets)
+    jsonout.put("detection", jsonout.detection_data(scan.detection))
+    jsonout.put("files", jsonout.files_data(scan.resolved, project_dir, verbose=False, git_mode=False, tokens=report))
+    jsonout.put("fit", fit_rows)
+
+    if fancy():
+        print_package_summary(
+            name=project_dir.name,
+            detection=scan.detection,
+            resolved=scan.resolved,
+            project_dir=project_dir,
+            tokens=report,
+            fit_rows=fit_rows if scan.project_cfg.tokens.show_fit else None,
+            footer=None,
+        )
+    else:
+        print_detection(scan.detection)
+        print_scan_summary(scan.resolved, project_dir, False, tokens=report)
+        if scan.project_cfg.tokens.show_fit:
+            print_fit(fit_rows)
+
+    if not yes and _interactive():
+        if not click.confirm("  Save these defaults for this project?", default=True):
+            info("Nothing saved. Run it again any time.")
+            console.print()
+            return
+
+    from contextzip.webui.persist import save_config_from_ui
+
+    try:
+        written = save_config_from_ui(project_dir, always_include=[], always_exclude=[])
+    except OSError as exc:
+        fail("Couldn't save the project config.", why=str(exc))
+        raise SystemExit(1)
+    jsonout.put("config", str(written))
+    jsonout.put("created", True)
+    from contextzip.cli_display import _display_path
+
+    ok(literal(f"Saved {_display_path(written)}"))
+    info("Next:")
+    steps = ((prog, "package it"), (f"{prog} pick", "choose files by hand"), (f"{prog} apply", "write the AI's reply back"))
+    width = max(len(command) for command, _what in steps) + 3
+    for command, what in steps:
+        info(f"  {command:<{width}}{what}")
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: doctor
+# ---------------------------------------------------------------------------
+
+
+@main.command("doctor", short_help="Check that everything works on this machine")
+@click.option("--online", is_flag=True, default=False, help="Also ask PyPI whether a newer contextzip exists.")
+@click.option("--strict", is_flag=True, default=False, help="Exit 1 when any check has something to look at.")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help='Print {"checks": [{"name", "ok", "detail", "fix"}]} instead of terminal output.',
+)
+def cmd_doctor(online: bool, strict: bool, json_output: bool) -> None:
+    """
+    Check that everything contextzip needs works on this machine.
+
+    \b
+    Examples
+      contextzip doctor
+      contextzip doctor --online     # also check for a newer release
+      contextzip doctor --json
+
+    Looks at the version, PATH, Python, the clipboard, the tokenizer, git,
+    this project, the Gemini key and the terminal. Changes nothing, copies
+    nothing, and only uses the network with --online.
+    """
+    with _json_session("doctor", json_output):
+        _doctor(online=online, strict=strict)
+
+
+def _doctor(*, online: bool, strict: bool) -> None:
+    from contextzip import doctor
+
+    console.print()
+    if online:
+        with status("[cyan]Checking for a newer release…[/]"):
+            checks = doctor.run_checks(online=True)
+    else:
+        checks = doctor.run_checks()
+    jsonout.put("checks", [c.as_dict() for c in checks])
+
+    width = max(len(c.name) for c in checks)
+    for check in checks:
+        text = literal(f"{check.name:<{width}}  {check.detail}")
+        if check.ok:
+            ok(text)
+        else:
+            warn(text)
+            if check.fix:
+                info(literal(f"{'':<{width}}  Try: {check.fix}"))
+
+    problems = sum(1 for c in checks if not c.ok)
+    console.print()
+    if problems:
+        warn(f"{problems} thing{'s' if problems != 1 else ''} to look at.")
+    else:
+        ok("Everything looks fine.")
+    console.print()
+    if problems and strict:
+        raise SystemExit(1)
+
+
+@main.command("update", short_help="Update contextzip")
 @click.option(
     "--check",
     "check_only",
@@ -1720,11 +2532,10 @@ def cmd_update(check_only: bool, yes: bool) -> None:
     Check PyPI for a newer contextzip release and update in place.
 
     \b
-    EXAMPLES
+    Examples
       contextzip update              # check, then confirm before updating
       contextzip update --yes        # update immediately if one is available
       contextzip update --check      # only report the current/latest version
-      cz update                      # same command, short alias
 
     \b
     HOW IT WORKS
@@ -1833,54 +2644,24 @@ def _enforce_ai_config(ai_cfg) -> None:
         raise SystemExit(1)
 
 
-def _maybe_offer_config_ui(
-    project_dir: Path,
-    detection,
-    *,
-    prompt: str | None,
-    output: str | None,
-) -> bool:
+def _first_run_hint(project_dir: Path) -> None:
     """
-    On a project's very first run — no .contextzip/config.json and no
-    legacy .contextzip.json at all — offer to open the local config UI
-    instead of silently proceeding with bare defaults.
-
-    Deliberately conservative about when to ask:
-      - never if --prompt or --output were given (the user is mid-task,
-        not exploring — don't interrupt with a browser tab)
-      - never outside an interactive terminal, or with CI set (scripted/
-        automated runs must never block on a prompt)
-      - never again once declined once (persisted personally, not per
-        project — see config.get_config_ui_dismissed)
-
-    Returns True if the user saved a config during the offered session
-    (the caller should reload project config before continuing).
+    One dim line on a project's first package run, pointing to init and
+    pick. "First" means no .contextzip/ existed before this run, so it's
+    shown once per project and never asks anything.
     """
-    if prompt or output:
-        return False
-    if not _interactive():
-        return False
-    if os.environ.get("CI"):
-        return False
+    from contextzip.packager import _workspace_dir
 
-    from contextzip.config import get_config_ui_dismissed, save_config_ui_dismissed
-
-    if get_config_ui_dismissed():
-        return False
-
-    info("No project config found yet.")
-    info("contextzip can open a local browser tab to set include/exclude visually.")
-    console.print()
-
-    if not click.confirm("  Set up include/exclude visually now?", default=True):
-        save_config_ui_dismissed()
-        info("No problem — run contextzip config --ui anytime.")
-        console.print()
-        return False
-
-    from contextzip.webui.server import launch_config_ui
-
-    return launch_config_ui(project_dir, detection, con=console)
+    if jsonout.active() is not None:
+        return  # terminal advice; an editor driving --json has its own UI
+    try:
+        workspace, _is_git = _workspace_dir(project_dir)
+    except (OSError, ValueError):
+        return
+    if workspace.exists() or (project_dir / ".contextzip").exists():
+        return
+    prog = prog_name()
+    info(f"First run here. {prog} init sets defaults, {prog} pick chooses files by hand.")
 
 
 def _auto_cleanup(project_dir: Path, project_cfg) -> None:
@@ -1922,14 +2703,15 @@ def _auto_cleanup(project_dir: Path, project_cfg) -> None:
     print_auto_cleanup(result)
 
 
-def _run(*, json_output: bool = False, **kwargs) -> None:
+def _run(*, json_output: bool = False, plain: bool = False, **kwargs) -> None:
     """
     All packaging work lives in _package. The main command and every
     subcommand delegate here after collecting their arguments/flags,
     keeping the CLI surface thin and the logic testable in isolation.
     """
-    with _json_session("package", json_output):
+    with _json_session("package", json_output), plain_output(plain):
         _package(**kwargs)
+
 
 
 def _fetch_remote(target: str, ref: str | None):
@@ -1965,9 +2747,13 @@ def _gemini_key_or_exit() -> str:
     if api_key:
         return api_key
     if jsonout.active() is not None:
-        err("No Gemini API key set. Set GEMINI_API_KEY, or run contextzip --prompt once in a terminal to set one up.")
+        fail(
+            "No Gemini API key set.",
+            why="Set GEMINI_API_KEY, or run contextzip --prompt once in a terminal to set one up.",
+            fix="contextzip config --reset-key",
+        )
         raise SystemExit(1)
-    api_key = onboard_api_key()
+    api_key = _onboard.onboard_api_key()
     if not api_key:
         raise SystemExit(0)
     return api_key
@@ -2114,6 +2900,44 @@ def _narrow_tokens(report, resolved, project_dir: Path):
     return tokens_mod.count_files(resolved.included, project_dir, binary=resolved.binary_files)
 
 
+def _apply_picked(resolved, picked: list[Path], *, large_file_warn_bytes: int):
+    """
+    A ResolveResult whose included files are exactly *picked*, in the scan's
+    order. Picked files the rules would have left out are listed in
+    explicitly_included, so the run says so (and secret files among them
+    are still redacted by the packager).
+    """
+    from contextzip.filters import ResolveResult, _is_binary
+
+    picked_set = set(picked)
+    scanned_in = set(resolved.included)
+    known_binary = set(resolved.binary_files)
+    out = ResolveResult(skipped=list(resolved.skipped))
+    seen: set[Path] = set()
+    for path in [*resolved.included, *resolved.excluded]:
+        if path in picked_set and path not in seen:
+            out.included.append(path)
+            seen.add(path)
+        else:
+            out.excluded.append(path)
+    out.included.extend(p for p in picked if p not in seen and p.is_file())
+    for path in out.included:
+        size = resolved.sizes.get(path)
+        if size is None:
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
+        out.sizes[path] = size
+        if size >= large_file_warn_bytes:
+            out.large_files.append((path, size))
+        if path in known_binary or (path not in scanned_in and _is_binary(path)):
+            out.binary_files.append(path)
+        if path not in scanned_in:
+            out.explicitly_included.append(path)
+    return out
+
+
 @dataclass
 class _Scan:
     """What _scan found: where the project is, its settings, and the files to package."""
@@ -2151,6 +2975,8 @@ def _scan(
     max_tokens: int | None = None,
     trim: bool = False,
     quiet: bool = False,
+    show_detection: bool = True,
+    first_run_hint: bool = True,
 ) -> _Scan | None:
     """
     Find the project (or fetch the remote one), load its config, detect the
@@ -2158,14 +2984,18 @@ def _scan(
     counting tokens. Shared by the package commands and `contextzip tokens`.
 
     *quiet* skips the progress lines (root notice, detection, git details)
-    and the first-run config UI offer. Returns None when --git-changes finds
+    and the first-run hint; *show_detection* False skips only the
+    detection line, which the designed summary shows in its header. Returns None when --git-changes finds
     nothing to package. Exits on a bad flag or a failed fetch.
     """
     # ── Where to work: this project, or a GitHub repository ─────────────────
     fetched = None
     if remote:
         if git_changes:
-            err("--git-changes needs a local checkout — it can't be combined with a remote repository.")
+            fail(
+                "--git-changes needs a local checkout — it can't be combined with a remote repository.",
+                fix="clone it, then run contextzip --git-changes in the clone",
+            )
             raise SystemExit(1)
         fetched = _fetch_remote(remote, ref)
         # A /tree/<branch>/<folder> link acts like running from that folder.
@@ -2177,7 +3007,10 @@ def _scan(
         )
     else:
         if ref:
-            err("--ref picks a branch of a remote repository — use it with --from github.com/user/repo.")
+            fail(
+                "--ref picks a branch of a remote repository — use it with --from github.com/user/repo.",
+                fix="contextzip --from github.com/user/repo --ref BRANCH",
+            )
             raise SystemExit(1)
         project_root = _resolve_root()
     project_dir = project_root.root
@@ -2218,19 +3051,15 @@ def _scan(
 
     # ── Detection ────────────────────────────────────────────────────────────
     with status("[cyan]Detecting project ecosystem…[/]"):
-        detection = detect(project_dir)
+        detection = _detector.detect(project_dir)
 
-    if not quiet:
+    if not quiet and show_detection:
         print_detection(detection)
     jsonout.put("detection", jsonout.detection_data(detection))
 
-    # ── First-run offer: visual config UI ────────────────────────────────────
-    if project_cfg.source_path is None and fetched is None and not quiet:
-        saved = _maybe_offer_config_ui(
-            project_dir, detection, prompt=prompt, output=output
-        )
-        if saved:
-            project_cfg = load_project_config(project_dir)
+    # ── First run: one line about init and pick ──────────────────────────────
+    if project_cfg.source_path is None and fetched is None and not quiet and first_run_hint:
+        _first_run_hint(project_dir)
 
     # ── Include/exclude inputs shared by every scan mode ─────────────────────
     # CLI --exclude/-e patterns plus any standing always_exclude patterns from
@@ -2238,13 +3067,13 @@ def _scan(
     # config.json so it doesn't need to be re-typed every run. always_include
     # is a standing negation. Built once here so standard and --git-changes
     # runs honour project config identically.
-    normalized_exclude = [normalize_pattern(p) for p in extra_exclude or []]
+    normalized_exclude = [_filters.normalize_pattern(p) for p in extra_exclude or []]
     # What was typed on the command line outranks the project config, so an
     # --exclude also beats the config's always_include.
-    command_exclude = make_spec(normalized_exclude) if normalized_exclude else None
-    normalized_exclude += [normalize_pattern(p) for p in project_cfg.always_exclude]
-    force_include = build_force_include_spec(
-        [normalize_pattern(p) for p in project_cfg.always_include]
+    command_exclude = _filters.make_spec(normalized_exclude) if normalized_exclude else None
+    normalized_exclude += [_filters.normalize_pattern(p) for p in project_cfg.always_exclude]
+    force_include = _filters.build_force_include_spec(
+        [_filters.normalize_pattern(p) for p in project_cfg.always_include]
     )
 
     # ── Git-changes mode ─────────────────────────────────────────────────────
@@ -2253,7 +3082,7 @@ def _scan(
             git_result = get_changed_files(project_dir)
 
         if isinstance(git_result, GitError):
-            err(f"Git error: {git_result.message}")
+            fail("Git error: couldn't list the changed files.", why=git_result.message)
             raise SystemExit(1)
 
         if not quiet:
@@ -2268,7 +3097,7 @@ def _scan(
             print_git_verbose_files(git_result)
 
         with status("[cyan]Checking git-changed files…[/]"):
-            resolved = resolve_files_from_git(
+            resolved = _filters.resolve_files_from_git(
                 git_files=git_result.files,
                 project_dir=project_dir,
                 large_file_warn_bytes=int(
@@ -2285,7 +3114,7 @@ def _scan(
         gitignore_path = None if no_gitignore else (project_dir / ".gitignore")
 
         with status("[cyan]Building exclusion rules…[/]"):
-            spec = build_spec(
+            spec = _filters.build_spec(
                 rule_modules=detection.rule_modules,
                 extra_exclude=normalized_exclude if normalized_exclude else None,
                 gitignore_path=gitignore_path,
@@ -2293,7 +3122,7 @@ def _scan(
 
         # ── Resolve files ─────────────────────────────────────────────────────
         with status("[cyan]Scanning project files…[/]"):
-            resolved = resolve_files(
+            resolved = _filters.resolve_files(
                 project_dir=project_dir,
                 spec=spec,
                 include_only=include_only if include_only else None,
@@ -2341,8 +3170,16 @@ def _package(
     fit_for: list[str] | None = None,
     max_tokens: int | None = None,
     trim: bool = False,
+    picked: list[Path] | None = None,
 ) -> None:
-    console.print()
+    """
+    *picked* (from `contextzip pick`) is the exact list of files to
+    package: it replaces what the scan included, and everything else the
+    scan saw counts as excluded.
+    """
+    if picked is None:
+        console.print()
+    use_fancy = fancy()
     run_mode = "git-changes" if git_changes else ("prompt" if prompt else "standard")
     jsonout.put("mode", run_mode)
     jsonout.put("dry_run", dry_run)
@@ -2362,15 +3199,22 @@ def _package(
         fit_for=fit_for,
         max_tokens=max_tokens,
         trim=trim,
+        show_detection=not use_fancy,
+        first_run_hint=picked is None,
     )
     if scan is None:
         return
+    if picked is not None:
+        large = int(scan.project_cfg.limits.max_file_size_mb * 1024 * 1024)
+        scan.resolved = _apply_picked(scan.resolved, picked, large_file_warn_bytes=large)
+        scan.scan_label, scan.scan_detail = scan_label_and_detail(scan.resolved, git_mode=False)
     project_root, project_dir, fetched = scan.project_root, scan.project_dir, scan.fetched
     project_cfg, detection, resolved = scan.project_cfg, scan.detection, scan.resolved
     scan_label, scan_detail = scan.scan_label, scan.scan_detail
     fit_targets = scan.fit_targets
 
     large_file_warn_bytes = int(project_cfg.limits.max_file_size_mb * 1024 * 1024)
+    summary_name = fetched.label if fetched is not None else project_dir.name
 
     # ── Tokens ───────────────────────────────────────────────────────────────
     # Counted once, for every file the scan included. --prompt narrows the
@@ -2409,13 +3253,33 @@ def _package(
             )
             _enforce_ai_config(project_cfg.ai)
             api_key = _gemini_key_or_exit()
-            run_ai_selection_preview(
+            _cli_ai.run_ai_selection_preview(
                 resolved=resolved,
                 project_dir=project_dir,
                 prompt=prompt,
                 ecosystem=detection.display_name,
                 api_key=api_key,
                 max_files=project_cfg.ai.max_files,
+            )
+        elif use_fancy:
+
+            def dry_run_warnings() -> None:
+                if trimmed:
+                    _print_trimmed(trimmed, scan.budget, verbose=verbose, dry_run=True)
+                if over_budget:
+                    _print_over_budget(token_report, scan.budget, dry_run=True, trim_failed=trim_failed)
+                print_file_warnings(resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes)
+
+            print_package_summary(
+                name=summary_name,
+                detection=detection,
+                resolved=resolved,
+                project_dir=project_dir,
+                tokens=token_report,
+                fit_rows=jsonout.fit_data(token_report, fit_targets) if project_cfg.tokens.show_fit else None,
+                git_mode=git_changes,
+                verbose=verbose,
+                warnings=dry_run_warnings,
             )
         else:
             print_scan_summary(resolved, project_dir, verbose, git_mode=git_changes, tokens=token_report)
@@ -2432,8 +3296,14 @@ def _package(
         return
 
     if not resolved.included:
-        err("Nothing to compress in this one — all files were excluded.")
-        info("Try contextzip include PATH or -i PATH to override.")
+        if not resolved.excluded and not resolved.skipped:
+            fail(
+                "No files found to package.",
+                why=f"There are no files in {project_dir}.",
+                fix="cd into your project folder, then run contextzip again",
+            )
+        else:
+            fail("Nothing to compress in this one — all files were excluded.", fix="contextzip include PATH")
         return
 
     if over_budget:
@@ -2447,7 +3317,7 @@ def _package(
         _enforce_ai_config(project_cfg.ai)
         api_key = _gemini_key_or_exit()
 
-        selected_paths, prompt_txt = run_ai_selection(
+        selected_paths, prompt_txt = _cli_ai.run_ai_selection(
             resolved=resolved,
             project_dir=project_dir,
             prompt=prompt,
@@ -2500,12 +3370,26 @@ def _package(
     )
     try:
         if jsonout.active() is not None:
-            result = create_zip_silent(**zip_options)  # no progress bar to draw
+            result = _packager.create_zip_silent(**zip_options)  # no progress bar to draw
         else:
-            result = create_zip(console=console, **zip_options)
+            result = _packager.create_zip(console=console, **zip_options)
     except Exception as exc:
-        err(f"Failed to create ZIP: {exc}")
+        fail("Failed to create ZIP.", why=str(exc))
         raise SystemExit(1)
+
+    if use_fancy:
+        _finish_fancy(
+            scan,
+            result,
+            token_report,
+            name=summary_name,
+            run_mode=run_mode,
+            prompt=prompt,
+            trimmed=trimmed,
+            verbose=verbose,
+            no_clipboard=no_clipboard,
+        )
+        return
 
     print_scan_and_pack(scan_label, scan_detail, result, tokens=token_report)
     if verbose:
@@ -2523,7 +3407,7 @@ def _package(
     jsonout.put("zip", jsonout.package_data(result, project_dir, verbose=verbose))
 
     # ── Report ───────────────────────────────────────────────────────────────
-    report_path = write_scan_report(
+    report_path = _report.write_scan_report(
         zip_path=result.zip_path,
         project_dir=project_dir,
         detection=detection,
@@ -2543,12 +3427,81 @@ def _package(
     # ── Clipboard ────────────────────────────────────────────────────────────
     jsonout.put("clipboard", None)
     if not no_clipboard:
-        cb = clipboard_handle(result.zip_path)
+        cb = _clipboard.handle(result.zip_path)
         print_clipboard_result(cb)
         jsonout.put("clipboard", jsonout.clipboard_data(cb))
 
     if fetched is not None:
-        info("This is a copy of the repo at that commit. To apply the AI's changes, package from a clone and run contextzip apply-zip there.")
+        info("This is a copy of the repo at that commit. To apply the AI's changes, package from a clone and run contextzip apply there.")
 
     # ── Auto-cleanup ─────────────────────────────────────────────────────────
+    _auto_cleanup(project_dir, project_cfg)
+
+
+def _finish_fancy(
+    scan: _Scan,
+    result,
+    token_report,
+    *,
+    name: str,
+    run_mode: str,
+    prompt: str | None,
+    trimmed: list[tuple[str, int]],
+    verbose: bool,
+    no_clipboard: bool,
+) -> None:
+    """
+    The end of a package run in a terminal: the same report, clipboard and
+    cleanup as the plain path, shown as one designed summary.
+    """
+    project_dir, resolved, project_cfg = scan.project_dir, scan.resolved, scan.project_cfg
+    large_file_warn_bytes = int(project_cfg.limits.max_file_size_mb * 1024 * 1024)
+
+    report_path = _report.write_scan_report(
+        zip_path=result.zip_path,
+        project_dir=project_dir,
+        detection=scan.detection,
+        resolved=resolved,
+        mode=run_mode,
+        ai_prompt=prompt,
+        ai_selected=resolved.included if prompt else None,
+        large_file_warn_bytes=large_file_warn_bytes,
+        redacted=result.redacted,
+        skipped_in_zip=result.skipped_in_zip,
+        tokens=token_report,
+        trimmed=trimmed,
+    )
+
+    cb = None
+    if not no_clipboard:
+        with status("[cyan]Copying to the clipboard…[/]"):
+            cb = _clipboard.handle(result.zip_path)
+
+    def package_warnings() -> None:
+        if trimmed:
+            _print_trimmed(trimmed, scan.budget, verbose=verbose, dry_run=False)
+        print_file_warnings(resolved, project_dir, large_file_warn_bytes=large_file_warn_bytes)
+        print_zip_write_warnings(result)
+        print_redaction_summary(result)
+
+    # The report is mentioned only when something points to it.
+    see_report = verbose or bool(trimmed or result.skipped_in_zip or result.redacted)
+    print_package_summary(
+        name=name,
+        detection=scan.detection,
+        resolved=resolved,
+        project_dir=project_dir,
+        tokens=token_report,
+        fit_rows=jsonout.fit_data(token_report, scan.fit_targets) if project_cfg.tokens.show_fit else None,
+        result=result,
+        git_mode=run_mode == "git-changes",
+        verbose=verbose,
+        warnings=package_warnings,
+        clipboard=cb,
+        hint=None if scan.fetched is not None else f"When the AI replies, run: {prog_name()} apply",
+        report_path=report_path if see_report else None,
+    )
+    if scan.fetched is not None:
+        info("This is a copy of the repo at that commit. To apply the AI's changes, package from a clone and run contextzip apply there.")
+
     _auto_cleanup(project_dir, project_cfg)

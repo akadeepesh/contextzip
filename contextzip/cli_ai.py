@@ -17,7 +17,7 @@ from rich.console import Console
 from contextzip.cli_display import print_ai_selection, err, warn, info, status
 from contextzip.filters import normalize_pattern  # noqa: F401  (re-exported for cli.py)
 
-console = Console()
+from contextzip.cli_display import console  # noqa: E402  (one console, so --json silences it)
 
 
 # ---------------------------------------------------------------------------

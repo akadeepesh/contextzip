@@ -192,30 +192,11 @@ def delete_workspace_location() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# "Don't offer the local config UI again" preference
-#
-# Set the first time a user declines the first-run offer to launch
-# `contextzip config --ui` (see cli.py's _maybe_offer_config_ui), so the
-# prompt genuinely asks only once per machine rather than nagging on every
-# run of every config-less project. Running `contextzip config --ui`
-# explicitly is never affected by this — it's just the unsolicited offer.
+# "config_ui_prompt_dismissed", written by contextzip 0.8 and older when
+# someone declined the first-run offer to open the config UI, may still be
+# in old config files. Nothing reads it any more: a first run now prints
+# one line instead of asking (see cli.py's _first_run_hint).
 # ---------------------------------------------------------------------------
-
-
-def get_config_ui_dismissed() -> bool:
-    """True if the user has previously declined the first-run config UI offer."""
-    try:
-        return bool(_read_config().get("config_ui_prompt_dismissed", False))
-    except Exception:
-        return False
-
-
-def save_config_ui_dismissed() -> None:
-    """Record that the user declined the first-run config UI offer."""
-    _CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    data = _read_config()
-    data["config_ui_prompt_dismissed"] = True
-    _write_config(data)
 
 
 # ---------------------------------------------------------------------------

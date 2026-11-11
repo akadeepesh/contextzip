@@ -77,6 +77,8 @@ def build() -> Path:
         "--collect-submodules", "tiktoken",
         "--collect-submodules", "tiktoken_ext",
         "--hidden-import", "tiktoken_ext.openai_public",
+        # `contextzip pick` (Textual imports its widgets lazily).
+        "--collect-submodules", "textual",
         "--exclude-module", "tkinter",
         # UTF-8 mode, as Python 3.15 does by default: output never depends on
         # the console's code page (cp1252 can't print ✓ and would crash).
@@ -136,7 +138,8 @@ def smoke_test(exe: Path, expected_version: str) -> None:
     if expected_version not in out:
         sys.exit(f"smoke test failed: expected version {expected_version}, got {out.strip()!r}")
     run("--help")
-    run("apply-zip", "--help")
+    run("apply", "--help")
+    run("apply-zip", "--help")  # the old name still works
 
     with tempfile.TemporaryDirectory(prefix="cz-smoke-") as tmp:
         project = Path(tmp) / "app"

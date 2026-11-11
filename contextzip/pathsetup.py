@@ -176,6 +176,50 @@ def add_to_rc(directory: Path, rc: Path) -> bool:
     return True
 
 
+def write_marked_block(path: Path, start: str, end: str, body: str) -> bool:
+    """
+    Put *body* between a *start* and an *end* marker line in *path*, a shell
+    startup file: an existing block is replaced in place, otherwise the
+    block is appended. Creates the file and its folder when missing.
+    Returns False when the file already held exactly this block.
+    """
+    existing = ""
+    if path.exists():
+        with path.open(encoding="utf-8", errors="replace", newline="") as fh:
+            existing = fh.read()
+    eol = "\r\n" if "\r\n" in existing else "\n"  # keep the file's own line endings
+    lines = body.replace("\r\n", "\n").rstrip("\n").split("\n")
+    block = eol.join([start, *lines, end]) + eol
+
+    begin = -1
+    pos = existing.find(start)
+    while pos != -1:
+        if pos == 0 or existing[pos - 1] == "\n":
+            begin = pos
+            break
+        pos = existing.find(start, pos + 1)
+    if begin != -1:
+        finish = existing.find(end, begin)
+        if finish != -1:
+            after = finish + len(end)
+            for ending in ("\r\n", "\n"):
+                if existing.startswith(ending, after):
+                    after += len(ending)
+                    break
+            updated = existing[:begin] + block + existing[after:]
+        else:  # a start marker with no end: replace from it to the end of the file
+            updated = existing[:begin] + block
+    else:
+        separator = "" if not existing else (eol if existing.endswith("\n") else eol + eol)
+        updated = existing + separator + block
+    if updated == existing:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(updated)
+    return True
+
+
 def with_entry(current: str, directory: Path) -> str | None:
     """*current* (a Windows PATH value) with *directory* appended, or None if present."""
     if in_path_value(directory, current, ";"):

@@ -21,6 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 
 from contextzip import jsonout
 from contextzip.clipboard import Tier
@@ -187,7 +188,7 @@ def print_git_verbose_files(changes, *, con: Console = console) -> None:
         ("untracked", changes.untracked, "cyan"),
     ):
         for rel in paths:
-            con.print(f"  [{colour}]·[/] [dim]{rel}[/] [dim]({category})[/]")
+            con.print(f"  [{colour}]·[/] [dim]{escape(str(rel))}[/] [dim]({category})[/]")
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +233,7 @@ def print_scan_summary(
         for p in sorted(resolved.included):
             size_str = human_size(resolved.size_of(p))
             rel = p.relative_to(project_dir).as_posix()
-            con.print(f"  [green]·[/] {rel}  [dim]{size_str}[/]")
+            con.print(f"  [green]·[/] {escape(rel)}  [dim]{size_str}[/]")
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +396,7 @@ def print_ai_selection(
                 size = human_size(p.stat().st_size)
             except (ValueError, OSError):
                 rel, size = str(p), "?"
-            con.print(f"  [cyan]·[/] {rel}  [dim]{size}[/]")
+            con.print(f"  [cyan]·[/] {escape(rel)}  [dim]{size}[/]")
 
 
 # ---------------------------------------------------------------------------

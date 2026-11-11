@@ -1455,6 +1455,12 @@ This project uses [Semantic Versioning](https://semver.org/).
   now prints one line pointing to `cz init` and `cz pick`, and carries on.
 - Sizes from one megabyte up keep a decimal below ten: "1.4 MB" instead of
   "1 MB". Larger ones stay whole ("14 MB").
+- **Faster start.** Each command now imports only what it uses, so
+  `cz --version`, `cz --help`, `cz stacks` and tab completion no longer
+  load the packager, the applier, httpx or the tokenizer, and
+  `import contextzip` loads its public API on first use. On a Windows
+  laptop with Python 3.12: `cz --version` 224 ms → 160 ms, `cz --help`
+  222 ms → 147 ms, `import contextzip` 189 ms → 61 ms.
 
 ### Added
 - **`contextzip pick`**, a file picker in the terminal. A full-screen tree

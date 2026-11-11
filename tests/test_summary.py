@@ -367,7 +367,7 @@ class SummaryCliTests(TempProject):
 
     def test_fancy_package_on_the_clipboard(self):
         cb = ClipboardResult(Tier.FILE_ON_CLIPBOARD, "copied")
-        with mock.patch.object(cli, "clipboard_handle", return_value=cb):
+        with mock.patch("contextzip.clipboard.handle", return_value=cb):
             out = self.invoke()
         self.assertIn("✓ On your clipboard. Paste it into Claude or ChatGPT.   snapshot #1", out)
 

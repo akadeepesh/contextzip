@@ -236,7 +236,7 @@ class ConvertedErrorTests(TempProject):
 
     def test_zip_failure_has_the_reason(self):
         self.write("a.py", "print(1)\n")
-        with mock.patch.object(cli, "create_zip", side_effect=OSError("disk full")):
+        with mock.patch("contextzip.packager.create_zip", side_effect=OSError("disk full")):
             result = self.invoke("--no-clipboard")
         self.assertEqual(result.exit_code, 1)
         self.assertIn("✗ Failed to create ZIP.", result.stdout)
@@ -286,6 +286,11 @@ class UnexpectedErrorTests(TempProject):
         data = json.loads(lines[0])
         self.assertFalse(data["ok"])
         self.assertIn("RuntimeError: boom", data["error"])
+
+    def test_library_callers_get_the_exception(self):
+        with _Env(CONTEXTZIP_DEBUG=None), mock.patch.object(cli, "_list_snapshots", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                cli.main.main(["snapshots"], prog_name="cz", standalone_mode=False)
 
     def test_click_errors_pass_through(self):
         result = CliRunner().invoke(cli.main, ["snapshots", "--nope"])

@@ -211,6 +211,11 @@ class TypoTests(TempProject):
         self.assertIn("No such option", self.invoke("--nope").output)
         self.assertEqual(self.invoke("stacks", "--json").exit_code, 0)
 
+    def test_library_callers_get_clicks_usage_error(self):
+        # contextzip.web.run calls main(standalone_mode=False) and turns UsageError into a result.
+        with self.assertRaises(click.UsageError):
+            cli.main.main(["aply"], prog_name="cz", standalone_mode=False)
+
     def test_repository_shortcut_is_not_a_typo(self):
         from contextzip.remote import RemoteSpec
 
@@ -237,7 +242,7 @@ class VersionTests(TempProject):
         self.assertRegex(lines[1], r"· (pip|pipx|uv tool|uv|standalone build \(.+\))$")
 
     def test_install_method(self):
-        from contextzip import updater
+        from contextzip import install_info as updater
 
         def install(**kw):
             values = dict(executable="/usr/bin/python3", prefix="/nope", in_venv=False, has_pip=True)

@@ -58,9 +58,9 @@ def run_checks(*, online: bool = False, cwd: Path | None = None) -> list[Check]:
 
 
 def check_version(*, online: bool = False) -> Check:
-    from contextzip import __version__, updater
+    from contextzip import __version__, install_info, updater
 
-    detail = f"contextzip {__version__}, installed with {updater.install_method()}"
+    detail = f"contextzip {__version__}, installed with {install_info.install_method()}"
     if not online:
         return Check("Version", True, detail)
     result = updater.check_latest_version()

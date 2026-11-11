@@ -32,7 +32,6 @@ from rich.console import Console
 from rich.markup import escape
 
 from contextzip import jsonout
-from contextzip.clipboard import Tier
 from contextzip.tokens import estimate_tokens, format_tokens
 
 console = Console()
@@ -838,6 +837,8 @@ def print_package_summary(
 
     snapshot = getattr(result, "snapshot", None)
     snap = f"   [dim]snapshot #{escape(snapshot.partition('-')[0])}[/]" if snapshot else ""
+    from contextzip.clipboard import Tier
+
     if clipboard is not None and clipboard.tier == Tier.FILE_ON_CLIPBOARD:
         _print_fitted(
             con,
@@ -896,6 +897,8 @@ def print_ai_selection(
 
 def print_clipboard_result(cb, *, con: Console = console) -> None:
     """One line when the ZIP is on the clipboard; otherwise say why it isn't."""
+    from contextzip.clipboard import Tier
+
     if cb.tier == Tier.FILE_ON_CLIPBOARD:
         ok("Ready to paste", con=con)
         return

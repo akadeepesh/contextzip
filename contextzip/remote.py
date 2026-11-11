@@ -64,9 +64,8 @@ _WINDOWS_RESERVED = frozenset(
 _WINDOWS_BAD_CHARS = set('<>:"|?*')
 
 # Short forms: gh:owner/repo, gl:group/project, bb:workspace/repo.
-_SHORTHANDS = {"gh": "github.com", "gl": "gitlab.com", "bb": "bitbucket.org"}
+from contextzip.remote_names import _OTHER_HOSTS, _SHORTHANDS, looks_like_remote  # noqa: E402,F401
 # Hosts recognised only to say they aren't supported yet.
-_OTHER_HOSTS = ("codeberg.org",)
 
 
 class RemoteError(Exception):
@@ -129,15 +128,6 @@ class FetchedRemote:
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
-
-
-def looks_like_remote(text: str) -> bool:
-    """True if *text* is meant as a repository URL rather than a local path or command."""
-    t = text.strip().lower()
-    if t.startswith(("git@", "http://", "https://")) or any(t.startswith(f"{s}:") for s in _SHORTHANDS):
-        return True
-    t = t.removeprefix("www.")
-    return t.startswith(tuple(f"{h}/" for h in (*_SHORTHANDS.values(), *_OTHER_HOSTS)))
 
 
 def parse_target(text: str) -> RemoteSpec:

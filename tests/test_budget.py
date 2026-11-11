@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 from pathlib import Path
@@ -196,7 +197,8 @@ class TokensCommandTests(BudgetTestCase):
         from contextzip.tokens import count_files
 
         report = count_files([self.root / "src/app.py", self.root / "README.md"], self.root)
-        con = Console(force_terminal=True, width=120, record=True, color_system=None)
+        # An in-memory stream: the real stdout may be a cp1252 Windows console.
+        con = Console(file=io.StringIO(), force_terminal=True, legacy_windows=False, width=120, record=True, color_system=None)
         cli_display.print_token_breakdown(report, con=con)
         out = con.export_text()
         self.assertRegex(out, r"\n  src/ +400  █{21}░{3}   89%\n")

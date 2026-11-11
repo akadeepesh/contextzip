@@ -347,3 +347,102 @@ def count_files(
         _save_cache(cache_dir, method, new_cache)
 
     return TokenReport(total=sum(by_file.values()), method=method, by_file=by_file)
+
+
+# ---------------------------------------------------------------------------
+# Budget
+# ---------------------------------------------------------------------------
+
+_BUDGET_SUFFIXES = {"": 1, "k": 1_000, "m": 1_000_000}
+
+
+def parse_budget(text: str) -> int:
+    """
+    A token budget from the command line: "150000", "150k", "1.5m" (any
+    case, "_" and "," allowed as separators). Raises click.BadParameter
+    for anything else, or for a budget below 1.
+    """
+    import re
+
+    import click
+
+    raw = str(text).strip().lower().replace("_", "").replace(",", "")
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([km]?)", raw)
+    value = None
+    if m:
+        number, suffix = m.groups()
+        if suffix or "." not in number:
+            value = round(float(number) * _BUDGET_SUFFIXES[suffix])
+    if value is None or value < 1:
+        raise click.BadParameter(f"{text!r} isn't a token budget. Use a whole number, or k / m: 150000, 150k, 1.5m.")
+    return value
+
+
+# Trim order (see trim_to_budget): the lower the class, the sooner it goes.
+_GENERATED_DIRS = frozenset(
+    {"generated", "__generated__", "gen", "vendor", "third_party", "fixtures", "__snapshots__",
+     "snapshots", "testdata", "mocks", "__mocks__"}
+)
+_GENERATED_ENDINGS = (".min.js", ".min.css", ".snap", ".lock", ".map", ".svg")
+_DATA_SUFFIXES = frozenset({".json", ".csv", ".tsv", ".xml", ".txt", ".ipynb"})
+_KEPT_JSON = frozenset({"package.json", "tsconfig.json", "composer.json", "deno.json"})
+_TEST_DIRS = frozenset({"test", "tests", "__tests__", "spec", "specs", "e2e"})
+_DOC_SUFFIXES = frozenset({".md", ".mdx", ".rst"})
+
+
+def trim_class(rel: str) -> int:
+    """
+    How expendable a file is when trimming, 1 (first to go) to 5:
+    1 generated or vendored, 2 data and documents, 3 tests,
+    4 documentation, 5 everything else.
+    """
+    import fnmatch
+
+    parts = rel.split("/")
+    folders = [p.lower() for p in parts[:-1]]
+    name = parts[-1]
+    lower = name.lower()
+    suffix = os.path.splitext(lower)[1]
+
+    if any(f in _GENERATED_DIRS for f in folders) or lower.endswith(_GENERATED_ENDINGS):
+        return 1
+    if suffix in _DATA_SUFFIXES and not (
+        suffix == ".json" and (lower in _KEPT_JSON or lower.endswith(".config.json"))
+    ):
+        return 2
+    if any(f in _TEST_DIRS for f in folders) or any(
+        fnmatch.fnmatchcase(lower, pattern) for pattern in ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*")
+    ):
+        return 3
+    if suffix in _DOC_SUFFIXES and folders:
+        return 4
+    return 5
+
+
+def trim_to_budget(report: TokenReport, budget: int, *, protected: set[str]) -> list[str]:
+    """
+    The files to leave out so *report* fits in *budget*, in the order they
+    are dropped: by trim_class, and within a class the largest first.
+
+    Never drops a file in the project root, a file in *protected*, or a
+    file with no tokens (it wouldn't help). Returns [] when the report
+    already fits, and also when it can't be made to fit without one of
+    those files: the caller tells the two apart by comparing the total.
+    """
+    if report.total <= budget:
+        return []
+    candidates = [
+        (trim_class(rel), -n, rel)
+        for rel, n in report.by_file.items()
+        if n > 0 and "/" in rel and rel not in protected
+    ]
+    candidates.sort()
+
+    remaining = report.total
+    dropped: list[str] = []
+    for _cls, neg_n, rel in candidates:
+        dropped.append(rel)
+        remaining += neg_n
+        if remaining <= budget:
+            return dropped
+    return []

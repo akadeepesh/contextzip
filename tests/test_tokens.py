@@ -287,3 +287,124 @@ class RealTokenizerTests(unittest.TestCase):
         report = count_files([Path(tokens.__file__)], Path(tokens.__file__).parent)
         self.assertEqual(report.method, METHOD_EXACT)
         self.assertGreater(report.total, 0)
+
+
+class ParseBudgetTests(unittest.TestCase):
+    def test_valid(self):
+        from contextzip.tokens import parse_budget
+
+        for text, expected in (
+            ("150000", 150_000),
+            ("150k", 150_000),
+            ("150K", 150_000),
+            ("1.5m", 1_500_000),
+            ("1.5M", 1_500_000),
+            (" 2k ", 2_000),
+            ("150_000", 150_000),
+            ("150,000", 150_000),
+            ("1", 1),
+            ("0.5k", 500),
+        ):
+            self.assertEqual(parse_budget(text), expected, text)
+
+    def test_invalid(self):
+        import click
+
+        from contextzip.tokens import parse_budget
+
+        for text in ("", "0", "0k", "-5", "1.5", "abc", "10g", "1e5", "k", "0.0001k", "10 tokens"):
+            with self.assertRaises(click.BadParameter, msg=text) as ctx:
+                parse_budget(text)
+            self.assertIn("150k", str(ctx.exception))
+
+
+class TrimTests(unittest.TestCase):
+    def test_classes(self):
+        from contextzip.tokens import trim_class
+
+        cases = {
+            "src/vendor/lib.js": 1,
+            "app/__generated__/types.ts": 1,
+            "tests/fixtures/data.json": 1,
+            "web/dist.min.js": 1,
+            "web/site.min.css": 1,
+            "src/__snapshots__/a.snap": 1,
+            "ui/app.js.map": 1,
+            "assets/logo.svg": 1,
+            "deps/Cargo.lock": 1,
+            "data/rows.csv": 2,
+            "data/rows.tsv": 2,
+            "conf/schema.xml": 2,
+            "notes/todo.txt": 2,
+            "nb/analysis.ipynb": 2,
+            "data/big.json": 2,
+            "web/package.json": 5,
+            "web/tsconfig.json": 5,
+            "web/app.config.json": 5,
+            "tests/test_app.py": 3,
+            "src/test_util.py": 3,
+            "src/util_test.py": 3,
+            "pkg/util_test.go": 3,
+            "src/app.test.ts": 3,
+            "src/app.spec.js": 3,
+            "e2e/login.ts": 3,
+            "docs/guide.md": 4,
+            "docs/page.mdx": 4,
+            "docs/api.rst": 4,
+            "README.md": 5,
+            "src/app.py": 5,
+        }
+        for rel, expected in cases.items():
+            self.assertEqual(trim_class(rel), expected, rel)
+
+    def report(self) -> TokenReport:
+        return TokenReport(
+            total=0,
+            method=METHOD_EXACT,
+            by_file={
+                "README.md": 50,
+                "setup.py": 50,
+                "src/app.py": 400,
+                "src/util.py": 100,
+                "docs/guide.md": 60,
+                "tests/test_app.py": 120,
+                "tests/test_small.py": 30,
+                "data/rows.csv": 80,
+                "vendor/lib.js": 90,
+                "assets/logo.png": 0,
+            },
+        )
+
+    def trim(self, budget: int, protected=frozenset()) -> list[str]:
+        from contextzip.tokens import trim_to_budget
+
+        report = self.report()
+        report.total = sum(report.by_file.values())  # 980
+        return trim_to_budget(report, budget, protected=set(protected))
+
+    def test_within_budget_drops_nothing(self):
+        self.assertEqual(self.trim(980), [])
+
+    def test_order_across_the_five_classes(self):
+        self.assertEqual(self.trim(890), ["vendor/lib.js"])
+        self.assertEqual(self.trim(810), ["vendor/lib.js", "data/rows.csv"])
+        self.assertEqual(self.trim(700), ["vendor/lib.js", "data/rows.csv", "tests/test_app.py"])  # largest test first
+        self.assertEqual(
+            self.trim(600),
+            ["vendor/lib.js", "data/rows.csv", "tests/test_app.py", "tests/test_small.py", "docs/guide.md"],
+        )
+        self.assertEqual(
+            self.trim(200),
+            ["vendor/lib.js", "data/rows.csv", "tests/test_app.py", "tests/test_small.py", "docs/guide.md", "src/app.py"],
+        )
+
+    def test_root_and_protected_files_survive(self):
+        dropped = self.trim(500, protected={"src/app.py"})
+        self.assertNotIn("src/app.py", dropped)
+        self.assertEqual(dropped[-1], "src/util.py")
+        for rel in ("README.md", "setup.py", "assets/logo.png"):
+            self.assertNotIn(rel, self.trim(200))
+
+    def test_impossible_budget_drops_nothing(self):
+        self.assertEqual(self.trim(50), [])  # README + setup.py alone are 100
+        self.assertEqual(self.trim(200, protected={"src/app.py"}), [])  # 100 root + 400 protected

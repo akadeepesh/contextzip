@@ -9,6 +9,20 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-11-17
+
+### Changed
+- Every listing now says who contextzip is for: developers on free
+  ChatGPT, Claude or Gemini plans, with no coding agent or API key. New
+  descriptions on PyPI, npm, the VS Code Marketplace, Homebrew, Scoop and
+  winget, and a new README headline.
+- `CHANGELOG.md` lists releases newest first.
+
+### Internal
+- CI lints with ruff (`E`, `F`, `I`) in its own job. Unused imports,
+  import order and a few small issues it found are fixed; no behaviour
+  change.
+
 ## [0.9.0] — 2026-11-12
 
 ### Added

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "contextzip"
-version = "0.9.0"
+version = "0.9.1"
 description = "Use free ChatGPT, Claude or Gemini on your whole codebase: send the right files as a ZIP, get the changes written back"
 readme = "README.md"
 requires-python = ">=3.9"

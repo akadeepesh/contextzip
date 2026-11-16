@@ -397,7 +397,7 @@ DOCS_URL = "https://www.contextzipcli.com/docs/cli"
 
 
 def _print_version(ctx: click.Context, value: bool) -> None:
-    """--version: "contextzip 0.9.0", then the Python version and how it was installed."""
+    """--version: "contextzip 0.9.1", then the Python version and how it was installed."""
     if not value or ctx.resilient_parsing:
         return
     import platform

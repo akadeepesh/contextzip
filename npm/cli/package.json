@@ -1,6 +1,6 @@
 {
   "name": "@contextzip/cli",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Use free ChatGPT, Claude or Gemini on your whole codebase. Send the right files as a ZIP, get the changes written back. No paid plan, no agent, no API key.",
   "keywords": ["ai", "cli", "context", "zip", "llm", "claude", "chatgpt", "gemini", "free", "codebase"],
   "homepage": "https://www.contextzipcli.com",
@@ -25,10 +25,10 @@
     "node": ">=16"
   },
   "optionalDependencies": {
-    "@contextzip/cli-win32-x64": "0.9.0",
-    "@contextzip/cli-darwin-arm64": "0.9.0",
-    "@contextzip/cli-darwin-x64": "0.9.0",
-    "@contextzip/cli-linux-x64": "0.9.0",
-    "@contextzip/cli-linux-arm64": "0.9.0"
+    "@contextzip/cli-win32-x64": "0.9.1",
+    "@contextzip/cli-darwin-arm64": "0.9.1",
+    "@contextzip/cli-darwin-x64": "0.9.1",
+    "@contextzip/cli-linux-x64": "0.9.1",
+    "@contextzip/cli-linux-arm64": "0.9.1"
   }
 }

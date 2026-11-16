@@ -1,9 +1,10 @@
 # Changelog
 
-## [0.1.3] — Unreleased
+## [0.1.3] — 2026-11-17
 
-- With contextzip 0.8, the "Packed" message shows the exact token count and whether the ZIP fits Claude, ChatGPT and Gemini ("Fits Claude ≈23% · ChatGPT ≈36%"), and becomes a warning when it's too big for one. Older CLIs show the same message as before.
-- Bundles the contextzip 0.6.2 CLI: Java, Kotlin and Spring Boot projects are detected and packaged, and secrets in Spring Boot config files are redacted.
+- New description: made for free ChatGPT, Claude and Gemini plans, no paid plan or coding agent needed.
+- With contextzip 0.8 and later, the "Packed" message shows the exact token count and whether the ZIP fits Claude, ChatGPT and Gemini ("Fits Claude ≈23% · ChatGPT ≈36%"), and becomes a warning when it's too big for one. Older CLIs show the same message as before.
+- Bundles the contextzip 0.9.1 CLI (was 0.5.6): 62 detected stacks including Java, Kotlin and Spring Boot, a much faster scan, exact token counts, and secrets in Spring Boot config files redacted.
 
 ## [0.1.2] — 2026-10-24
 

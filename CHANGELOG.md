@@ -7,920 +7,465 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.1.1] — 2026-05-15
+## [Unreleased]
+
+## [0.9.0] — 2026-11-12
+
+### Added
+- **`contextzip pick`**, a file picker in the terminal. A full-screen tree
+  of the project where you tick files and folders (keyboard or mouse),
+  filter by path, review suggestions (PDFs, data, large files) and watch
+  the token total and model fit change as you go. Enter packages exactly
+  what's ticked, like `contextzip include`; `w` saves the selection to
+  `.contextzip/config.json` as `always_include` / `always_exclude`. Ticking
+  a folder never drags in what the rules or `.gitignore` leave out.
+  `contextzip include` and `contextzip exclude` with no arguments open it
+  in a terminal. Adds the `textual` dependency.
+- **`contextzip init`** sets a project up: it shows what would be packaged
+  and asks once whether to save the defaults to `.contextzip/config.json`.
+  `--yes` and `--json` for scripts.
+- **`contextzip doctor`** checks the install, PATH, Python, the clipboard,
+  the tokenizer, git, the project, the Gemini key and the terminal, one
+  line each with what to try when something's off. `--online` also checks
+  for a newer release, `--strict` exits 1 on any warning, `--json` for
+  scripts. It never copies anything and stays offline by default.
+- **`contextzip completions`** prints or installs (`--install`) tab
+  completion for bash, zsh, fish and PowerShell, for both `cz` and
+  `contextzip`. Installing again updates the block instead of adding one.
+- **Suggestions for typos.** `cz aply` says there's no such command and
+  asks "Did you mean: apply?". A path typed where a command goes points to
+  `cz include PATH`.
+
+### Changed
+- **A summary you can read.** In a terminal, a package run now ends with a
+  short block instead of one dense line: the project and its stacks, the
+  file count, sizes and token total, the four folders with the most tokens
+  with a bar for each, whether it fits each model, and what was left out
+  (the biggest folders and how many secret files). Then one line says the
+  ZIP is on your clipboard, with its snapshot, and what to run when the AI
+  replies. The report path is shown with `--verbose`, or when a warning
+  points to it. Dry runs get the same block. Piped or redirected output,
+  CI logs and the new `--plain` flag keep the old one-line-per-step log,
+  and `--json` is unchanged.
+- **A readable apply plan.** In a terminal, `apply` shows how many
+  files it will write, how many need you and how many already match, then
+  one aligned line per file worth a look (decisions first, at most 14;
+  every file with `--verbose`). After applying, one line says what was
+  written and what's left. `--plain` (new on `apply`) and piped output
+  keep the old log.
+- **One shape for every error:** what went wrong, why, and a "Try:" line
+  with what to do. Under `--json` the why and the fix are the error's
+  `detail`. An empty folder now says there are no files to package instead
+  of "all files were excluded".
+- **`apply` is the command's name now.** `cz apply` writes an AI's reply
+  back; `apply-zip` keeps working as an alias, hidden from help. Messages
+  and docs say `apply`. The `--json` result still says
+  `"command": "apply-zip"`.
+- **Help you can scan.** `contextzip --help` lists the commands in groups
+  with one line each, examples of the common runs, and every option on one
+  line. Each command's own `--help` starts with examples.
+- `contextzip --version` prints `contextzip 0.9.0` and, on a second line,
+  the Python version and how it was installed.
+- **No question on a project's first run.** The first package run in a
+  project used to offer to open the config UI and wait for an answer. It
+  now prints one line pointing to `cz init` and `cz pick`, and carries on.
+- Sizes from one megabyte up keep a decimal below ten: "1.4 MB" instead of
+  "1 MB". Larger ones stay whole ("14 MB").
+- **Faster start.** Each command now imports only what it uses, so
+  `cz --version`, `cz --help`, `cz stacks` and tab completion no longer
+  load the packager, the applier, httpx or the tokenizer, and
+  `import contextzip` loads its public API on first use. On a Windows
+  laptop with Python 3.12: `cz --version` 224 ms → 160 ms, `cz --help`
+  222 ms → 147 ms, `import contextzip` 189 ms → 61 ms.
 
 ### Fixed
-- LICENSE link in README now points to GitHub instead of a relative path that broke on PyPI
-- License metadata updated to SPDX string format (`"MIT"`) to comply with setuptools ≥ 77
+- **No more raw tracebacks.** An unexpected error prints what happened,
+  that it's a bug, where to report it, and how to see the traceback
+  (`CONTEXTZIP_DEBUG=1`). Under `--json` the JSON error object is still the
+  only output.
 
----
-
-## [0.1.2] — 2026-05-15
-
-### Added
-- Smart framework and language detection (Next.js, Node.js, Python, Django, FastAPI, Rust, Go, Ruby)
-- Automatic exclusion rules per detected ecosystem
-- `.gitignore` patterns respected automatically (`--no-gitignore` to bypass)
-- `--include` flag for scoping to specific directories (exact path-boundary matching)
-- `--exclude` flag for additional gitignore-style exclusion patterns
-- `--dry-run` flag to preview without creating any files
-- `--verbose` flag showing every file with its size
-- `--output` flag for custom ZIP destination
-- `--no-clipboard` flag to skip clipboard/folder-open step
-- Tiered clipboard strategy: file-on-clipboard (macOS/Linux), Explorer with file selected (Windows), path fallback
-- Warnings for large files (≥ 1 MB), binary files, and skipped files (dangling symlinks, permission errors)
-- Rich terminal output with panels, progress bars, and colour-coded detection results
-- Compression stats (ratio, size before/after) shown after ZIP creation
-
----
-
-## [0.2.0] — 2026-05-15
+## [0.8.0] — 2026-11-12
 
 ### Added
-- `--git-changes` mode for packaging only files reported as changed by git
-- Automatic detection of:
-  - staged files
-  - unstaged modifications
-  - untracked files
-- Dedicated git-aware packaging pipeline optimised for AI/code review workflows
-- Rich git change summary panel with staged/unstaged/untracked breakdown
-- Verbose git mode output showing categorized changed files
-- Graceful handling for:
-  - repositories with no changes
-  - deleted files
-  - submodules
-  - repositories outside the selected project tree
-  - missing git installations
-  - non-git directories
-- Support for monorepo-aware repository root resolution
-- Binary and large-file checks now also apply in git-changes mode
+- **Does it fit?** After the summary, one line shows how much of Claude's,
+  ChatGPT's and Gemini's context window the ZIP takes ("Fits  Claude ≈23%
+  ·  ChatGPT ≈36%  ·  Gemini ≈5%"), and warns when one is over 100%.
+  `--for claude` (repeatable) picks the models; `--json` adds `fit`. A
+  project can set its own windows, or add a target, with
+  `"tokens": {"windows": {...}}` in `.contextzip/config.json`, and hide the
+  line with `"show_fit": false`.
+- **A token budget.** `--max-tokens 150k` (or `"tokens": {"max": 150000}`
+  in the project config) refuses to write a ZIP that's over it, and shows
+  the largest folders and files instead. A dry run only reports it.
+  `--trim` leaves files out until it fits: generated and vendored files
+  first, then data, tests and docs, never root files or files you named.
+  The report lists them under "Trimmed to fit".
+- **`contextzip tokens [PATH…]`** shows where the tokens are, per folder
+  with a bar for each, the largest files, and whether it fits each model,
+  without writing anything. `--depth`, `--top`, `--for` and `--json`.
+- **MCP:** `package_project` and `package_repository` take `max_tokens`
+  and `trim`, and their results carry the token breakdown and model fit.
 
-### Improved
-- File resolution architecture refactored to support multiple packaging strategies cleanly
-- Internal file scanning pipeline separated from git-based file selection logic
-- CLI output consistency improved between standard scan mode and git-changes mode
-
-### Developer Notes
-- Introduced new `contextzip.git` module for git integration and porcelain parsing
-- Added `resolve_files_from_git()` pipeline for pre-selected file resolution
-- Added structured `GitChanges` and `GitError` models for cleaner error handling and extensibility
-
----
-
-## [0.2.1] — 2026-05-16
+### Changed
+- **Real token counts.** The summary line, `--json`, the report and
+  CONTEXTZIP.md now count tokens with `o200k_base`, the tokenizer of
+  OpenAI's current models, instead of dividing bytes by four, which was
+  about 12% high for code. The tokenizer and its vocabulary ship with
+  contextzip and never use the network. `--json` gains a `tokens` object in
+  `files` and `zip` with the largest folders and files (and every file's
+  count with `--verbose`), `--verbose` names the files with the most
+  tokens, and the report breaks the count down by folder. Counts are
+  cached in `.contextzip/cache/`. If the tokenizer can't be loaded, the
+  count falls back to an estimate per file type and is shown with `≈`.
 
 ### Fixed
-- `--exclude` / `-e` patterns containing Windows-style paths (e.g. `.\CHANGELOG.md`) were silently ignored due to backslash and leading `.\` — patterns are now normalized to forward-slash posix paths before matching
-- Files passed to `-e` were not being excluded from the ZIP despite appearing in the exclusion list
+- File names with square brackets, such as `app/[/b]/x.ts`, no longer
+  crash the `--verbose` file list.
+- **The wheel no longer installs `tests` and `installers` packages.** Every
+  release so far put those two folders into site-packages next to
+  `contextzip`, where a top-level `tests` package can shadow your own. Only
+  `contextzip` is installed now.
 
-### Improved
-- `-e` now accepts multiple space-separated patterns in a single flag invocation: `-e file1 file2 folder/` in addition to the existing repeatable form `-e file1 -e file2`
-- Folder exclusion via `-e folder/*` is now supported and normalized to `folder/` automatically
-
-## [0.2.2] - 2026-05-16
+## [0.7.0] — 2026-11-10
 
 ### Added
-- `contextzip exclude PATTERN…` subcommand — exclude multiple files and folders
-  in a single invocation without repeating `-e` (e.g. `contextzip exclude CHANGELOG.md LICENSE .github/`)
-- `contextzip include PATH…` subcommand — symmetric counterpart to `exclude`;
-  packages only the specified paths (e.g. `contextzip include src/ app/`)
-- All modifier flags (`--dry-run`, `--verbose`, `--output`, `--no-clipboard`,
-  `--git-changes`, `--no-gitignore`) work on both subcommands
+- **Many more stacks.** contextzip now recognises 62 languages and
+  frameworks, up from 11. New ecosystems: C#/.NET, Unity, PHP (Laravel,
+  Symfony, WordPress), C/C++ (CMake, Meson, Autotools, MSBuild, Conan,
+  vcpkg), Bazel, Swift (Xcode, SwiftPM, CocoaPods), Dart and Flutter,
+  Android, Elixir and Phoenix, Erlang, Scala, Clojure, Deno, Bun,
+  Terraform, Zig, Nim, Haskell, OCaml, R, Julia, Lua, Perl, Foundry,
+  Hardhat, Godot, Unreal Engine, Hugo and Jekyll. New frameworks on
+  ecosystems that were already supported: Nuxt, SvelteKit, Astro, Remix,
+  Gatsby, Angular, Expo, React Native, Electron, Tauri, NestJS, Vue, Svelte,
+  Vite, Flask and Rails. Each leaves out its own build output, dependency
+  folders, lockfiles and generated code.
+- **`contextzip stacks`** lists every stack and what marks a project as
+  one; `contextzip stacks laravel` shows the patterns it leaves out.
+  `--json` prints the same as data.
+- **Projects with no project file are recognised by their file types.** A
+  folder of `.py` scripts with no `requirements.txt` used to get only the
+  universal rules, so `__pycache__` went into the ZIP. It's now detected as
+  Python "from file types". `detection.by_file_type` reports this under
+  `--json`.
+- **A framework's own exclusions apply to its own folder.** In a monorepo,
+  Laravel's `storage/framework/` or Gatsby's `public/` is left out of that
+  app only, not out of every package.
+- More binary types are left out of every project: `.tgz`, `.bz2`, `.xz`,
+  `.7z`, `.webp`, `.avif`, `.bmp`, `.tiff`, `.mov`, `.webm`, `.wav` and font
+  files. For Python: model weights and array dumps (`.pt`, `.safetensors`,
+  `.onnx`, `.npy`, `.parquet` and similar), `.ipynb_checkpoints/` and
+  experiment-tracking folders. For Node.js: more framework caches
+  (`.svelte-kit/`, `.astro/`, `.angular/`, `.output/`), `bun.lock`, source
+  maps and Playwright/Cypress output.
 
 ### Changed
-- `-e` / `--exclude` flag on the main command restored and kept for full
-  backwards compatibility alongside the new subcommand
-- Warning messages for large files now mention both `-e PATTERN` and
-  `contextzip exclude PATTERN` as remediation options
-- `_normalize_pattern` promoted to a named module-level function (testable,
-  documented); behaviour is unchanged
+- **Scanning is much faster.** contextzip no longer looks at every file
+  inside a folder it has already left out. On a project with 20,000 files
+  in `node_modules` and a virtualenv, a dry run went from 2.9 s to 0.45 s.
+  What ends up in the ZIP is unchanged.
+- **Cross-platform apps are named once.** A Flutter, React Native or Expo
+  project is reported as that, not also as the Swift, Android and C++
+  runner projects it scaffolds.
+- An unrecognised project now prints "No known stack detected" where it
+  said "Detected · unknown ecosystem".
+
+- **`contextzip config --ui`: picking files is easier.** Each row now has
+  two separate controls, an arrow that opens a folder and a checkbox that
+  decides whether it goes in the ZIP; before, a near miss on the small
+  arrow flipped the whole folder. Folder rows show how many of their files
+  are going in and how big they are. Suggestions moved from a row of grey
+  chips to a panel above the tree that says how much of the ZIP they
+  account for ("9.3 MB of this ZIP is probably not code"), with one click
+  to leave them all out, and an applied suggestion stays visible so it can
+  be undone. Large files are tagged in the tree, the tree uses the height
+  of the window, and "Open all" / "Close all" were added.
+- **What you type on the command line always wins.** `contextzip exclude
+  docs/` left `docs/` in the ZIP when the project config listed it under
+  `always_include`. The order is now the same everywhere, including
+  `--git-changes` and the Python API: the command, then the project
+  config, then `.gitignore`, then the built-in rules. README and CLI.md
+  spell it out under "Which rule wins".
 
 ### Fixed
-- Removed the previous positional-argument approach to exclusions on the main
-  command, which was ambiguous and undiscoverable
-
----
-
-## [0.2.3] — 2026-05-19
-
-### Added
-- Dedicated Ruby ecosystem exclusion rules via new `contextzip.rules.ruby` module
-- Automatic exclusion of common Ruby / Rails artifacts:
-  - Bundler directories and lockfiles
-  - Rails logs, temp files, assets, storage, and Spring cache
-  - Built gems and compiled Ruby extensions
-  - Coverage and generated documentation directories
-- Additional package discovery keywords for AI tooling and code packaging:
-  - `claude`
-  - `chatgpt`
-  - `code-packaging`
-
-### Changed
-- Ruby project detection now uses the dedicated Ruby rule module instead of the generic base rules
-- Git-based packaging now enforces base exclusion safety rules even for tracked files
-- Repository governance and metadata files are now excluded by default:
-  - `CHANGELOG*`
-  - `LICENSE*`
-  - `CONTRIBUTING*`
-  - `SECURITY.md`
-  - `.github` issue / PR templates
-- `.gitignore` is no longer excluded automatically from packaged context archives
-
-### Fixed
-- Prevented git-tracked sensitive files (e.g. `.env`, secrets, binaries) from being included in `--git-changes` mode
-- Improved ZIP packaging resilience when file stat operations fail during archive creation
-- Fixed progress tracking during ZIP generation to avoid repeated filesystem stat calls
-- Fixed Ruby framework detection routing so Ruby projects receive ecosystem-specific exclusion behaviour
-
----
-
-## [0.2.4] — 2026-05-20
-
-### Added
-
-* Persistent `.contextzip/` workspace directory for generated context packages
-* Automatic output naming based on packaging mode:
-
-  * `codebase.zip` for standard packaging
-  * `changes.zip` for `--git-changes`
-* Automatic `.contextzip/` exclusion from packaged archives and file scanning
-* Automatic `.gitignore` integration:
-
-  * `.contextzip/` is appended when a git repository is detected
-  * missing entries are added only once
-* Repository-root-aware workspace placement:
-
-  * `.contextzip/` is created at the git repository root when `.git/` is detected
-  * falls back to the current working directory outside git repositories
-
-### Changed
-
-* ZIP outputs are now written to the persistent `.contextzip/` workspace by default instead of temporary system directories
-* Generated archives now overwrite previous outputs with the same logical name instead of creating temporary randomized filenames
-* `--output` now bypasses all `.contextzip/` workspace logic and writes directly to the user-specified destination
-
-### Improved
-
-* Generated context packages are now easier to rediscover, reuse, and inspect across AI-assisted development workflows
-* Workspace output structure now provides a foundation for future features such as:
-
-  * timestamped package history
-  * metadata indexing
-  * incremental packaging
-  * AI debug sessions
-  * package caching
-
-### Fixed
-
-* Prevented `.contextzip/` contents from recursively packaging previous generated archives
-* Improved fallback behaviour when workspace creation fails due to filesystem permissions or read-only directories
-
-## [0.3.0] — 2026-05-24
-
-### Added
-
-* `--prompt` / `-p` flag for AI-powered file selection — describe your task in
-  plain English and contextzip automatically selects the minimum relevant files
-  (e.g. `contextzip --prompt "Change toast color on failed login"`)
-* Gemini 2.5 Flash Lite integration via a thin `httpx` client — no Google SDK
-  required; a single lightweight POST call to the Gemini API
-* First-run onboarding flow for users without an API key:
-  * Displays a guided panel with a link to [Google AI Studio](https://aistudio.google.com/apikey) (free, no credit card)
-  * Optionally opens the browser automatically
-  * Saves the key persistently on confirmation
-* Persistent API key storage in the platform-appropriate config directory:
-  * `~/.config/contextzip/config.json` on Linux / macOS
-  * `%APPDATA%\contextzip\config.json` on Windows
-  * `GEMINI_API_KEY` environment variable always takes precedence
-* `contextzip config` subcommand for key management:
-  * `contextzip config` — show current key status and source
-  * `contextzip config --reset-key` — clear stored key and re-run onboarding
-  * `contextzip config --show-key-path` — print config file location
-* `prompt.txt` is written as the first entry in every AI-generated ZIP,
-  containing the task description, detected framework, and selected file list —
-  so any AI tool receiving the archive immediately knows the context
-* Keyword-based heuristic file scorer as a rate-limit fallback:
-  * Activates only on confirmed HTTP 429 from Gemini
-  * Scores files by token overlap with the prompt, directory semantics, and
-    extension type
-  * User is warned clearly that heuristic was used and Gemini results are
-    preferred
-* `--prompt --dry-run` combination — preview AI-selected files without
-  creating a ZIP
-* API key validation on load — keys not starting with `AIza` are treated as
-  unconfigured and trigger onboarding rather than a cryptic API error
-* `diagnose_api_key()` surfaces a human-readable explanation when a key exists
-  but fails validation, before any API call is attempted
-
-### Changed
-
-* `create_zip()` in `packager.py` now accepts an optional `prompt_txt`
-  parameter; when provided, `prompt.txt` is written as the first ZIP entry
-* xdg-open on Linux now runs with stdout and stderr suppressed to prevent
-  KDE / DBus / MIME warnings from appearing over the API key prompt
-
-### Developer Notes
-
-* Introduced `contextzip.config` module for cross-platform config path
-  resolution and key read / write / delete operations
-* Introduced `contextzip.ai` package with three modules:
-  * `gemini.py` — Gemini API client with typed exception hierarchy
-    (`GeminiError`, `GeminiRateLimitError`, `GeminiUnavailable`)
-  * `heuristic.py` — keyword + directory scoring fallback scorer
-  * `selector.py` — project map builder, AI orchestration, `prompt.txt`
-    generation; returns `(paths, prompt_txt, method)` so callers know
-    which selection path was taken
-* Added `httpx` as a required runtime dependency
-
-## [0.3.1] — 2026-05-25
-
-### Added
-
-* `contextzip watch -- <command>` subcommand — wraps any dev server or build
-  process, buffers its output, detects errors automatically, and packages a
-  debug-ready ZIP in a single keypress
-  * Supports `npm run dev`, `python manage.py runserver`, and any process
-    that writes errors to stdout/stderr
-  * On error detection, renders an inline prompt beneath the error output:
-    `[D] package debug context   [S] skip`
-  * Pressing `D` writes `.contextzip/debug-context.zip` immediately; the
-    wrapped process continues running uninterrupted
-  * On `Ctrl+C`, if no errors were packaged during the session, a final
-    prompt offers to capture the full session output as a fallback
-* `debug-context.zip` — flat ZIP structure produced by `watch`:
-  * `prompt.txt` — auto-generated from detected framework, error type, and
-    referenced files; no `--prompt` flag required from the user
-  * `terminal-error.txt` — cleaned, noise-stripped error block and stack trace
-  * `source-files.zip` — inner ZIP containing source files extracted from
-    stack frames, with relative paths preserved
-* `contextzip/error_parser.py` — full terminal output processing pipeline:
-  * `strip_ansi()` — removes all CSI, OSC, and Fe escape sequences and bare
-    carriage returns from raw process output
-  * `detect_error_block()` — backward scan through the rolling buffer to find
-    the most recent error; walks back from terminal exception lines to capture
-    the full block including the `Traceback` header
-  * `extract_paths()` — runs per-framework path regexes on the error block,
-    resolves relative and bare filenames, and filters out stdlib, venv, and
-    `node_modules` paths
-  * `strip_noise()` — removes known noise lines (request logs, startup
-    banners, HMR chatter) and collapses blank line runs
-  * `build_prompt_txt()` — generates structured, AI-ready `prompt.txt` content
-  * `process_buffer()` — convenience function running the full pipeline in a
-    single call
-* `contextzip/watcher.py` — process management and packaging:
-  * Spawns child via `subprocess.Popen` with piped stdout/stderr; two daemon
-    threads drain pipes concurrently into a `deque(maxlen=2000)` rolling buffer
-  * Detection thread polls the buffer every 300ms using `detect_error_block()`
-  * Error deduplication: MD5 of the first three non-blank lines of an error
-    block; same signature within a session suppresses repeat prompts
-  * Single-keypress D/S prompt via `termios`/`tty` raw mode on Unix and
-    `msvcrt` on Windows, with an `input()` fallback for unusual environments
-  * Child terminated cleanly on `Ctrl+C`: SIGTERM → 3-second grace period →
-    SIGKILL
-* `contextzip/rules/errors/python.py` — error detection pattern sets for
-  Python, Django, and FastAPI:
-  * 18 error start patterns covering tracebacks, syntax errors, Django/DRF
-    exceptions, uvicorn/gunicorn ERROR logs, and pytest failures
-  * 4 stack frame path patterns
-  * 21 noise patterns for Django startup, request logs, pytest collection
-    output, and pip install chatter
-* `contextzip/rules/errors/node.py` — error detection pattern sets for
-  Node.js, Next.js, and React:
-  * 33 error start patterns covering JS runtime errors, Next.js error symbols
-    (`✗`, `×`, `⨯`), webpack/bundler errors, npm errors, and unhandled
-    promise rejections
-  * 7 stack frame and import path patterns
-  * 32 noise patterns for Next.js/Vite/CRA startup, HMR chatter, and request
-    logs
-
-### Changed
-
-* `cli.py` refactored from a single 1,100-line file into four focused modules
-  with no behaviour changes:
-  * `cli.py` — Click group, four subcommands, and `_run()`; routing only
-  * `cli_display.py` — all Rich rendering helpers (`print_detection`,
-    `print_scan_summary`, `print_file_warnings`, `print_package_result`, etc.)
-  * `cli_ai.py` — AI selection orchestration and `normalize_pattern`
-  * `cli_onboard.py` — Gemini API key onboarding flow and browser launch
-* `pyproject.toml` updated to include `contextzip.rules.errors` in package
-  discovery
-
-### Developer Notes
-
-* `contextzip/rules/errors/` follows the same pattern as `contextzip/rules/`:
-  one file per ecosystem, each exporting `ERROR_START_PATTERNS`,
-  `PATH_PATTERNS`, and `NOISE_PATTERNS` as lists of compiled `re.Pattern`
-  objects — adding support for a new framework means adding one file
-* `_load_patterns()` in `error_parser.py` maps ecosystem names from
-  `DetectionResult.ecosystems` to rule modules; unrecognised ecosystems fall
-  back to loading both Python and Node patterns as a best-effort default
-* `cli_display.py` functions accept an optional `con: Console` parameter
-  (defaulting to the module-level console) making every display function
-  independently testable without monkey-patching
-* No new runtime dependencies introduced — `watch` uses only stdlib
-  (`subprocess`, `threading`, `queue`, `termios`/`msvcrt`, `zipfile`)
-
-## [0.3.2] — 2026-05-25
-
-### Added
-
-* **Python API** — contextzip is now usable as a library, not just a CLI tool:
-  * `get_git_changes(path?)` — returns a `FileCollection` of git-modified,
-    added, and untracked files; applies base safety rules (no secrets, no
-    binaries) automatically
-  * `get_files(path?, include?, exclude?, use_gitignore?)` — returns a
-    `FileCollection` of all project files after applying ecosystem rules,
-    `.gitignore`, and any extra exclusion patterns
-  * `create_zip(collection, output?)` — writes a `FileCollection` to a ZIP
-    archive and returns a `PackageResult`; output path is caller-controlled
-  * `detect_ecosystem(path?)` — returns a `DetectionResult` with ecosystem
-    names, display string, and confidence level
-  * `FileCollection` — unified return type for `get_git_changes` and
-    `get_files`; supports iteration, `len()`, and `bool()` directly; `.files`
-    is always a plain `list[pathlib.Path]` usable without zipping
-  * `PackageResult` re-exported from the top-level package
-  * Exception hierarchy: `ContextzipError` (base), `NotARepositoryError`,
-    `GitNotFoundError`, `GitCommandError`, `NoFilesError`
-  * All API functions default `path` to `Path.cwd()`, matching CLI behaviour
-
-* `contextzip/api.py` — new module implementing the public API; no Click, no
-  Rich output, no `SystemExit`; raises typed exceptions on failure
-* `contextzip/packager.py` — added `create_zip_silent()` and
-  `_workspace_output_path_silent()`: same ZIP logic as the CLI path but
-  without a `Console` dependency, used internally by the API
-
-### Changed
-
-* `contextzip/__init__.py` — now exports the full public API
-  (`get_git_changes`, `get_files`, `create_zip`, `detect_ecosystem`,
-  `FileCollection`, `PackageResult`, and all exception types) so
-  `from contextzip import ...` works without knowing internal module paths
-
-### Fixed
-
-* `filters.py` — symlink guard inner `try` block repeated the identical
-  `relative_to` call that already failed in the outer block; the fallback now
-  correctly uses the pre-resolve (`original_path`) to compute the relative
-  path for symlinks that point outside the project tree
-* `watcher.py` — `_drain_output_queue` silently consumed sentinel values
-  (`raw=None`) with `continue`, making them invisible to `_check_reader_done`;
-  sentinels are now put back into the queue so done flags are set correctly
-* `watcher.py` — `_read_key_windows` had no timeout and would spin forever in
-  non-interactive terminals; now uses a 60-second `monotonic` deadline
-  matching the existing Unix `select` timeout
-* `packager.py` — removed unused `_safe_name` helper
-* `ai/gemini.py` — corrected stale docstring (`gemini-2.0-flash-lite` →
-  `gemini-2.5-flash-lite`) to match the actual `DEFAULT_MODEL` constant
-
-## [0.3.3] — 2026-05-29
-
-### Fixed
-
-* `contextzip.ai` and all subpackages were missing from the published wheel
-  due to an incomplete `include` allowlist in `pyproject.toml` — replaced
-  with auto-discovery so all current and future subpackages are captured
-  automatically
-
-## [0.3.4] — 2026-06-21
-
-### Added
-
-* `contextzip eod` — builds a paste-ready end-of-day prompt from today's
-  Claude/ChatGPT conversation plus whatever code changed, copied straight
-  to the clipboard. Does no summarizing itself — that's left to whichever
-  AI tool the prompt gets pasted into
-* `contextzip handoff` — same pipeline, aimed at continuing a project in a
-  fresh chat after hitting a usage limit, rather than at an end-of-day report
-* Per-branch commit checkpoints (`.contextzip/markers/eod.json`,
-  `.contextzip/markers/handoff.json`) so every run only reports what's new
-  since *that command* last ran on *that branch* — no manual bookkeeping,
-  no date-based guessing
-* Three-case code-change resolution per file, checked in priority order:
-  1. **Not pushed** — diff against the upstream branch (covers committed-
-     but-unpushed commits and uncommitted edits in one comparison) + the
-     complete current file
-  2. **Diverged from Claude** — diff against the version Claude last
-     produced, matched by filename against a local artifacts folder + the
-     complete current codebase file
-  3. **Since last run** — diff against the stored marker commit, or the
-     branch's merge-base with the default branch on a branch never tracked
-     before + the complete current file
-
-  Brand-new untracked files skip the diff (no baseline exists) and are
-  included as full content only
-* Best-effort fetching of Claude's artifact files for case 2, using the
-  user's own Claude.ai session key (`contextzip config --set-session-key`).
-  Explicitly degrades gracefully — a missing key, an expired cookie, or the
-  endpoint changing shape just skips case 2 with a warning, never fails the
-  whole `eod`/`handoff` run
-* `contextzip config --set-session-key` / `--reset-session-key` — manage
-  the Claude session key alongside the existing Gemini key; default
-  `contextzip config` now shows both keys' status
-* Text-clipboard support (`clipboard.handle_text()`) — `eod`/`handoff`
-  produce a prompt to paste, not a file to upload, so the existing
-  file-clipboard tiers gained a text-mode sibling (`pbcopy` / `xclip`+`xsel`
-  / `clip.exe`)
-* `exports/` added to the base exclusion ruleset (next to `.contextzip/`) —
-  conversation exports and fetched Claude artifacts are contextzip's own
-  working files, never code to package or report on
-
-### Changed
-
-* `packager._ensure_gitignore()` generalised to accept an arbitrary entry
-  instead of being hardcoded to `.contextzip/`, so `exports/` can register
-  itself in `.gitignore` the same way on first use
-
-### Developer Notes
-
-* New modules: `markers.py` (per-branch checkpoint storage), `code_changes.py`
-  (the three-case decision tree), `claude_export.py` (locating the latest
-  export, inline-vs-attach sizing), `claude_artifacts.py` (best-effort
-  artifact fetching, rewritten on `httpx` for consistency with `ai/gemini.py`
-  rather than introducing a second HTTP stack), `brief.py` (orchestrates
-  `eod`/`handoff` end to end)
-* `git.py` gained branch-aware primitives: `get_current_branch()`,
-  `get_default_branch()` (origin/HEAD detection with fallback chain),
-  `get_merge_base()`, `is_ancestor()`, `get_upstream_branch()`,
-  `diff_against()` (working-tree-aware — captures committed-since-baseline
-  and uncommitted changes in one diff), `changed_files_against()`
-* A stored marker that's no longer an ancestor of `HEAD` (e.g. after a
-  rebase) is detected via `is_ancestor()` and silently recomputed from the
-  branch's merge-base, with a warning surfaced to the user rather than
-  producing a nonsense diff
-* `claude_artifacts.py` matches Claude's flat artifact filenames against the
-  codebase by basename only, since artifacts carry no knowledge of the
-  repo's directory structure; ambiguous matches (same filename in multiple
-  directories) pick the most recently modified candidate and surface a
-  warning rather than guessing silently
-
-## [0.3.5] — 2026-08-09
-
-### Added
-- **Monorepo-aware framework detection.** Detection now scans project_dir plus a
-  shallow, bounded subdirectory tree (2 levels deep), instead of only checking
-  the project root. A layout like `root/frontend/package.json` +
-  `root/backend/requirements.txt` now correctly detects both Node.js and
-  Python and stacks both exclusion rule sets — previously this fell through
-  to only the universal base rules, leaving `node_modules/`, `.venv/`, and
-  similar unexcluded except by whatever `.gitignore` happened to catch. The
-  scan skips dependency/build directories (`node_modules/`, `.venv/`, `.git/`,
-  etc.) so it never walks into a large dependency tree. Detection output now
-  shows which subdirectory each ecosystem was found in, e.g.
-  `Next.js (frontend/) + FastAPI (backend/)`.
-- **Configurable `.contextzip/` workspace location**, resolved in priority
-  order: `CONTEXTZIP_WORKSPACE_LOCATION` env var → project config
-  (`.contextzip.json`, committed, team-shared) → personal config (per-machine,
-  via `contextzip config --set-workspace`) → default (`git-root`, unchanged
-  behavior). Accepts `"git-root"`, `"cwd"`, or an explicit path.
-- `contextzip config --set-workspace <location>` / `--reset-workspace` — set
-  or clear your personal workspace location default.
-- `contextzip config` (no flags) now shows the resolved workspace location
-  and which config tier it came from.
-- New `.contextzip.json` project config file (optional, git-committed) for
-  pinning `workspace_location` for every contributor.
-
-### Fixed
-- `.gitignore` registration for the `.contextzip/` entry now correctly
-  derives the git root independently, rather than assuming it's always the
-  workspace directory's parent — a latent bug this release's configurable
-  workspace location would otherwise have triggered (it only skips writing
-  when the workspace is genuinely outside the repo, e.g. an absolute custom
-  path).
-
-### Removed
-- **`eod` and `handoff` commands**, along with the Claude.ai session-key
-  config option they depended on. Both relied on an undocumented Claude.ai
-  endpoint to fetch previously-produced artifacts, which was never a stable
-  foundation for a shipped feature.
-  - Removed modules: `brief.py`, `claude_export.py`, `claude_artifacts.py`,
-    `code_changes.py`, `markers.py`
-  - Removed CLI options: `contextzip config --set-session-key` /
-    `--reset-session-key`
-  - Removed config keys: `claude_session_key`
-  - Also removed now-unused branch-diffing internals from `git.py`
-    (`get_current_branch`, `get_upstream_branch`, `diff_against`, and related
-    helpers) that existed solely to support `eod`/`handoff`
-  - If you relied on `eod`/`handoff`, there's no replacement in this
-    release — conversation exports and per-file diff prompts will need to be
-    built by hand, or via your own script against `contextzip --git-changes`.
-
-
-## [0.3.6] — 2026-08-23
-
-### Added
-
-* **`cz` CLI alias.** `cz` can now be used as a shorthand for `contextzip`, with identical commands and behavior.
-* **`.contextzip/` project workspace.** Contextzip now uses a dedicated workspace containing `config.json` and an `output/` directory for generated context archives.
-* **Project configuration via `.contextzip/config.json`.** Added persistent project-level preferences for `always_include`, `always_exclude`, and AI-assisted context selection.
-* **AI configuration.** Added configurable AI preferences including whether AI selection is enabled, the provider to use, and the maximum number of files AI can select.
-* **Configured file selection.** `always_include` and `always_exclude` preferences are now applied during context generation.
-* **Configurable AI file limits.** The configured `ai.max_files` value is now respected by the AI selection pipeline.
-* **Legacy `.contextzip.json` deprecation.** Project configuration is moving from `.contextzip.json` to `.contextzip/config.json`.
-
-### Changed
-
-* Generated context archives are now organized under `.contextzip/output/`.
-* Contextzip configuration is now resolved through the new project configuration system while preserving the existing personal configuration for machine-specific settings and credentials.
-
-
-## [0.3.7] — 2026-08-23
-
-### Added
-
-* **Visual config UI.** `contextzip config --ui` opens a local browser tab for setting `always_include`/`always_exclude` by clicking through your actual file tree, with live file counts and packed size as you go.
-* **Exclude suggestions.** The config UI automatically flags common non-code file types not already covered by the default exclusion rules — PDFs, office docs, fonts, media, design files, and anything over 1MB — as one-click "exclude all" chips.
-* **First-run offer.** A project with no config at all offers to launch the visual config UI on its first run. Declining is remembered — it won't ask again unless you run `contextzip config --ui` yourself.
-
-### Changed
-
-* Declining the visual config UI's first-run offer is now stored in the personal config (`~/.config/contextzip/config.json`) so it's asked at most once per machine.
+- **A crash on Windows when output isn't a console.** In Git Bash, in a
+  pipe or in a CI log, with Python 3.14 or older, the first "✓" raised
+  `UnicodeEncodeError` and nothing was packaged. Output there is now UTF-8.
+- **A folder your `.gitignore` leaves out no longer decides the stack.** A
+  scratch folder with its own `package.json` made the whole project
+  "Node.js" although none of it was packaged.
+- **A Visual Studio C++ solution is no longer taken for .NET.** A `.sln`
+  only counts as .NET when it lists a `.csproj`, `.fsproj` or `.vbproj`.
+- `contextzip -v | head` on Windows ended with a traceback when the reader
+  closed the pipe. It now exits quietly, as it does on macOS and Linux.
+
+## [0.6.2] — 2026-11-06
 
 ### Security
+- **Secrets in Spring Boot config files are always redacted.**
+  `application.properties` and `application.yml` (with profile variants
+  such as `application-prod.yml`, and `bootstrap.*`) are included because
+  the AI needs your configuration, but they often hold live database
+  passwords and signing secrets as plain values that the opt-in
+  `limits.redact_secrets` scan didn't catch. Now, whatever that setting
+  says, the value of every password, secret, token, credentials, API-key
+  and private-key setting becomes `[REDACTED]`, as does a password inside
+  any URL (`jdbc:postgresql://app:[REDACTED]@db/app`, `?password=`).
+  `${ENV_VAR}` references are kept; a fallback such as
+  `${DB_PASSWORD:hunter2}` is redacted. Multi-line YAML values and
+  ISO-8859-1 `.properties` files are handled. This covers normal runs,
+  `--git-changes`, the MCP server and `contextzip watch`, and `apply-zip`
+  keeps your real values when the file comes back.
 
-* The local config UI binds to `127.0.0.1` only and requires a random per-session token on every request (matching Jupyter Notebook's approach) — nothing about the project's file structure leaves the machine.
-
-
-## [0.3.8] — 2026-08-24
-
-### Added
-
-* **`apply-zip` command.** Closes the other half of the round trip: takes a ZIP handed back by an AI tool and writes it into the project. Every file is classified — new, modified, unchanged, drifted (changed or removed locally since it was sent), or untracked (no baseline to compare against) — before anything is written.
-* **Local sidecar manifest.** Every ZIP `contextzip` creates now also gets a `<name>.manifest.json` written next to it in `.contextzip/output/` — a hash of each included file, taken at zip-time. It's written to disk only, **never inside the ZIP**, so it's never uploaded and never visible to whatever AI tool the ZIP is pasted into.
-* **`.contextzip/inbox/`.** Drop an AI-returned ZIP here and `apply-zip` finds it automatically; passing a path explicitly always overrides auto-detection. Multiple ZIPs in the inbox are listed and you're asked to be explicit rather than guessed at.
-* **Automatic backups.** Every file `apply-zip` is about to overwrite is copied first into `.contextzip/backups/<timestamp>/`.
-* **`apply_zip()`** Python API function, mirroring `create_zip()`'s plain-function, no-Click, no-Rich style.
-* New `--dry-run`, `--verbose`, `--yes`, and `--manifest` flags on `apply-zip`.
-
-### Changed
-
-* Consumed ZIPs are moved to `.contextzip/inbox/applied/<timestamp>-name.zip` rather than deleted, so they double as an audit trail alongside the backups.
-
-### Security
-
-* `apply-zip` validates every ZIP entry's resolved path before extracting anything, refusing archives with path-traversal entries (`../`) that would write outside the project tree — no override flag, no exceptions.
-
-### Notes
-
-* v1 of `apply-zip` only adds and modifies files — deletions are never inferred from a ZIP's contents. A file missing from a returned ZIP is left alone.
-
-
-## [0.3.9] - 2026-08-26
-
-### Security
-
-- Config file permissions (`~/.config/contextzip/config.json`) are now
-  locked to `0600` on **every** write, not just on creation. Previously a
-  pre-existing config file from an older install (or one created under a
-  permissive umask) could stay group/world-readable indefinitely — the
-  file can hold a Gemini API key in plaintext, so this closes a real local
-  exposure on shared machines.
-- The local config UI (`contextzip config --ui`) now compares the request
-  token with `hmac.compare_digest` instead of `==`, removing a
-  timing-based side channel on the single-use session token.
-- Substantially expanded the list of secret/credential files that are
-  always excluded from packaged zips, regardless of framework:
-  SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`),
-  keystores (`.jks`, `.keystore`, `.p12`, `.pkcs12`, `.ppk`),
-  CLI/package-manager credential files (`.npmrc`, `.netrc`, `.pypirc`,
-  `.pgpass`, `.dockercfg`, Docker `config.json`), cloud provider
-  credentials (`.aws/credentials`, `.aws/config`, `*serviceaccount*.json`,
-  `kubeconfig`), and Terraform state (`*.tfstate*`, `.terraform/`), which
-  routinely contains plaintext secrets even for "just infra" resources.
+## [0.6.1] — 2026-11-05
 
 ### Fixed
+- **Published to PyPI.** 0.6.0 (and 0.5.7) reached npm, Homebrew, Scoop and
+  the release archives but not PyPI: the release's test run failed because
+  GitHub's newest Ubuntu runner has no Python 3.9. That job now runs on
+  Ubuntu 24.04. No code changes from 0.6.0, so `pip install -U contextzip`
+  brings everything in 0.5.7 and 0.6.0.
 
-- `apply-zip` now detects when every entry in an AI-returned zip is
-  nested under one incidental top-level folder — the shape produced by
-  `zip -r out.zip myfolder` or GitHub's "Download ZIP" — and strips it
-  automatically when doing so clearly improves the match against the
-  project's manifest, so files land at their real project-relative paths
-  instead of recreating a wrapper folder.
-- `apply-zip` now warns before applying a zip whose structure barely
-  matches the project at all (under 10% of paths found in the manifest,
-  even after wrapper stripping), instead of silently treating every file
-  as brand new.
-
-### Changed
-
-- `.contextzip/inbox/applied/` now keeps only the most recently applied
-  zip instead of accumulating one per session.
-
-### Internal
-
-- Removed an unused `GitChanges` import in `api.py`.
-- Clarified the `.gitignore` comment describing what lives under
-  `.contextzip/` and confirming the Gemini API key is never stored there.
-
-
-## [0.4.0] - 2026-08-26
+## [0.6.0] — 2026-11-05
 
 ### Added
+- **Java, Kotlin and Spring Boot support.** `pom.xml`, `build.gradle(.kts)`
+  and `settings.gradle(.kts)` are detected (Spring Boot from its parent POM
+  or Gradle plugin), and their build output is left out: `target/`,
+  `build/`, `.gradle/`, `*.class`, `*.jar`/`*.war`, the `mvnw`/`gradlew`
+  wrappers, Eclipse and IntelliJ files, JVM crash dumps and Spring
+  Initializr's `HELP.md`. Sources, build files and `application.*` config
+  are kept.
+- Modules declared in a Maven `<modules>` list or a Gradle
+  `settings.gradle` `include` are detected at any depth, like npm and Cargo
+  workspaces.
+- **`contextzip watch` understands JVM output:** stack traces with their
+  `Caused by:` chains (labelled with the root cause), Spring Boot's
+  "APPLICATION FAILED TO START" report, and compile errors from javac,
+  kotlinc, Maven and Gradle. Framework frames are collapsed, and application
+  frames are resolved to their source files through the class's package.
 
-- **Config UI redesign.** `contextzip config --ui` is now a five-tab
-  interface (Files, AI selection, Workspace, Advanced, Raw JSON) instead
-  of a single always_include/always_exclude pane. The file tree and
-  pattern list now render as a diff — a solid gutter and `+`/`-` marks on
-  every row and pattern, matching the git-diff mental model the rest of
-  the tool already uses. Still a single dependency-free HTML string with
-  no build step, no Node.js, and no network calls from the page itself.
-- **New, persisted project preferences** (`.contextzip/config.json`),
-  editable from the new UI tabs or by hand:
-  - `ai.prompt_template` — house conventions prepended to every generated
-    `prompt.txt`, ahead of the task description.
-  - `limits.max_file_size_mb` — replaces the fixed 1 MB "large file"
-    threshold with a per-project value.
-  - `limits.redact_secrets` — reserved for a future scrub of
-    secret-shaped values inside otherwise-included files. Persisted and
-    editable now; not yet enforced during packaging (see Known
-    limitations below).
-  - `applied_zip_retention` — how many past `apply-zip` archives to keep
-    in `.contextzip/inbox/applied/` before pruning (was hardcoded to 1).
-  - `webui.auto_open` / `webui.port` — skip auto-launching a browser tab
-    and/or pin the config UI to a fixed local port instead of a random
-    free one.
-
-### Changed
-
-- `contextzip config --ui`'s local server now exposes the full project
-  config through `/api/state` and accepts the full config through
-  `/api/save`, instead of only always_include/always_exclude.
-- Large-file warnings in normal CLI output now reflect the project's
-  configured threshold instead of a fixed 1 MB.
-
-### Known limitations
-
-- `limits.redact_secrets` can be toggled on and is saved correctly, but
-  nothing reads it yet — no redaction currently happens during
-  packaging. Flagging this explicitly so it isn't relied on before the
-  enforcement lands.
-
-## [0.4.1] — 2026-08-30
-
-### Added
-- **Per-mode output folders.** `.contextzip/output/` now splits by run
-  mode instead of one flat folder: `output/codebase/` (plain
-  `contextzip`), `output/git-changes/` (`--git-changes`),
-  `output/prompt/` (`--prompt`, filename `vibe.zip`), and
-  `output/watch/` (`debug-context.zip`). The folder name matches the
-  flag that produced it, so it's unambiguous which zip is which
-  without having to remember which command you last ran.
-- **Automatic workspace cleanup.** After every successful command
-  (main run and `apply-zip`), `.contextzip/` is pruned automatically:
-  old zip/manifest/report sets per mode folder, old `backups/`
-  folders, and old archived zips in `inbox/applied/` are all deleted
-  down to the most recent one — no confirmation, no separate command.
-  New project settings: `cleanup.enabled` (default `true`) and
-  `cleanup.keep_recent` (default `1`).
-- **`limits.redact_secrets` is now enforced.** Previously persisted in
-  config and editable in the config UI but silently ignored by
-  packaging (flagged as a known limitation in 0.4.0). Now, text files
-  already going into the archive are scanned for secret-shaped values
-  — AWS/Google/GitHub/Slack/Stripe/Anthropic/OpenAI keys, JWTs,
-  private-key blocks, and a conservative generic
-  `key`/`secret`/`token`/`password` assignment pattern — and matched
-  values are replaced with `[REDACTED]` before writing. Only scans
-  files already known to be text and within `limits.max_file_size_mb`;
-  binary and oversized files are never touched. Redactions are
-  surfaced in a terminal warning and itemized in the `.report.txt`
-  file, never applied silently.
-- **`.report.txt` files.** Every packaging run (and `apply-zip` run)
-  writes a full plain-text report alongside its ZIP —
-  `codebase.report.txt` / `codebase.apply-report.txt` — containing
-  everything that used to fill the terminal: the excluded-directory
-  breakdown, the complete included-file list, per-file warnings, and
-  (when applicable) which files had secrets redacted.
-
-### Changed
-- **Terminal output redesigned.** Every command now prints a compact,
-  one-line-per-step log (`✓` / `!` / `✗`) instead of boxed Rich panels
-  and tables — matching the register of tools like `pnpm`, `vite`, and
-  `ruff`. A full-width terminal is no longer needed to read a run.
-- The "Scanned" and "Packed" steps are now combined into a single
-  line, e.g. `Scanned 1518 files & Packed 42 files · 42 included
-  (394 KB), 1476 excluded, 394 KB → 126 KB, ↓68% smaller`.
-- Removed the `contextzip vX.X.X` / project-path banner from every
-  command — output now starts directly at the first real step.
-- `apply-zip`'s manifest auto-detection now searches recursively
-  across the new per-mode output subfolders, so it still finds the
-  right manifest under the new layout.
-- Full file listings and excluded-directory breakdowns moved out of
-  default terminal output — shown under `-v`/`--verbose`, or in the
-  full report file.
-
-### Removed
-- `.gitignore patterns applied` is no longer printed (no signal, dead
-  weight).
-- Opening the output folder no longer prints a confirmation line.
-
-
-## [0.4.2] — 2026-08-31
-
-### Added
-- **`limits.redact_secrets` is now enforced.** Previously persisted in
-  config and editable in the config UI but silently ignored by
-  packaging (flagged as a known limitation in 0.4.0). Now, text files
-  already going into the archive are scanned for secret-shaped values
-  — AWS/Google/GitHub/Slack/Stripe/Anthropic/OpenAI keys, JWTs,
-  private-key blocks, and a conservative generic
-  `key`/`secret`/`token`/`password` assignment pattern — and matched
-  values are replaced with `[REDACTED]` before writing. Only scans
-  files already known to be text and within `limits.max_file_size_mb`;
-  binary and oversized files are never touched. Surfaced in a terminal
-  warning and itemized in the `.report.txt` file, never applied
-  silently.
-
-### Changed
-- **`.contextzip/` is now fully local by default, no exceptions.**
-  `config.json` was previously carved out of the workspace's
-  `.gitignore` so it stayed trackable automatically. It's now ignored
-  like everything else in the workspace — nothing under `.contextzip/`
-  is ever pushed unless you explicitly opt in with
-  `git add -f .contextzip/config.json`.
-
-## [0.4.3] — 2026-09-20
-
-### Added
-- **`contextzip update` / `cz update`** — checks PyPI for a newer release
-  and updates in place, so you no longer have to remember
-  `pip install --upgrade contextzip` after every one of your own
-  releases. Detects whether this install came from pip, pipx, or
-  `uv tool` and re-invokes the matching one against the *currently
-  running* interpreter — never a possibly-different `pip` off PATH.
-  `--check` reports the current/latest version without installing;
-  `--yes` skips the confirmation prompt.
+## [0.5.7] — 2026-11-04
 
 ### Fixed
-- **`apply-zip` no longer dumps a nested copy of the project when the
-  returned zip wraps everything in a folder named after the project
-  itself** (e.g. `project/`, or a folder matching the package's own
-  name). The wrapper-stripping logic added in an earlier release had a
-  guard that skipped stripping whenever a real folder with that name
-  already existed in the project — which is exactly what happens when
-  an AI tool names the wrapper after the project. Now, whenever a
-  manifest is available, the decision is made by comparing how well
-  paths actually match the manifest with vs. without stripping, not by
-  guessing from what's on disk.
-- **`contextzip config --ui` now closes its browser tab automatically
-  after a successful save** and hands control back to the terminal,
-  instead of only telling you to close it yourself.
+- **`cz update` works with uv, pipx and virtual environments**, not just
+  plain pip. It detects how contextzip was installed (pip, pipx, `uv tool`,
+  or a venv made by uv, which has no pip) and tries each installer that
+  can upgrade the running Python in turn — pip, `uv pip`, `pipx upgrade`,
+  `uv tool upgrade` — until the new version is actually installed. Outside
+  a venv, a pip permission error is retried with `--user`.
+- When every attempt fails, `cz update` lists each command it ran with its
+  error, a hint for the likely cause (an OS-managed Python, a folder you
+  can't write to, no pip or uv available), and the exact command to run
+  by hand for your setup. It now exits non-zero on failure.
 
+## [0.5.6] — 2026-10-24
 
-## [0.4.4] — 2026-09-21
+### Fixed
+- **`.gitignore` files in subfolders are respected**, as git does: an
+  `apps/web/.gitignore` in a monorepo now applies to `apps/web/`. Patterns
+  are read shallowest first, so a deeper file can override the root one,
+  and a `.gitignore` inside an ignored folder is not read. `--no-gitignore`
+  turns them all off.
+- **`--prompt` with a high `ai.max_files`** no longer risks Gemini's answer
+  being cut off: the reply's token budget now grows with the file cap.
+- **The Gemini API key is sent in the `x-goog-api-key` header** instead of
+  the URL, so it can't show up in proxy logs or error messages.
+
+## [0.5.5] — 2026-10-23
 
 ### Added
-- **`contextzip update` / `cz update`** — checks PyPI for a newer release
-  and updates in place, so you no longer have to remember
-  `pip install --upgrade contextzip` after every one of your own
-  releases. Detects whether this install came from pip, pipx, or
-  `uv tool` and re-invokes the matching one against the *currently
-  running* interpreter — never a possibly-different `pip` off PATH.
-  `--check` reports the current/latest version without installing;
-  `--yes` skips the confirmation prompt.
-- **`.contextzip/inbox/README.txt`** is now created automatically the
-  moment the `.contextzip/` workspace is first set up (and self-heals if
-  it's ever missing) — a plain-language explainer of what the inbox is
-  for, how to drop a zip into it, and what happens afterward, so the
-  folder isn't a silent, unexplained thing you have to already know
-  about.
+- **GitLab and Bitbucket repositories**, alongside GitHub:
+  `contextzip gitlab.com/group[/subgroup]/project` (including
+  `/-/tree/<branch>/<folder>` links and `gl:`) and
+  `contextzip bitbucket.org/team/repo` (`/src/<branch>/<folder>`, `bb:`).
+  Private repositories use `GITLAB_TOKEN` or `BITBUCKET_TOKEN`. The
+  public-only service accepts them too.
+- **`apply-zip --pr`: an AI's reply as a GitHub pull request.** For a
+  repository packaged with `contextzip github.com/user/repo`, the reply's
+  changes are committed on top of the packaged commit through GitHub's API
+  and a pull request is opened. No clone needed, and it forks first if you
+  can't push. Only safe changes are committed; anything that needs a
+  decision is listed in the description. It asks before publishing, and
+  needs `--yes` with `--json`. `--dry-run` shows what it would contain.
+- **`contextzip mcp`: an MCP server for AI agents.** Install it with
+  `pip install "contextzip[mcp]"` (Python 3.10+). It has six tools:
+  `package_project`, `package_repository`, `preview_apply`, `apply_changes`
+  (safe changes by default), `open_pull_request` (a dry run by default) and
+  `list_snapshots`. Each returns the same JSON as `--json`.
+- The `--json` `remote` object has a `host` field.
 
-### Fixed
-- **`apply-zip` no longer dumps a nested copy of the project** when the
-  returned zip wraps everything in a folder named after the project
-  itself (e.g. `project/`, or a folder matching the package's own name).
-  The wrapper-stripping logic had a guard that skipped stripping
-  whenever a real folder with that name already existed in the
-  project — exactly what happens when an AI tool names the wrapper
-  after the project. The decision is now made by comparing manifest
-  match-rate with vs. without stripping instead of guessing from what's
-  on disk.
-- **`apply-zip` no longer leaves a zip's wrapper folder in place when the
-  freshest manifest is scoped to a small subset of the project**
-  (most commonly `.contextzip/output/git-changes/changes.manifest.json`,
-  which only ever tracked files touched in one prior git-diff run). A
-  zip of otherwise-legitimate new files matched that manifest at 0%
-  whether or not the wrapper was stripped, so the fix above's
-  manifest-comparison saw a tie and played it safe by leaving the
-  wrapper in place. It now falls back to comparing the zip's top-level
-  folders against the project's actual current directory layout
-  (`app/`, `components/`, `lib/`, etc.) whenever the manifest signal
-  ties, and strips confidently when that layout lines up.
-- **`apply-zip <path>` no longer drops its `.apply-report.txt` next to
-  wherever the zip happens to be** (e.g. the project root) when given an
-  explicit path outside `.contextzip/inbox/`. The report now always
-  writes to `.contextzip/inbox/`, matching where it's always shown up
-  when a zip is auto-detected from there. The zip itself is still left
-  in place, unmoved, when given an explicit path.
-- **Auto-cleanup now actually removes old `*.apply-report.txt` files
-  sitting loose in `.contextzip/inbox/`** instead of leaving every one
-  ever written to pile up indefinitely. Keeps only the most recent
-  `cleanup.keep_recent` (default 1), same rule as everything else it
-  prunes.
-
-### Removed
-- **The per-apply backup mechanism (`.contextzip/backups/<timestamp>/`)
-  is gone entirely.** `apply-zip` no longer copies overwritten files
-  there before writing; the manifest-diff confirmation prompt and the
-  fact that the applied zip is always archived (not deleted) remain the
-  safety net. Auto-cleanup now also wipes any leftover
-  `.contextzip/backups/` folder outright on projects upgrading from an
-  older contextzip version, rather than just pruning it down over time.
-
-
-
-## [0.4.5] — 2026-09-27
-
-### Fixed
-- **`--git-changes` was silently ignoring `.contextzip/config.json`.**
-  `_run()` only built the exclude/force-include rules from
-  `always_include`/`always_exclude` — and folded in the current run's
-  `--include`/`--exclude` — inside the standard-scan branch.
-  `resolve_files_from_git()` had no parameters to receive any of that, so
-  `--git-changes` packaged exactly what `git status` reported, no more and
-  no less, regardless of what the config or the flags for that run said.
-  A project could have `*.snap` in `always_exclude` and still see it land
-  in every `--git-changes` zip. `resolve_files_from_git()` now accepts
-  `extra_exclude`, `include_only`, and `force_include` and applies them
-  with the same precedence `resolve_files()` already used — force-include
-  first, then the safety floor plus excludes, then include-only — so both
-  modes resolve a project's files identically.
-- **`contextzip watch` could package a file straight out of
-  `always_exclude`** if a stack trace happened to name it — the debug-zip
-  path built its file list from `extract_paths()` alone, with no
-  awareness that a project had already asked for that file to be left out
-  everywhere else. `process_buffer()` now filters extracted paths through
-  the project's `always_exclude`/`always_include` before they reach
-  `prompt.txt` or `source-files.zip`.
-- **The Python API (`get_files()`, `get_git_changes()`) never read
-  `.contextzip/config.json` at all** — library callers got only the
-  built-in rules plus whatever `include`/`exclude` they passed in
-  explicitly, even on a project with a committed config the CLI already
-  honored. Both functions now load project config by default and apply
-  `always_include`/`always_exclude`/`limits.max_file_size_mb` the same way
-  the CLI does. This is a behavior change for existing callers relying on
-  the old, config-blind result — pass the new `use_project_config=False`
-  to keep it.
-
-### Changed
-- **Empty-result messages now read "Nothing to compress in this one"**
-  instead of "Nothing to package" — shown both when `--git-changes` finds
-  a clean working tree and when a standard scan excludes every file.
-- **Unknown-ecosystem detection now points you to request your language.**
-  When contextzip can't identify a project's stack, the detection line is
-  followed by `Don't see your language? Add it here: <link>` instead of
-  leaving that one line as the only output.
-
-
-## [0.4.6] — 2026-10-07
-
-### Fixed
-- **The ZIP was never actually copied to the clipboard on Windows or
-  Linux.** On Windows there was no clipboard step at all: contextzip
-  opened Explorer and left you to copy the file yourself. On Linux it
-  wrote the ZIP's raw bytes to the clipboard as `application/zip`, which
-  browsers ignore on paste, and only when `xclip` happened to be
-  installed. Both platforms now put a real *file reference* on the
-  clipboard, the same thing Ctrl+C on a file does, so you can paste the
-  ZIP straight into Claude, ChatGPT or any other upload box.
-  - **Windows:** sets `CF_HDROP` directly through the Win32 API (plus
-    "Preferred DropEffect" so Explorer pastes a copy), then reads it back
-    to confirm. If that fails it falls back to PowerShell
-    `Set-Clipboard -LiteralPath`, and only then to opening Explorer.
-  - **Linux:** sets `text/uri-list`, the target browsers read when you
-    paste a file. Order of attempts: `wl-copy` (only if already installed,
-    on Wayland), a new built-in X11 clipboard owner, then `xclip` (only if
-    already installed). Every attempt is read back before contextzip
-    reports success.
-- **A failed clipboard copy was silent.** When contextzip fell back to
-  opening the folder it printed nothing, so you couldn't tell the copy had
-  failed. It now says so and, when it knows, how to fix it.
-- **Explorer fallback lost the selection on paths with spaces or commas.**
-  `explorer /select,` is now passed as one correctly quoted command line.
-- `xclip` / `wl-copy` are run with their output discarded rather than
-  captured, so they can no longer block the CLI.
+## [0.5.4] — 2026-10-23
 
 ### Added
-- **Built-in X11 clipboard owner — nothing to install on Linux.**
-  `pip install contextzip` is now enough: contextzip speaks the small part
-  of the X11 protocol needed to own the clipboard itself (standard library
-  only, no new dependency). It offers `text/uri-list`,
-  `x-special/gnome-copied-files` and `application/x-kde-cutselection`, so
-  browsers and GNOME/KDE file managers can all paste the file. A tiny
-  background process holds the clipboard and exits on its own as soon as
-  something else is copied.
+- **contextzip runs in the browser.** `contextzip.web.run(args, cwd)` runs
+  any command and returns its `--json` result as a dict. contextzipcli.com
+  uses it through Pyodide (WebAssembly Python), so a folder dropped on the
+  site is packaged, and a reply applied, with exactly the CLI's rules,
+  without the code leaving the browser. CI runs a package + apply round
+  trip inside Pyodide on every change.
+- **`contextzip.service`:** a WSGI app that packages public GitHub
+  repositories for contextzipcli.com: `?repo=github.com/user/repo` returns
+  the ZIP, and `&format=json` returns a summary. It checks with GitHub that
+  every repository is public, caps downloads, rate-limits each client,
+  sets cache headers, and never returns server paths.
+- `--json` results include `error_kind` when a GitHub repository can't be
+  fetched (`not_found`, `private`, `too_big`, `rate_limited`, …).
+
+### Fixed
+- Under `--json`, no spinner or progress bar is started at all. They weren't
+  shown anyway, and their background thread can't run in Pyodide.
+
+---
+
+## [0.5.3] — 2026-10-23
+
+### Added
+- **Standalone builds: contextzip without Python.** Every release now
+  includes a ready-to-run build for Windows x64, macOS (Apple Silicon and
+  Intel) and Linux x64/arm64:
+  - **npm:** `npm install -g @contextzip/cli`, or `npx @contextzip/cli` to
+    try it. npm installs only the build for your machine.
+  - **Homebrew:** `brew install akadeepesh/tap/contextzip`.
+  - **Scoop:** `scoop bucket add contextzip https://github.com/akadeepesh/scoop-bucket`,
+    then `scoop install contextzip`.
+  - **Download:** archives and `SHA256SUMS` are attached to each GitHub
+    release.
+  - Each build is smoke-tested in CI before it's published: it packages a
+    project and applies a reply.
+- `contextzip update` and `setup-path` recognise a standalone build and
+  print the npm, Homebrew or Scoop command to use instead of running pip.
+- The README lists zero-install options: `npx @contextzip/cli`,
+  `uvx contextzip` and `pipx run contextzip`.
+
+### Fixed
+- Running contextzip from a project directly inside `/tmp` on Linux crashed
+  with `PermissionError`. The check for sibling project folders tripped over
+  unreadable ones such as `/tmp/systemd-private-*`, and now skips them.
+- The macOS standalone build contains no symlinks, which npm packages and
+  VS Code extensions can't hold. They're replaced with copies, and the
+  build is smoke-tested after that.
+
+### Developer notes
+- `installers/build_binary.py` builds a PyInstaller one-folder app in UTF-8
+  mode and smoke-tests it. `npm/scripts/assemble.mjs` turns the archives
+  into npm packages. `installers/manifests.py` writes the Homebrew formula
+  and Scoop manifest. `installers/targets.json` is the single list of
+  targets, and `.github/workflows/binaries.yml` runs it all.
+- The version now also lives in `npm/cli/package.json`; a test keeps all
+  copies in sync.
+
+---
+
+## [0.5.2] — 2026-10-23
+
+### Added
+- **Package a GitHub repository without cloning it:**
+  `contextzip github.com/user/repo`, a `/tree/<branch>/<folder>` link,
+  `gh:user/repo` or `git@github.com:user/repo.git`, with `--ref` for a
+  branch, tag or commit. Also `--from REPO`, which works on `include` and
+  `exclude` too.
+  - Downloads one commit through the GitHub API into your user cache. No git
+    needed. A cached commit is reused, and the 3 newest per repo are kept.
+  - Private repos use `GITHUB_TOKEN` / `GH_TOKEN`, or your `gh auth token`.
+    The token is sent only to `api.github.com`, never to the download host.
+  - Branch names with slashes in `/tree/` links resolve correctly.
+  - `.git/`, `.contextzip/`, symlinks and unsafe paths are never unpacked.
+    Downloads over 250 MB are refused (`CONTEXTZIP_REMOTE_MAX_MB`).
+- **`--json`** on `contextzip`, `include`, `exclude`, `apply-zip` and
+  `snapshots` prints one JSON object instead of terminal output, for editors
+  and scripts. It never prompts, and the exit code matches `ok`.
+  `apply-zip --json` writes nothing when a file needs a decision, unless
+  `--safe-only`, `--yes` or `--review` says what to do. The schema is in
+  CLI.md.
+- **Estimated token count** (`≈ 46k tokens`) in the summary line, in dry
+  runs and in the report, so you can tell whether a ZIP will fit before you
+  upload it.
+- Python API: `fetch_remote()` and `RemoteFetchError`.
+  `PackageResult.estimated_tokens`.
+
+---
+
+## [0.5.1] — 2026-10-21
+
+### Added
+- **`python -m contextzip`** runs contextzip through Python itself, so it
+  works even when the `cz` command can't be found.
+- **`contextzip setup-path`** fixes "`cz` is not recognized" / "command not
+  found". This happens when pip installs the commands into a folder that
+  isn't on PATH, which is common with the Microsoft Store or install-manager
+  Python on Windows and with `pip install --user`. Run
+  `python -m contextzip setup-path`:
+  - **Windows:** it adds the folder to your user PATH. No admin rights
+    needed.
+  - **macOS / Linux:** it adds one line to your shell's startup file.
+  - **Microsoft Store (MSIX) Python:** it prints a PowerShell command to
+    paste, because the Store sandbox can't change PATH itself.
+  - **pipx, uv tool or a virtualenv:** it tells you the right command
+    instead.
+  - It never adds the folder twice.
+- When you run `python -m contextzip` while `cz` isn't on PATH, a one-line
+  tip points to `setup-path`.
+- The README, CLI.md and the website have a "`cz` is not recognized"
+  troubleshooting section.
+
+### Fixed
+- **Three-way merge no longer drops lines silently next to a deletion**
+  ([#15](https://github.com/akadeepesh/contextzip/pull/15), thanks
+  @JingHao-Leon). When one side deleted lines and the other side changed,
+  deleted or inserted right next to them, `apply-zip` reported "merged
+  cleanly" with lines missing. Those cases are now conflicts, like
+  `git merge-file`. Changes that are one or more lines apart still merge.
+- The conflict wording now says "the same or neighbouring lines", to match.
+
+---
+
+## [0.4.7] — 2026-10-19
 
 ### Changed
-- Headless and SSH Linux sessions (no display) now print the ZIP's path
-  instead of trying to launch `xdg-open`.
-- `ClipboardResult` has a new optional `hint` field explaining why a copy
-  fell back and how to fix it.
-- macOS: quotes and backslashes in the ZIP's path are now escaped in the
-  Finder script. Behaviour is otherwise unchanged.
+- **A `.env` you deliberately include now has every value redacted.**
+  Secret files (`.env`, private keys, credential files, Terraform state and
+  so on) are still left out by default. You can still bring one back with
+  `contextzip include .env`, `always_include` in `.contextzip/config.json`
+  or `contextzip config --ui`, so the AI can see which variables your app
+  expects. It is now never zipped as-is:
+  - `.env` / `.env.*` files keep every key, comment and blank line, but
+    every value becomes `[REDACTED]`. Multi-line quoted values collapse to
+    one redacted line, and any line that isn't `KEY=value` is redacted
+    whole.
+  - Any other secret file gets the secret-pattern scan (private-key blocks,
+    API keys, tokens and so on).
+  - A secret file that isn't text (`.p12`, `.jks` and so on) can't be
+    redacted, so it is left out and listed in the report.
+  - This happens whatever `limits.redact_secrets` says and whatever the
+    file's size. It applies to normal runs, `--git-changes`, `--prompt`,
+    the `source-files.zip` inside `contextzip watch`'s debug package, and
+    the Python API.
+- **`contextzip include` / `--include` now brings back paths you name
+  explicitly**, even when the rules exclude them. `contextzip include .env`,
+  `include dist/` and `include some-gitignored-file.txt` all work now.
+  Previously they quietly matched nothing. Excluded folders nested inside a
+  named folder are still skipped (`include dist/` leaves out
+  `dist/node_modules/`). Naming an ordinary folder still only narrows the
+  run, so `include src/` doesn't pull in `src/.env`. The CLI prints a line
+  when this happens, and secret files are redacted as described above.
+  This also works with `--git-changes` and the Python API's `get_files()`.
+- Include paths now accept a leading `./` or `.\` (`contextzip include ./src`).
+- The scan report now groups repeated redactions (`.env value x3`).
 
-### Known limitations
-- Pasting on Wayland-native browsers relies on XWayland passing the
-  clipboard through, which GNOME and KDE do. A Wayland-only setup without
-  XWayland needs `wl-clipboard` (`wl-copy`) installed; otherwise contextzip
-  opens the folder and tells you what to install.
+### Fixed
+- The "Don't see your language?" hint shown for undetected projects linked
+  to a placeholder (`https://example.com`). It now points to
+  <https://www.contextzipcli.com/request-language>.
+- **The report didn't list files that couldn't be written to the ZIP**,
+  even though the CLI said "see report". They now appear under "Left out
+  of the ZIP" with the reason.
+
+### Developer notes
+- `rules/base.py` has a new `SECRET_PATTERNS` list. `PATTERNS` still
+  contains it, so the default exclusions are unchanged.
+- New in `contextzip.redact`: `is_sensitive_path()`, `is_env_file()`,
+  `redact_env()` and `redact_sensitive_file()`.
 
 ---
 
@@ -1033,462 +578,919 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.4.7] — 2026-10-19
+## [0.4.6] — 2026-10-07
+
+### Fixed
+- **The ZIP was never actually copied to the clipboard on Windows or
+  Linux.** On Windows there was no clipboard step at all: contextzip
+  opened Explorer and left you to copy the file yourself. On Linux it
+  wrote the ZIP's raw bytes to the clipboard as `application/zip`, which
+  browsers ignore on paste, and only when `xclip` happened to be
+  installed. Both platforms now put a real *file reference* on the
+  clipboard, the same thing Ctrl+C on a file does, so you can paste the
+  ZIP straight into Claude, ChatGPT or any other upload box.
+  - **Windows:** sets `CF_HDROP` directly through the Win32 API (plus
+    "Preferred DropEffect" so Explorer pastes a copy), then reads it back
+    to confirm. If that fails it falls back to PowerShell
+    `Set-Clipboard -LiteralPath`, and only then to opening Explorer.
+  - **Linux:** sets `text/uri-list`, the target browsers read when you
+    paste a file. Order of attempts: `wl-copy` (only if already installed,
+    on Wayland), a new built-in X11 clipboard owner, then `xclip` (only if
+    already installed). Every attempt is read back before contextzip
+    reports success.
+- **A failed clipboard copy was silent.** When contextzip fell back to
+  opening the folder it printed nothing, so you couldn't tell the copy had
+  failed. It now says so and, when it knows, how to fix it.
+- **Explorer fallback lost the selection on paths with spaces or commas.**
+  `explorer /select,` is now passed as one correctly quoted command line.
+- `xclip` / `wl-copy` are run with their output discarded rather than
+  captured, so they can no longer block the CLI.
+
+### Added
+- **Built-in X11 clipboard owner — nothing to install on Linux.**
+  `pip install contextzip` is now enough: contextzip speaks the small part
+  of the X11 protocol needed to own the clipboard itself (standard library
+  only, no new dependency). It offers `text/uri-list`,
+  `x-special/gnome-copied-files` and `application/x-kde-cutselection`, so
+  browsers and GNOME/KDE file managers can all paste the file. A tiny
+  background process holds the clipboard and exits on its own as soon as
+  something else is copied.
 
 ### Changed
-- **A `.env` you deliberately include now has every value redacted.**
-  Secret files (`.env`, private keys, credential files, Terraform state and
-  so on) are still left out by default. You can still bring one back with
-  `contextzip include .env`, `always_include` in `.contextzip/config.json`
-  or `contextzip config --ui`, so the AI can see which variables your app
-  expects. It is now never zipped as-is:
-  - `.env` / `.env.*` files keep every key, comment and blank line, but
-    every value becomes `[REDACTED]`. Multi-line quoted values collapse to
-    one redacted line, and any line that isn't `KEY=value` is redacted
-    whole.
-  - Any other secret file gets the secret-pattern scan (private-key blocks,
-    API keys, tokens and so on).
-  - A secret file that isn't text (`.p12`, `.jks` and so on) can't be
-    redacted, so it is left out and listed in the report.
-  - This happens whatever `limits.redact_secrets` says and whatever the
-    file's size. It applies to normal runs, `--git-changes`, `--prompt`,
-    the `source-files.zip` inside `contextzip watch`'s debug package, and
-    the Python API.
-- **`contextzip include` / `--include` now brings back paths you name
-  explicitly**, even when the rules exclude them. `contextzip include .env`,
-  `include dist/` and `include some-gitignored-file.txt` all work now.
-  Previously they quietly matched nothing. Excluded folders nested inside a
-  named folder are still skipped (`include dist/` leaves out
-  `dist/node_modules/`). Naming an ordinary folder still only narrows the
-  run, so `include src/` doesn't pull in `src/.env`. The CLI prints a line
-  when this happens, and secret files are redacted as described above.
-  This also works with `--git-changes` and the Python API's `get_files()`.
-- Include paths now accept a leading `./` or `.\` (`contextzip include ./src`).
-- The scan report now groups repeated redactions (`.env value x3`).
+- Headless and SSH Linux sessions (no display) now print the ZIP's path
+  instead of trying to launch `xdg-open`.
+- `ClipboardResult` has a new optional `hint` field explaining why a copy
+  fell back and how to fix it.
+- macOS: quotes and backslashes in the ZIP's path are now escaped in the
+  Finder script. Behaviour is otherwise unchanged.
 
-### Fixed
-- The "Don't see your language?" hint shown for undetected projects linked
-  to a placeholder (`https://example.com`). It now points to
-  <https://www.contextzipcli.com/request-language>.
-- **The report didn't list files that couldn't be written to the ZIP**,
-  even though the CLI said "see report". They now appear under "Left out
-  of the ZIP" with the reason.
-
-### Developer notes
-- `rules/base.py` has a new `SECRET_PATTERNS` list. `PATTERNS` still
-  contains it, so the default exclusions are unchanged.
-- New in `contextzip.redact`: `is_sensitive_path()`, `is_env_file()`,
-  `redact_env()` and `redact_sensitive_file()`.
+### Known limitations
+- Pasting on Wayland-native browsers relies on XWayland passing the
+  clipboard through, which GNOME and KDE do. A Wayland-only setup without
+  XWayland needs `wl-clipboard` (`wl-copy`) installed; otherwise contextzip
+  opens the folder and tells you what to install.
 
 ---
 
-## [0.5.1] — 2026-10-21
-
-### Added
-- **`python -m contextzip`** runs contextzip through Python itself, so it
-  works even when the `cz` command can't be found.
-- **`contextzip setup-path`** fixes "`cz` is not recognized" / "command not
-  found". This happens when pip installs the commands into a folder that
-  isn't on PATH, which is common with the Microsoft Store or install-manager
-  Python on Windows and with `pip install --user`. Run
-  `python -m contextzip setup-path`:
-  - **Windows:** it adds the folder to your user PATH. No admin rights
-    needed.
-  - **macOS / Linux:** it adds one line to your shell's startup file.
-  - **Microsoft Store (MSIX) Python:** it prints a PowerShell command to
-    paste, because the Store sandbox can't change PATH itself.
-  - **pipx, uv tool or a virtualenv:** it tells you the right command
-    instead.
-  - It never adds the folder twice.
-- When you run `python -m contextzip` while `cz` isn't on PATH, a one-line
-  tip points to `setup-path`.
-- The README, CLI.md and the website have a "`cz` is not recognized"
-  troubleshooting section.
+## [0.4.5] — 2026-09-27
 
 ### Fixed
-- **Three-way merge no longer drops lines silently next to a deletion**
-  ([#15](https://github.com/akadeepesh/contextzip/pull/15), thanks
-  @JingHao-Leon). When one side deleted lines and the other side changed,
-  deleted or inserted right next to them, `apply-zip` reported "merged
-  cleanly" with lines missing. Those cases are now conflicts, like
-  `git merge-file`. Changes that are one or more lines apart still merge.
-- The conflict wording now says "the same or neighbouring lines", to match.
+- **`--git-changes` was silently ignoring `.contextzip/config.json`.**
+  `_run()` only built the exclude/force-include rules from
+  `always_include`/`always_exclude` — and folded in the current run's
+  `--include`/`--exclude` — inside the standard-scan branch.
+  `resolve_files_from_git()` had no parameters to receive any of that, so
+  `--git-changes` packaged exactly what `git status` reported, no more and
+  no less, regardless of what the config or the flags for that run said.
+  A project could have `*.snap` in `always_exclude` and still see it land
+  in every `--git-changes` zip. `resolve_files_from_git()` now accepts
+  `extra_exclude`, `include_only`, and `force_include` and applies them
+  with the same precedence `resolve_files()` already used — force-include
+  first, then the safety floor plus excludes, then include-only — so both
+  modes resolve a project's files identically.
+- **`contextzip watch` could package a file straight out of
+  `always_exclude`** if a stack trace happened to name it — the debug-zip
+  path built its file list from `extract_paths()` alone, with no
+  awareness that a project had already asked for that file to be left out
+  everywhere else. `process_buffer()` now filters extracted paths through
+  the project's `always_exclude`/`always_include` before they reach
+  `prompt.txt` or `source-files.zip`.
+- **The Python API (`get_files()`, `get_git_changes()`) never read
+  `.contextzip/config.json` at all** — library callers got only the
+  built-in rules plus whatever `include`/`exclude` they passed in
+  explicitly, even on a project with a committed config the CLI already
+  honored. Both functions now load project config by default and apply
+  `always_include`/`always_exclude`/`limits.max_file_size_mb` the same way
+  the CLI does. This is a behavior change for existing callers relying on
+  the old, config-blind result — pass the new `use_project_config=False`
+  to keep it.
 
----
+### Changed
+- **Empty-result messages now read "Nothing to compress in this one"**
+  instead of "Nothing to package" — shown both when `--git-changes` finds
+  a clean working tree and when a standard scan excludes every file.
+- **Unknown-ecosystem detection now points you to request your language.**
+  When contextzip can't identify a project's stack, the detection line is
+  followed by `Don't see your language? Add it here: <link>` instead of
+  leaving that one line as the only output.
 
-## [0.5.2] — 2026-10-23
 
-### Added
-- **Package a GitHub repository without cloning it:**
-  `contextzip github.com/user/repo`, a `/tree/<branch>/<folder>` link,
-  `gh:user/repo` or `git@github.com:user/repo.git`, with `--ref` for a
-  branch, tag or commit. Also `--from REPO`, which works on `include` and
-  `exclude` too.
-  - Downloads one commit through the GitHub API into your user cache. No git
-    needed. A cached commit is reused, and the 3 newest per repo are kept.
-  - Private repos use `GITHUB_TOKEN` / `GH_TOKEN`, or your `gh auth token`.
-    The token is sent only to `api.github.com`, never to the download host.
-  - Branch names with slashes in `/tree/` links resolve correctly.
-  - `.git/`, `.contextzip/`, symlinks and unsafe paths are never unpacked.
-    Downloads over 250 MB are refused (`CONTEXTZIP_REMOTE_MAX_MB`).
-- **`--json`** on `contextzip`, `include`, `exclude`, `apply-zip` and
-  `snapshots` prints one JSON object instead of terminal output, for editors
-  and scripts. It never prompts, and the exit code matches `ok`.
-  `apply-zip --json` writes nothing when a file needs a decision, unless
-  `--safe-only`, `--yes` or `--review` says what to do. The schema is in
-  CLI.md.
-- **Estimated token count** (`≈ 46k tokens`) in the summary line, in dry
-  runs and in the report, so you can tell whether a ZIP will fit before you
-  upload it.
-- Python API: `fetch_remote()` and `RemoteFetchError`.
-  `PackageResult.estimated_tokens`.
-
----
-
-## [0.5.3] — 2026-10-23
-
-### Added
-- **Standalone builds: contextzip without Python.** Every release now
-  includes a ready-to-run build for Windows x64, macOS (Apple Silicon and
-  Intel) and Linux x64/arm64:
-  - **npm:** `npm install -g @contextzip/cli`, or `npx @contextzip/cli` to
-    try it. npm installs only the build for your machine.
-  - **Homebrew:** `brew install akadeepesh/tap/contextzip`.
-  - **Scoop:** `scoop bucket add contextzip https://github.com/akadeepesh/scoop-bucket`,
-    then `scoop install contextzip`.
-  - **Download:** archives and `SHA256SUMS` are attached to each GitHub
-    release.
-  - Each build is smoke-tested in CI before it's published: it packages a
-    project and applies a reply.
-- `contextzip update` and `setup-path` recognise a standalone build and
-  print the npm, Homebrew or Scoop command to use instead of running pip.
-- The README lists zero-install options: `npx @contextzip/cli`,
-  `uvx contextzip` and `pipx run contextzip`.
-
-### Fixed
-- Running contextzip from a project directly inside `/tmp` on Linux crashed
-  with `PermissionError`. The check for sibling project folders tripped over
-  unreadable ones such as `/tmp/systemd-private-*`, and now skips them.
-- The macOS standalone build contains no symlinks, which npm packages and
-  VS Code extensions can't hold. They're replaced with copies, and the
-  build is smoke-tested after that.
-
-### Developer notes
-- `installers/build_binary.py` builds a PyInstaller one-folder app in UTF-8
-  mode and smoke-tests it. `npm/scripts/assemble.mjs` turns the archives
-  into npm packages. `installers/manifests.py` writes the Homebrew formula
-  and Scoop manifest. `installers/targets.json` is the single list of
-  targets, and `.github/workflows/binaries.yml` runs it all.
-- The version now also lives in `npm/cli/package.json`; a test keeps all
-  copies in sync.
-
----
-
-## [0.5.4] — 2026-10-23
+## [0.4.4] — 2026-09-21
 
 ### Added
-- **contextzip runs in the browser.** `contextzip.web.run(args, cwd)` runs
-  any command and returns its `--json` result as a dict. contextzipcli.com
-  uses it through Pyodide (WebAssembly Python), so a folder dropped on the
-  site is packaged, and a reply applied, with exactly the CLI's rules,
-  without the code leaving the browser. CI runs a package + apply round
-  trip inside Pyodide on every change.
-- **`contextzip.service`:** a WSGI app that packages public GitHub
-  repositories for contextzipcli.com: `?repo=github.com/user/repo` returns
-  the ZIP, and `&format=json` returns a summary. It checks with GitHub that
-  every repository is public, caps downloads, rate-limits each client,
-  sets cache headers, and never returns server paths.
-- `--json` results include `error_kind` when a GitHub repository can't be
-  fetched (`not_found`, `private`, `too_big`, `rate_limited`, …).
+- **`contextzip update` / `cz update`** — checks PyPI for a newer release
+  and updates in place, so you no longer have to remember
+  `pip install --upgrade contextzip` after every one of your own
+  releases. Detects whether this install came from pip, pipx, or
+  `uv tool` and re-invokes the matching one against the *currently
+  running* interpreter — never a possibly-different `pip` off PATH.
+  `--check` reports the current/latest version without installing;
+  `--yes` skips the confirmation prompt.
+- **`.contextzip/inbox/README.txt`** is now created automatically the
+  moment the `.contextzip/` workspace is first set up (and self-heals if
+  it's ever missing) — a plain-language explainer of what the inbox is
+  for, how to drop a zip into it, and what happens afterward, so the
+  folder isn't a silent, unexplained thing you have to already know
+  about.
 
 ### Fixed
-- Under `--json`, no spinner or progress bar is started at all. They weren't
-  shown anyway, and their background thread can't run in Pyodide.
+- **`apply-zip` no longer dumps a nested copy of the project** when the
+  returned zip wraps everything in a folder named after the project
+  itself (e.g. `project/`, or a folder matching the package's own name).
+  The wrapper-stripping logic had a guard that skipped stripping
+  whenever a real folder with that name already existed in the
+  project — exactly what happens when an AI tool names the wrapper
+  after the project. The decision is now made by comparing manifest
+  match-rate with vs. without stripping instead of guessing from what's
+  on disk.
+- **`apply-zip` no longer leaves a zip's wrapper folder in place when the
+  freshest manifest is scoped to a small subset of the project**
+  (most commonly `.contextzip/output/git-changes/changes.manifest.json`,
+  which only ever tracked files touched in one prior git-diff run). A
+  zip of otherwise-legitimate new files matched that manifest at 0%
+  whether or not the wrapper was stripped, so the fix above's
+  manifest-comparison saw a tie and played it safe by leaving the
+  wrapper in place. It now falls back to comparing the zip's top-level
+  folders against the project's actual current directory layout
+  (`app/`, `components/`, `lib/`, etc.) whenever the manifest signal
+  ties, and strips confidently when that layout lines up.
+- **`apply-zip <path>` no longer drops its `.apply-report.txt` next to
+  wherever the zip happens to be** (e.g. the project root) when given an
+  explicit path outside `.contextzip/inbox/`. The report now always
+  writes to `.contextzip/inbox/`, matching where it's always shown up
+  when a zip is auto-detected from there. The zip itself is still left
+  in place, unmoved, when given an explicit path.
+- **Auto-cleanup now actually removes old `*.apply-report.txt` files
+  sitting loose in `.contextzip/inbox/`** instead of leaving every one
+  ever written to pile up indefinitely. Keeps only the most recent
+  `cleanup.keep_recent` (default 1), same rule as everything else it
+  prunes.
 
----
+### Removed
+- **The per-apply backup mechanism (`.contextzip/backups/<timestamp>/`)
+  is gone entirely.** `apply-zip` no longer copies overwritten files
+  there before writing; the manifest-diff confirmation prompt and the
+  fact that the applied zip is always archived (not deleted) remain the
+  safety net. Auto-cleanup now also wipes any leftover
+  `.contextzip/backups/` folder outright on projects upgrading from an
+  older contextzip version, rather than just pruning it down over time.
 
-## [0.5.5] — 2026-10-23
+
+
+## [0.4.3] — 2026-09-20
 
 ### Added
-- **GitLab and Bitbucket repositories**, alongside GitHub:
-  `contextzip gitlab.com/group[/subgroup]/project` (including
-  `/-/tree/<branch>/<folder>` links and `gl:`) and
-  `contextzip bitbucket.org/team/repo` (`/src/<branch>/<folder>`, `bb:`).
-  Private repositories use `GITLAB_TOKEN` or `BITBUCKET_TOKEN`. The
-  public-only service accepts them too.
-- **`apply-zip --pr`: an AI's reply as a GitHub pull request.** For a
-  repository packaged with `contextzip github.com/user/repo`, the reply's
-  changes are committed on top of the packaged commit through GitHub's API
-  and a pull request is opened. No clone needed, and it forks first if you
-  can't push. Only safe changes are committed; anything that needs a
-  decision is listed in the description. It asks before publishing, and
-  needs `--yes` with `--json`. `--dry-run` shows what it would contain.
-- **`contextzip mcp`: an MCP server for AI agents.** Install it with
-  `pip install "contextzip[mcp]"` (Python 3.10+). It has six tools:
-  `package_project`, `package_repository`, `preview_apply`, `apply_changes`
-  (safe changes by default), `open_pull_request` (a dry run by default) and
-  `list_snapshots`. Each returns the same JSON as `--json`.
-- The `--json` `remote` object has a `host` field.
-
-## [0.5.6] — 2026-10-24
+- **`contextzip update` / `cz update`** — checks PyPI for a newer release
+  and updates in place, so you no longer have to remember
+  `pip install --upgrade contextzip` after every one of your own
+  releases. Detects whether this install came from pip, pipx, or
+  `uv tool` and re-invokes the matching one against the *currently
+  running* interpreter — never a possibly-different `pip` off PATH.
+  `--check` reports the current/latest version without installing;
+  `--yes` skips the confirmation prompt.
 
 ### Fixed
-- **`.gitignore` files in subfolders are respected**, as git does: an
-  `apps/web/.gitignore` in a monorepo now applies to `apps/web/`. Patterns
-  are read shallowest first, so a deeper file can override the root one,
-  and a `.gitignore` inside an ignored folder is not read. `--no-gitignore`
-  turns them all off.
-- **`--prompt` with a high `ai.max_files`** no longer risks Gemini's answer
-  being cut off: the reply's token budget now grows with the file cap.
-- **The Gemini API key is sent in the `x-goog-api-key` header** instead of
-  the URL, so it can't show up in proxy logs or error messages.
+- **`apply-zip` no longer dumps a nested copy of the project when the
+  returned zip wraps everything in a folder named after the project
+  itself** (e.g. `project/`, or a folder matching the package's own
+  name). The wrapper-stripping logic added in an earlier release had a
+  guard that skipped stripping whenever a real folder with that name
+  already existed in the project — which is exactly what happens when
+  an AI tool names the wrapper after the project. Now, whenever a
+  manifest is available, the decision is made by comparing how well
+  paths actually match the manifest with vs. without stripping, not by
+  guessing from what's on disk.
+- **`contextzip config --ui` now closes its browser tab automatically
+  after a successful save** and hands control back to the terminal,
+  instead of only telling you to close it yourself.
 
-## [0.5.7] — 2026-11-04
 
-### Fixed
-- **`cz update` works with uv, pipx and virtual environments**, not just
-  plain pip. It detects how contextzip was installed (pip, pipx, `uv tool`,
-  or a venv made by uv, which has no pip) and tries each installer that
-  can upgrade the running Python in turn — pip, `uv pip`, `pipx upgrade`,
-  `uv tool upgrade` — until the new version is actually installed. Outside
-  a venv, a pip permission error is retried with `--user`.
-- When every attempt fails, `cz update` lists each command it ran with its
-  error, a hint for the likely cause (an OS-managed Python, a folder you
-  can't write to, no pip or uv available), and the exact command to run
-  by hand for your setup. It now exits non-zero on failure.
-
-## [0.6.0] — 2026-11-05
+## [0.4.2] — 2026-08-31
 
 ### Added
-- **Java, Kotlin and Spring Boot support.** `pom.xml`, `build.gradle(.kts)`
-  and `settings.gradle(.kts)` are detected (Spring Boot from its parent POM
-  or Gradle plugin), and their build output is left out: `target/`,
-  `build/`, `.gradle/`, `*.class`, `*.jar`/`*.war`, the `mvnw`/`gradlew`
-  wrappers, Eclipse and IntelliJ files, JVM crash dumps and Spring
-  Initializr's `HELP.md`. Sources, build files and `application.*` config
-  are kept.
-- Modules declared in a Maven `<modules>` list or a Gradle
-  `settings.gradle` `include` are detected at any depth, like npm and Cargo
-  workspaces.
-- **`contextzip watch` understands JVM output:** stack traces with their
-  `Caused by:` chains (labelled with the root cause), Spring Boot's
-  "APPLICATION FAILED TO START" report, and compile errors from javac,
-  kotlinc, Maven and Gradle. Framework frames are collapsed, and application
-  frames are resolved to their source files through the class's package.
+- **`limits.redact_secrets` is now enforced.** Previously persisted in
+  config and editable in the config UI but silently ignored by
+  packaging (flagged as a known limitation in 0.4.0). Now, text files
+  already going into the archive are scanned for secret-shaped values
+  — AWS/Google/GitHub/Slack/Stripe/Anthropic/OpenAI keys, JWTs,
+  private-key blocks, and a conservative generic
+  `key`/`secret`/`token`/`password` assignment pattern — and matched
+  values are replaced with `[REDACTED]` before writing. Only scans
+  files already known to be text and within `limits.max_file_size_mb`;
+  binary and oversized files are never touched. Surfaced in a terminal
+  warning and itemized in the `.report.txt` file, never applied
+  silently.
 
-## [0.6.1] — 2026-11-05
+### Changed
+- **`.contextzip/` is now fully local by default, no exceptions.**
+  `config.json` was previously carved out of the workspace's
+  `.gitignore` so it stayed trackable automatically. It's now ignored
+  like everything else in the workspace — nothing under `.contextzip/`
+  is ever pushed unless you explicitly opt in with
+  `git add -f .contextzip/config.json`.
 
-### Fixed
-- **Published to PyPI.** 0.6.0 (and 0.5.7) reached npm, Homebrew, Scoop and
-  the release archives but not PyPI: the release's test run failed because
-  GitHub's newest Ubuntu runner has no Python 3.9. That job now runs on
-  Ubuntu 24.04. No code changes from 0.6.0, so `pip install -U contextzip`
-  brings everything in 0.5.7 and 0.6.0.
+## [0.4.1] — 2026-08-30
 
-## [0.6.2] — 2026-11-06
+### Added
+- **Per-mode output folders.** `.contextzip/output/` now splits by run
+  mode instead of one flat folder: `output/codebase/` (plain
+  `contextzip`), `output/git-changes/` (`--git-changes`),
+  `output/prompt/` (`--prompt`, filename `vibe.zip`), and
+  `output/watch/` (`debug-context.zip`). The folder name matches the
+  flag that produced it, so it's unambiguous which zip is which
+  without having to remember which command you last ran.
+- **Automatic workspace cleanup.** After every successful command
+  (main run and `apply-zip`), `.contextzip/` is pruned automatically:
+  old zip/manifest/report sets per mode folder, old `backups/`
+  folders, and old archived zips in `inbox/applied/` are all deleted
+  down to the most recent one — no confirmation, no separate command.
+  New project settings: `cleanup.enabled` (default `true`) and
+  `cleanup.keep_recent` (default `1`).
+- **`limits.redact_secrets` is now enforced.** Previously persisted in
+  config and editable in the config UI but silently ignored by
+  packaging (flagged as a known limitation in 0.4.0). Now, text files
+  already going into the archive are scanned for secret-shaped values
+  — AWS/Google/GitHub/Slack/Stripe/Anthropic/OpenAI keys, JWTs,
+  private-key blocks, and a conservative generic
+  `key`/`secret`/`token`/`password` assignment pattern — and matched
+  values are replaced with `[REDACTED]` before writing. Only scans
+  files already known to be text and within `limits.max_file_size_mb`;
+  binary and oversized files are never touched. Redactions are
+  surfaced in a terminal warning and itemized in the `.report.txt`
+  file, never applied silently.
+- **`.report.txt` files.** Every packaging run (and `apply-zip` run)
+  writes a full plain-text report alongside its ZIP —
+  `codebase.report.txt` / `codebase.apply-report.txt` — containing
+  everything that used to fill the terminal: the excluded-directory
+  breakdown, the complete included-file list, per-file warnings, and
+  (when applicable) which files had secrets redacted.
+
+### Changed
+- **Terminal output redesigned.** Every command now prints a compact,
+  one-line-per-step log (`✓` / `!` / `✗`) instead of boxed Rich panels
+  and tables — matching the register of tools like `pnpm`, `vite`, and
+  `ruff`. A full-width terminal is no longer needed to read a run.
+- The "Scanned" and "Packed" steps are now combined into a single
+  line, e.g. `Scanned 1518 files & Packed 42 files · 42 included
+  (394 KB), 1476 excluded, 394 KB → 126 KB, ↓68% smaller`.
+- Removed the `contextzip vX.X.X` / project-path banner from every
+  command — output now starts directly at the first real step.
+- `apply-zip`'s manifest auto-detection now searches recursively
+  across the new per-mode output subfolders, so it still finds the
+  right manifest under the new layout.
+- Full file listings and excluded-directory breakdowns moved out of
+  default terminal output — shown under `-v`/`--verbose`, or in the
+  full report file.
+
+### Removed
+- `.gitignore patterns applied` is no longer printed (no signal, dead
+  weight).
+- Opening the output folder no longer prints a confirmation line.
+
+
+## [0.4.0] - 2026-08-26
+
+### Added
+
+- **Config UI redesign.** `contextzip config --ui` is now a five-tab
+  interface (Files, AI selection, Workspace, Advanced, Raw JSON) instead
+  of a single always_include/always_exclude pane. The file tree and
+  pattern list now render as a diff — a solid gutter and `+`/`-` marks on
+  every row and pattern, matching the git-diff mental model the rest of
+  the tool already uses. Still a single dependency-free HTML string with
+  no build step, no Node.js, and no network calls from the page itself.
+- **New, persisted project preferences** (`.contextzip/config.json`),
+  editable from the new UI tabs or by hand:
+  - `ai.prompt_template` — house conventions prepended to every generated
+    `prompt.txt`, ahead of the task description.
+  - `limits.max_file_size_mb` — replaces the fixed 1 MB "large file"
+    threshold with a per-project value.
+  - `limits.redact_secrets` — reserved for a future scrub of
+    secret-shaped values inside otherwise-included files. Persisted and
+    editable now; not yet enforced during packaging (see Known
+    limitations below).
+  - `applied_zip_retention` — how many past `apply-zip` archives to keep
+    in `.contextzip/inbox/applied/` before pruning (was hardcoded to 1).
+  - `webui.auto_open` / `webui.port` — skip auto-launching a browser tab
+    and/or pin the config UI to a fixed local port instead of a random
+    free one.
+
+### Changed
+
+- `contextzip config --ui`'s local server now exposes the full project
+  config through `/api/state` and accepts the full config through
+  `/api/save`, instead of only always_include/always_exclude.
+- Large-file warnings in normal CLI output now reflect the project's
+  configured threshold instead of a fixed 1 MB.
+
+### Known limitations
+
+- `limits.redact_secrets` can be toggled on and is saved correctly, but
+  nothing reads it yet — no redaction currently happens during
+  packaging. Flagging this explicitly so it isn't relied on before the
+  enforcement lands.
+
+## [0.3.9] - 2026-08-26
 
 ### Security
-- **Secrets in Spring Boot config files are always redacted.**
-  `application.properties` and `application.yml` (with profile variants
-  such as `application-prod.yml`, and `bootstrap.*`) are included because
-  the AI needs your configuration, but they often hold live database
-  passwords and signing secrets as plain values that the opt-in
-  `limits.redact_secrets` scan didn't catch. Now, whatever that setting
-  says, the value of every password, secret, token, credentials, API-key
-  and private-key setting becomes `[REDACTED]`, as does a password inside
-  any URL (`jdbc:postgresql://app:[REDACTED]@db/app`, `?password=`).
-  `${ENV_VAR}` references are kept; a fallback such as
-  `${DB_PASSWORD:hunter2}` is redacted. Multi-line YAML values and
-  ISO-8859-1 `.properties` files are handled. This covers normal runs,
-  `--git-changes`, the MCP server and `contextzip watch`, and `apply-zip`
-  keeps your real values when the file comes back.
 
-## [0.7.0] — 2026-11-10
-
-### Added
-- **Many more stacks.** contextzip now recognises 62 languages and
-  frameworks, up from 11. New ecosystems: C#/.NET, Unity, PHP (Laravel,
-  Symfony, WordPress), C/C++ (CMake, Meson, Autotools, MSBuild, Conan,
-  vcpkg), Bazel, Swift (Xcode, SwiftPM, CocoaPods), Dart and Flutter,
-  Android, Elixir and Phoenix, Erlang, Scala, Clojure, Deno, Bun,
-  Terraform, Zig, Nim, Haskell, OCaml, R, Julia, Lua, Perl, Foundry,
-  Hardhat, Godot, Unreal Engine, Hugo and Jekyll. New frameworks on
-  ecosystems that were already supported: Nuxt, SvelteKit, Astro, Remix,
-  Gatsby, Angular, Expo, React Native, Electron, Tauri, NestJS, Vue, Svelte,
-  Vite, Flask and Rails. Each leaves out its own build output, dependency
-  folders, lockfiles and generated code.
-- **`contextzip stacks`** lists every stack and what marks a project as
-  one; `contextzip stacks laravel` shows the patterns it leaves out.
-  `--json` prints the same as data.
-- **Projects with no project file are recognised by their file types.** A
-  folder of `.py` scripts with no `requirements.txt` used to get only the
-  universal rules, so `__pycache__` went into the ZIP. It's now detected as
-  Python "from file types". `detection.by_file_type` reports this under
-  `--json`.
-- **A framework's own exclusions apply to its own folder.** In a monorepo,
-  Laravel's `storage/framework/` or Gatsby's `public/` is left out of that
-  app only, not out of every package.
-- More binary types are left out of every project: `.tgz`, `.bz2`, `.xz`,
-  `.7z`, `.webp`, `.avif`, `.bmp`, `.tiff`, `.mov`, `.webm`, `.wav` and font
-  files. For Python: model weights and array dumps (`.pt`, `.safetensors`,
-  `.onnx`, `.npy`, `.parquet` and similar), `.ipynb_checkpoints/` and
-  experiment-tracking folders. For Node.js: more framework caches
-  (`.svelte-kit/`, `.astro/`, `.angular/`, `.output/`), `bun.lock`, source
-  maps and Playwright/Cypress output.
-
-### Changed
-- **Scanning is much faster.** contextzip no longer looks at every file
-  inside a folder it has already left out. On a project with 20,000 files
-  in `node_modules` and a virtualenv, a dry run went from 2.9 s to 0.45 s.
-  What ends up in the ZIP is unchanged.
-- **Cross-platform apps are named once.** A Flutter, React Native or Expo
-  project is reported as that, not also as the Swift, Android and C++
-  runner projects it scaffolds.
-- An unrecognised project now prints "No known stack detected" where it
-  said "Detected · unknown ecosystem".
-
-- **`contextzip config --ui`: picking files is easier.** Each row now has
-  two separate controls, an arrow that opens a folder and a checkbox that
-  decides whether it goes in the ZIP; before, a near miss on the small
-  arrow flipped the whole folder. Folder rows show how many of their files
-  are going in and how big they are. Suggestions moved from a row of grey
-  chips to a panel above the tree that says how much of the ZIP they
-  account for ("9.3 MB of this ZIP is probably not code"), with one click
-  to leave them all out, and an applied suggestion stays visible so it can
-  be undone. Large files are tagged in the tree, the tree uses the height
-  of the window, and "Open all" / "Close all" were added.
-- **What you type on the command line always wins.** `contextzip exclude
-  docs/` left `docs/` in the ZIP when the project config listed it under
-  `always_include`. The order is now the same everywhere, including
-  `--git-changes` and the Python API: the command, then the project
-  config, then `.gitignore`, then the built-in rules. README and CLI.md
-  spell it out under "Which rule wins".
+- Config file permissions (`~/.config/contextzip/config.json`) are now
+  locked to `0600` on **every** write, not just on creation. Previously a
+  pre-existing config file from an older install (or one created under a
+  permissive umask) could stay group/world-readable indefinitely — the
+  file can hold a Gemini API key in plaintext, so this closes a real local
+  exposure on shared machines.
+- The local config UI (`contextzip config --ui`) now compares the request
+  token with `hmac.compare_digest` instead of `==`, removing a
+  timing-based side channel on the single-use session token.
+- Substantially expanded the list of secret/credential files that are
+  always excluded from packaged zips, regardless of framework:
+  SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`),
+  keystores (`.jks`, `.keystore`, `.p12`, `.pkcs12`, `.ppk`),
+  CLI/package-manager credential files (`.npmrc`, `.netrc`, `.pypirc`,
+  `.pgpass`, `.dockercfg`, Docker `config.json`), cloud provider
+  credentials (`.aws/credentials`, `.aws/config`, `*serviceaccount*.json`,
+  `kubeconfig`), and Terraform state (`*.tfstate*`, `.terraform/`), which
+  routinely contains plaintext secrets even for "just infra" resources.
 
 ### Fixed
-- **A crash on Windows when output isn't a console.** In Git Bash, in a
-  pipe or in a CI log, with Python 3.14 or older, the first "✓" raised
-  `UnicodeEncodeError` and nothing was packaged. Output there is now UTF-8.
-- **A folder your `.gitignore` leaves out no longer decides the stack.** A
-  scratch folder with its own `package.json` made the whole project
-  "Node.js" although none of it was packaged.
-- **A Visual Studio C++ solution is no longer taken for .NET.** A `.sln`
-  only counts as .NET when it lists a `.csproj`, `.fsproj` or `.vbproj`.
-- `contextzip -v | head` on Windows ended with a traceback when the reader
-  closed the pipe. It now exits quietly, as it does on macOS and Linux.
 
-## [0.8.0] — 2026-11-12
-
-### Added
-- **Does it fit?** After the summary, one line shows how much of Claude's,
-  ChatGPT's and Gemini's context window the ZIP takes ("Fits  Claude ≈23%
-  ·  ChatGPT ≈36%  ·  Gemini ≈5%"), and warns when one is over 100%.
-  `--for claude` (repeatable) picks the models; `--json` adds `fit`. A
-  project can set its own windows, or add a target, with
-  `"tokens": {"windows": {...}}` in `.contextzip/config.json`, and hide the
-  line with `"show_fit": false`.
-- **A token budget.** `--max-tokens 150k` (or `"tokens": {"max": 150000}`
-  in the project config) refuses to write a ZIP that's over it, and shows
-  the largest folders and files instead. A dry run only reports it.
-  `--trim` leaves files out until it fits: generated and vendored files
-  first, then data, tests and docs, never root files or files you named.
-  The report lists them under "Trimmed to fit".
-- **`contextzip tokens [PATH…]`** shows where the tokens are, per folder
-  with a bar for each, the largest files, and whether it fits each model,
-  without writing anything. `--depth`, `--top`, `--for` and `--json`.
-- **MCP:** `package_project` and `package_repository` take `max_tokens`
-  and `trim`, and their results carry the token breakdown and model fit.
+- `apply-zip` now detects when every entry in an AI-returned zip is
+  nested under one incidental top-level folder — the shape produced by
+  `zip -r out.zip myfolder` or GitHub's "Download ZIP" — and strips it
+  automatically when doing so clearly improves the match against the
+  project's manifest, so files land at their real project-relative paths
+  instead of recreating a wrapper folder.
+- `apply-zip` now warns before applying a zip whose structure barely
+  matches the project at all (under 10% of paths found in the manifest,
+  even after wrapper stripping), instead of silently treating every file
+  as brand new.
 
 ### Changed
-- **Real token counts.** The summary line, `--json`, the report and
-  CONTEXTZIP.md now count tokens with `o200k_base`, the tokenizer of
-  OpenAI's current models, instead of dividing bytes by four, which was
-  about 12% high for code. The tokenizer and its vocabulary ship with
-  contextzip and never use the network. `--json` gains a `tokens` object in
-  `files` and `zip` with the largest folders and files (and every file's
-  count with `--verbose`), `--verbose` names the files with the most
-  tokens, and the report breaks the count down by folder. Counts are
-  cached in `.contextzip/cache/`. If the tokenizer can't be loaded, the
-  count falls back to an estimate per file type and is shown with `≈`.
 
-### Fixed
-- File names with square brackets, such as `app/[/b]/x.ts`, no longer
-  crash the `--verbose` file list.
-- **The wheel no longer installs `tests` and `installers` packages.** Every
-  release so far put those two folders into site-packages next to
-  `contextzip`, where a top-level `tests` package can shadow your own. Only
-  `contextzip` is installed now.
+- `.contextzip/inbox/applied/` now keeps only the most recently applied
+  zip instead of accumulating one per session.
 
-## [0.9.0] — 2026-11-12
+### Internal
+
+- Removed an unused `GitChanges` import in `api.py`.
+- Clarified the `.gitignore` comment describing what lives under
+  `.contextzip/` and confirming the Gemini API key is never stored there.
+
+
+## [0.3.8] — 2026-08-24
 
 ### Added
-- **`contextzip pick`**, a file picker in the terminal. A full-screen tree
-  of the project where you tick files and folders (keyboard or mouse),
-  filter by path, review suggestions (PDFs, data, large files) and watch
-  the token total and model fit change as you go. Enter packages exactly
-  what's ticked, like `contextzip include`; `w` saves the selection to
-  `.contextzip/config.json` as `always_include` / `always_exclude`. Ticking
-  a folder never drags in what the rules or `.gitignore` leave out.
-  `contextzip include` and `contextzip exclude` with no arguments open it
-  in a terminal. Adds the `textual` dependency.
-- **`contextzip init`** sets a project up: it shows what would be packaged
-  and asks once whether to save the defaults to `.contextzip/config.json`.
-  `--yes` and `--json` for scripts.
-- **`contextzip doctor`** checks the install, PATH, Python, the clipboard,
-  the tokenizer, git, the project, the Gemini key and the terminal, one
-  line each with what to try when something's off. `--online` also checks
-  for a newer release, `--strict` exits 1 on any warning, `--json` for
-  scripts. It never copies anything and stays offline by default.
-- **`contextzip completions`** prints or installs (`--install`) tab
-  completion for bash, zsh, fish and PowerShell, for both `cz` and
-  `contextzip`. Installing again updates the block instead of adding one.
-- **Suggestions for typos.** `cz aply` says there's no such command and
-  asks "Did you mean: apply?". A path typed where a command goes points to
-  `cz include PATH`.
+
+* **`apply-zip` command.** Closes the other half of the round trip: takes a ZIP handed back by an AI tool and writes it into the project. Every file is classified — new, modified, unchanged, drifted (changed or removed locally since it was sent), or untracked (no baseline to compare against) — before anything is written.
+* **Local sidecar manifest.** Every ZIP `contextzip` creates now also gets a `<name>.manifest.json` written next to it in `.contextzip/output/` — a hash of each included file, taken at zip-time. It's written to disk only, **never inside the ZIP**, so it's never uploaded and never visible to whatever AI tool the ZIP is pasted into.
+* **`.contextzip/inbox/`.** Drop an AI-returned ZIP here and `apply-zip` finds it automatically; passing a path explicitly always overrides auto-detection. Multiple ZIPs in the inbox are listed and you're asked to be explicit rather than guessed at.
+* **Automatic backups.** Every file `apply-zip` is about to overwrite is copied first into `.contextzip/backups/<timestamp>/`.
+* **`apply_zip()`** Python API function, mirroring `create_zip()`'s plain-function, no-Click, no-Rich style.
+* New `--dry-run`, `--verbose`, `--yes`, and `--manifest` flags on `apply-zip`.
 
 ### Changed
-- **A summary you can read.** In a terminal, a package run now ends with a
-  short block instead of one dense line: the project and its stacks, the
-  file count, sizes and token total, the four folders with the most tokens
-  with a bar for each, whether it fits each model, and what was left out
-  (the biggest folders and how many secret files). Then one line says the
-  ZIP is on your clipboard, with its snapshot, and what to run when the AI
-  replies. The report path is shown with `--verbose`, or when a warning
-  points to it. Dry runs get the same block. Piped or redirected output,
-  CI logs and the new `--plain` flag keep the old one-line-per-step log,
-  and `--json` is unchanged.
-- **A readable apply plan.** In a terminal, `apply` shows how many
-  files it will write, how many need you and how many already match, then
-  one aligned line per file worth a look (decisions first, at most 14;
-  every file with `--verbose`). After applying, one line says what was
-  written and what's left. `--plain` (new on `apply`) and piped output
-  keep the old log.
-- **One shape for every error:** what went wrong, why, and a "Try:" line
-  with what to do. Under `--json` the why and the fix are the error's
-  `detail`. An empty folder now says there are no files to package instead
-  of "all files were excluded".
-- **`apply` is the command's name now.** `cz apply` writes an AI's reply
-  back; `apply-zip` keeps working as an alias, hidden from help. Messages
-  and docs say `apply`. The `--json` result still says
-  `"command": "apply-zip"`.
-- **Help you can scan.** `contextzip --help` lists the commands in groups
-  with one line each, examples of the common runs, and every option on one
-  line. Each command's own `--help` starts with examples.
-- `contextzip --version` prints `contextzip 0.9.0` and, on a second line,
-  the Python version and how it was installed.
-- **No question on a project's first run.** The first package run in a
-  project used to offer to open the config UI and wait for an answer. It
-  now prints one line pointing to `cz init` and `cz pick`, and carries on.
-- Sizes from one megabyte up keep a decimal below ten: "1.4 MB" instead of
-  "1 MB". Larger ones stay whole ("14 MB").
-- **Faster start.** Each command now imports only what it uses, so
-  `cz --version`, `cz --help`, `cz stacks` and tab completion no longer
-  load the packager, the applier, httpx or the tokenizer, and
-  `import contextzip` loads its public API on first use. On a Windows
-  laptop with Python 3.12: `cz --version` 224 ms → 160 ms, `cz --help`
-  222 ms → 147 ms, `import contextzip` 189 ms → 61 ms.
+
+* Consumed ZIPs are moved to `.contextzip/inbox/applied/<timestamp>-name.zip` rather than deleted, so they double as an audit trail alongside the backups.
+
+### Security
+
+* `apply-zip` validates every ZIP entry's resolved path before extracting anything, refusing archives with path-traversal entries (`../`) that would write outside the project tree — no override flag, no exceptions.
+
+### Notes
+
+* v1 of `apply-zip` only adds and modifies files — deletions are never inferred from a ZIP's contents. A file missing from a returned ZIP is left alone.
+
+
+## [0.3.7] — 2026-08-23
+
+### Added
+
+* **Visual config UI.** `contextzip config --ui` opens a local browser tab for setting `always_include`/`always_exclude` by clicking through your actual file tree, with live file counts and packed size as you go.
+* **Exclude suggestions.** The config UI automatically flags common non-code file types not already covered by the default exclusion rules — PDFs, office docs, fonts, media, design files, and anything over 1MB — as one-click "exclude all" chips.
+* **First-run offer.** A project with no config at all offers to launch the visual config UI on its first run. Declining is remembered — it won't ask again unless you run `contextzip config --ui` yourself.
+
+### Changed
+
+* Declining the visual config UI's first-run offer is now stored in the personal config (`~/.config/contextzip/config.json`) so it's asked at most once per machine.
+
+### Security
+
+* The local config UI binds to `127.0.0.1` only and requires a random per-session token on every request (matching Jupyter Notebook's approach) — nothing about the project's file structure leaves the machine.
+
+
+## [0.3.6] — 2026-08-23
+
+### Added
+
+* **`cz` CLI alias.** `cz` can now be used as a shorthand for `contextzip`, with identical commands and behavior.
+* **`.contextzip/` project workspace.** Contextzip now uses a dedicated workspace containing `config.json` and an `output/` directory for generated context archives.
+* **Project configuration via `.contextzip/config.json`.** Added persistent project-level preferences for `always_include`, `always_exclude`, and AI-assisted context selection.
+* **AI configuration.** Added configurable AI preferences including whether AI selection is enabled, the provider to use, and the maximum number of files AI can select.
+* **Configured file selection.** `always_include` and `always_exclude` preferences are now applied during context generation.
+* **Configurable AI file limits.** The configured `ai.max_files` value is now respected by the AI selection pipeline.
+* **Legacy `.contextzip.json` deprecation.** Project configuration is moving from `.contextzip.json` to `.contextzip/config.json`.
+
+### Changed
+
+* Generated context archives are now organized under `.contextzip/output/`.
+* Contextzip configuration is now resolved through the new project configuration system while preserving the existing personal configuration for machine-specific settings and credentials.
+
+
+## [0.3.5] — 2026-08-09
+
+### Added
+- **Monorepo-aware framework detection.** Detection now scans project_dir plus a
+  shallow, bounded subdirectory tree (2 levels deep), instead of only checking
+  the project root. A layout like `root/frontend/package.json` +
+  `root/backend/requirements.txt` now correctly detects both Node.js and
+  Python and stacks both exclusion rule sets — previously this fell through
+  to only the universal base rules, leaving `node_modules/`, `.venv/`, and
+  similar unexcluded except by whatever `.gitignore` happened to catch. The
+  scan skips dependency/build directories (`node_modules/`, `.venv/`, `.git/`,
+  etc.) so it never walks into a large dependency tree. Detection output now
+  shows which subdirectory each ecosystem was found in, e.g.
+  `Next.js (frontend/) + FastAPI (backend/)`.
+- **Configurable `.contextzip/` workspace location**, resolved in priority
+  order: `CONTEXTZIP_WORKSPACE_LOCATION` env var → project config
+  (`.contextzip.json`, committed, team-shared) → personal config (per-machine,
+  via `contextzip config --set-workspace`) → default (`git-root`, unchanged
+  behavior). Accepts `"git-root"`, `"cwd"`, or an explicit path.
+- `contextzip config --set-workspace <location>` / `--reset-workspace` — set
+  or clear your personal workspace location default.
+- `contextzip config` (no flags) now shows the resolved workspace location
+  and which config tier it came from.
+- New `.contextzip.json` project config file (optional, git-committed) for
+  pinning `workspace_location` for every contributor.
 
 ### Fixed
-- **No more raw tracebacks.** An unexpected error prints what happened,
-  that it's a bug, where to report it, and how to see the traceback
-  (`CONTEXTZIP_DEBUG=1`). Under `--json` the JSON error object is still the
-  only output.
+- `.gitignore` registration for the `.contextzip/` entry now correctly
+  derives the git root independently, rather than assuming it's always the
+  workspace directory's parent — a latent bug this release's configurable
+  workspace location would otherwise have triggered (it only skips writing
+  when the workspace is genuinely outside the repo, e.g. an absolute custom
+  path).
+
+### Removed
+- **`eod` and `handoff` commands**, along with the Claude.ai session-key
+  config option they depended on. Both relied on an undocumented Claude.ai
+  endpoint to fetch previously-produced artifacts, which was never a stable
+  foundation for a shipped feature.
+  - Removed modules: `brief.py`, `claude_export.py`, `claude_artifacts.py`,
+    `code_changes.py`, `markers.py`
+  - Removed CLI options: `contextzip config --set-session-key` /
+    `--reset-session-key`
+  - Removed config keys: `claude_session_key`
+  - Also removed now-unused branch-diffing internals from `git.py`
+    (`get_current_branch`, `get_upstream_branch`, `diff_against`, and related
+    helpers) that existed solely to support `eod`/`handoff`
+  - If you relied on `eod`/`handoff`, there's no replacement in this
+    release — conversation exports and per-file diff prompts will need to be
+    built by hand, or via your own script against `contextzip --git-changes`.
+
+
+## [0.3.4] — 2026-06-21
+
+### Added
+
+* `contextzip eod` — builds a paste-ready end-of-day prompt from today's
+  Claude/ChatGPT conversation plus whatever code changed, copied straight
+  to the clipboard. Does no summarizing itself — that's left to whichever
+  AI tool the prompt gets pasted into
+* `contextzip handoff` — same pipeline, aimed at continuing a project in a
+  fresh chat after hitting a usage limit, rather than at an end-of-day report
+* Per-branch commit checkpoints (`.contextzip/markers/eod.json`,
+  `.contextzip/markers/handoff.json`) so every run only reports what's new
+  since *that command* last ran on *that branch* — no manual bookkeeping,
+  no date-based guessing
+* Three-case code-change resolution per file, checked in priority order:
+  1. **Not pushed** — diff against the upstream branch (covers committed-
+     but-unpushed commits and uncommitted edits in one comparison) + the
+     complete current file
+  2. **Diverged from Claude** — diff against the version Claude last
+     produced, matched by filename against a local artifacts folder + the
+     complete current codebase file
+  3. **Since last run** — diff against the stored marker commit, or the
+     branch's merge-base with the default branch on a branch never tracked
+     before + the complete current file
+
+  Brand-new untracked files skip the diff (no baseline exists) and are
+  included as full content only
+* Best-effort fetching of Claude's artifact files for case 2, using the
+  user's own Claude.ai session key (`contextzip config --set-session-key`).
+  Explicitly degrades gracefully — a missing key, an expired cookie, or the
+  endpoint changing shape just skips case 2 with a warning, never fails the
+  whole `eod`/`handoff` run
+* `contextzip config --set-session-key` / `--reset-session-key` — manage
+  the Claude session key alongside the existing Gemini key; default
+  `contextzip config` now shows both keys' status
+* Text-clipboard support (`clipboard.handle_text()`) — `eod`/`handoff`
+  produce a prompt to paste, not a file to upload, so the existing
+  file-clipboard tiers gained a text-mode sibling (`pbcopy` / `xclip`+`xsel`
+  / `clip.exe`)
+* `exports/` added to the base exclusion ruleset (next to `.contextzip/`) —
+  conversation exports and fetched Claude artifacts are contextzip's own
+  working files, never code to package or report on
+
+### Changed
+
+* `packager._ensure_gitignore()` generalised to accept an arbitrary entry
+  instead of being hardcoded to `.contextzip/`, so `exports/` can register
+  itself in `.gitignore` the same way on first use
+
+### Developer Notes
+
+* New modules: `markers.py` (per-branch checkpoint storage), `code_changes.py`
+  (the three-case decision tree), `claude_export.py` (locating the latest
+  export, inline-vs-attach sizing), `claude_artifacts.py` (best-effort
+  artifact fetching, rewritten on `httpx` for consistency with `ai/gemini.py`
+  rather than introducing a second HTTP stack), `brief.py` (orchestrates
+  `eod`/`handoff` end to end)
+* `git.py` gained branch-aware primitives: `get_current_branch()`,
+  `get_default_branch()` (origin/HEAD detection with fallback chain),
+  `get_merge_base()`, `is_ancestor()`, `get_upstream_branch()`,
+  `diff_against()` (working-tree-aware — captures committed-since-baseline
+  and uncommitted changes in one diff), `changed_files_against()`
+* A stored marker that's no longer an ancestor of `HEAD` (e.g. after a
+  rebase) is detected via `is_ancestor()` and silently recomputed from the
+  branch's merge-base, with a warning surfaced to the user rather than
+  producing a nonsense diff
+* `claude_artifacts.py` matches Claude's flat artifact filenames against the
+  codebase by basename only, since artifacts carry no knowledge of the
+  repo's directory structure; ambiguous matches (same filename in multiple
+  directories) pick the most recently modified candidate and surface a
+  warning rather than guessing silently
+
+## [0.3.3] — 2026-05-29
+
+### Fixed
+
+* `contextzip.ai` and all subpackages were missing from the published wheel
+  due to an incomplete `include` allowlist in `pyproject.toml` — replaced
+  with auto-discovery so all current and future subpackages are captured
+  automatically
+
+## [0.3.2] — 2026-05-25
+
+### Added
+
+* **Python API** — contextzip is now usable as a library, not just a CLI tool:
+  * `get_git_changes(path?)` — returns a `FileCollection` of git-modified,
+    added, and untracked files; applies base safety rules (no secrets, no
+    binaries) automatically
+  * `get_files(path?, include?, exclude?, use_gitignore?)` — returns a
+    `FileCollection` of all project files after applying ecosystem rules,
+    `.gitignore`, and any extra exclusion patterns
+  * `create_zip(collection, output?)` — writes a `FileCollection` to a ZIP
+    archive and returns a `PackageResult`; output path is caller-controlled
+  * `detect_ecosystem(path?)` — returns a `DetectionResult` with ecosystem
+    names, display string, and confidence level
+  * `FileCollection` — unified return type for `get_git_changes` and
+    `get_files`; supports iteration, `len()`, and `bool()` directly; `.files`
+    is always a plain `list[pathlib.Path]` usable without zipping
+  * `PackageResult` re-exported from the top-level package
+  * Exception hierarchy: `ContextzipError` (base), `NotARepositoryError`,
+    `GitNotFoundError`, `GitCommandError`, `NoFilesError`
+  * All API functions default `path` to `Path.cwd()`, matching CLI behaviour
+
+* `contextzip/api.py` — new module implementing the public API; no Click, no
+  Rich output, no `SystemExit`; raises typed exceptions on failure
+* `contextzip/packager.py` — added `create_zip_silent()` and
+  `_workspace_output_path_silent()`: same ZIP logic as the CLI path but
+  without a `Console` dependency, used internally by the API
+
+### Changed
+
+* `contextzip/__init__.py` — now exports the full public API
+  (`get_git_changes`, `get_files`, `create_zip`, `detect_ecosystem`,
+  `FileCollection`, `PackageResult`, and all exception types) so
+  `from contextzip import ...` works without knowing internal module paths
+
+### Fixed
+
+* `filters.py` — symlink guard inner `try` block repeated the identical
+  `relative_to` call that already failed in the outer block; the fallback now
+  correctly uses the pre-resolve (`original_path`) to compute the relative
+  path for symlinks that point outside the project tree
+* `watcher.py` — `_drain_output_queue` silently consumed sentinel values
+  (`raw=None`) with `continue`, making them invisible to `_check_reader_done`;
+  sentinels are now put back into the queue so done flags are set correctly
+* `watcher.py` — `_read_key_windows` had no timeout and would spin forever in
+  non-interactive terminals; now uses a 60-second `monotonic` deadline
+  matching the existing Unix `select` timeout
+* `packager.py` — removed unused `_safe_name` helper
+* `ai/gemini.py` — corrected stale docstring (`gemini-2.0-flash-lite` →
+  `gemini-2.5-flash-lite`) to match the actual `DEFAULT_MODEL` constant
+
+## [0.3.1] — 2026-05-25
+
+### Added
+
+* `contextzip watch -- <command>` subcommand — wraps any dev server or build
+  process, buffers its output, detects errors automatically, and packages a
+  debug-ready ZIP in a single keypress
+  * Supports `npm run dev`, `python manage.py runserver`, and any process
+    that writes errors to stdout/stderr
+  * On error detection, renders an inline prompt beneath the error output:
+    `[D] package debug context   [S] skip`
+  * Pressing `D` writes `.contextzip/debug-context.zip` immediately; the
+    wrapped process continues running uninterrupted
+  * On `Ctrl+C`, if no errors were packaged during the session, a final
+    prompt offers to capture the full session output as a fallback
+* `debug-context.zip` — flat ZIP structure produced by `watch`:
+  * `prompt.txt` — auto-generated from detected framework, error type, and
+    referenced files; no `--prompt` flag required from the user
+  * `terminal-error.txt` — cleaned, noise-stripped error block and stack trace
+  * `source-files.zip` — inner ZIP containing source files extracted from
+    stack frames, with relative paths preserved
+* `contextzip/error_parser.py` — full terminal output processing pipeline:
+  * `strip_ansi()` — removes all CSI, OSC, and Fe escape sequences and bare
+    carriage returns from raw process output
+  * `detect_error_block()` — backward scan through the rolling buffer to find
+    the most recent error; walks back from terminal exception lines to capture
+    the full block including the `Traceback` header
+  * `extract_paths()` — runs per-framework path regexes on the error block,
+    resolves relative and bare filenames, and filters out stdlib, venv, and
+    `node_modules` paths
+  * `strip_noise()` — removes known noise lines (request logs, startup
+    banners, HMR chatter) and collapses blank line runs
+  * `build_prompt_txt()` — generates structured, AI-ready `prompt.txt` content
+  * `process_buffer()` — convenience function running the full pipeline in a
+    single call
+* `contextzip/watcher.py` — process management and packaging:
+  * Spawns child via `subprocess.Popen` with piped stdout/stderr; two daemon
+    threads drain pipes concurrently into a `deque(maxlen=2000)` rolling buffer
+  * Detection thread polls the buffer every 300ms using `detect_error_block()`
+  * Error deduplication: MD5 of the first three non-blank lines of an error
+    block; same signature within a session suppresses repeat prompts
+  * Single-keypress D/S prompt via `termios`/`tty` raw mode on Unix and
+    `msvcrt` on Windows, with an `input()` fallback for unusual environments
+  * Child terminated cleanly on `Ctrl+C`: SIGTERM → 3-second grace period →
+    SIGKILL
+* `contextzip/rules/errors/python.py` — error detection pattern sets for
+  Python, Django, and FastAPI:
+  * 18 error start patterns covering tracebacks, syntax errors, Django/DRF
+    exceptions, uvicorn/gunicorn ERROR logs, and pytest failures
+  * 4 stack frame path patterns
+  * 21 noise patterns for Django startup, request logs, pytest collection
+    output, and pip install chatter
+* `contextzip/rules/errors/node.py` — error detection pattern sets for
+  Node.js, Next.js, and React:
+  * 33 error start patterns covering JS runtime errors, Next.js error symbols
+    (`✗`, `×`, `⨯`), webpack/bundler errors, npm errors, and unhandled
+    promise rejections
+  * 7 stack frame and import path patterns
+  * 32 noise patterns for Next.js/Vite/CRA startup, HMR chatter, and request
+    logs
+
+### Changed
+
+* `cli.py` refactored from a single 1,100-line file into four focused modules
+  with no behaviour changes:
+  * `cli.py` — Click group, four subcommands, and `_run()`; routing only
+  * `cli_display.py` — all Rich rendering helpers (`print_detection`,
+    `print_scan_summary`, `print_file_warnings`, `print_package_result`, etc.)
+  * `cli_ai.py` — AI selection orchestration and `normalize_pattern`
+  * `cli_onboard.py` — Gemini API key onboarding flow and browser launch
+* `pyproject.toml` updated to include `contextzip.rules.errors` in package
+  discovery
+
+### Developer Notes
+
+* `contextzip/rules/errors/` follows the same pattern as `contextzip/rules/`:
+  one file per ecosystem, each exporting `ERROR_START_PATTERNS`,
+  `PATH_PATTERNS`, and `NOISE_PATTERNS` as lists of compiled `re.Pattern`
+  objects — adding support for a new framework means adding one file
+* `_load_patterns()` in `error_parser.py` maps ecosystem names from
+  `DetectionResult.ecosystems` to rule modules; unrecognised ecosystems fall
+  back to loading both Python and Node patterns as a best-effort default
+* `cli_display.py` functions accept an optional `con: Console` parameter
+  (defaulting to the module-level console) making every display function
+  independently testable without monkey-patching
+* No new runtime dependencies introduced — `watch` uses only stdlib
+  (`subprocess`, `threading`, `queue`, `termios`/`msvcrt`, `zipfile`)
+
+## [0.3.0] — 2026-05-24
+
+### Added
+
+* `--prompt` / `-p` flag for AI-powered file selection — describe your task in
+  plain English and contextzip automatically selects the minimum relevant files
+  (e.g. `contextzip --prompt "Change toast color on failed login"`)
+* Gemini 2.5 Flash Lite integration via a thin `httpx` client — no Google SDK
+  required; a single lightweight POST call to the Gemini API
+* First-run onboarding flow for users without an API key:
+  * Displays a guided panel with a link to [Google AI Studio](https://aistudio.google.com/apikey) (free, no credit card)
+  * Optionally opens the browser automatically
+  * Saves the key persistently on confirmation
+* Persistent API key storage in the platform-appropriate config directory:
+  * `~/.config/contextzip/config.json` on Linux / macOS
+  * `%APPDATA%\contextzip\config.json` on Windows
+  * `GEMINI_API_KEY` environment variable always takes precedence
+* `contextzip config` subcommand for key management:
+  * `contextzip config` — show current key status and source
+  * `contextzip config --reset-key` — clear stored key and re-run onboarding
+  * `contextzip config --show-key-path` — print config file location
+* `prompt.txt` is written as the first entry in every AI-generated ZIP,
+  containing the task description, detected framework, and selected file list —
+  so any AI tool receiving the archive immediately knows the context
+* Keyword-based heuristic file scorer as a rate-limit fallback:
+  * Activates only on confirmed HTTP 429 from Gemini
+  * Scores files by token overlap with the prompt, directory semantics, and
+    extension type
+  * User is warned clearly that heuristic was used and Gemini results are
+    preferred
+* `--prompt --dry-run` combination — preview AI-selected files without
+  creating a ZIP
+* API key validation on load — keys not starting with `AIza` are treated as
+  unconfigured and trigger onboarding rather than a cryptic API error
+* `diagnose_api_key()` surfaces a human-readable explanation when a key exists
+  but fails validation, before any API call is attempted
+
+### Changed
+
+* `create_zip()` in `packager.py` now accepts an optional `prompt_txt`
+  parameter; when provided, `prompt.txt` is written as the first ZIP entry
+* xdg-open on Linux now runs with stdout and stderr suppressed to prevent
+  KDE / DBus / MIME warnings from appearing over the API key prompt
+
+### Developer Notes
+
+* Introduced `contextzip.config` module for cross-platform config path
+  resolution and key read / write / delete operations
+* Introduced `contextzip.ai` package with three modules:
+  * `gemini.py` — Gemini API client with typed exception hierarchy
+    (`GeminiError`, `GeminiRateLimitError`, `GeminiUnavailable`)
+  * `heuristic.py` — keyword + directory scoring fallback scorer
+  * `selector.py` — project map builder, AI orchestration, `prompt.txt`
+    generation; returns `(paths, prompt_txt, method)` so callers know
+    which selection path was taken
+* Added `httpx` as a required runtime dependency
+
+## [0.2.4] — 2026-05-20
+
+### Added
+
+* Persistent `.contextzip/` workspace directory for generated context packages
+* Automatic output naming based on packaging mode:
+
+  * `codebase.zip` for standard packaging
+  * `changes.zip` for `--git-changes`
+* Automatic `.contextzip/` exclusion from packaged archives and file scanning
+* Automatic `.gitignore` integration:
+
+  * `.contextzip/` is appended when a git repository is detected
+  * missing entries are added only once
+* Repository-root-aware workspace placement:
+
+  * `.contextzip/` is created at the git repository root when `.git/` is detected
+  * falls back to the current working directory outside git repositories
+
+### Changed
+
+* ZIP outputs are now written to the persistent `.contextzip/` workspace by default instead of temporary system directories
+* Generated archives now overwrite previous outputs with the same logical name instead of creating temporary randomized filenames
+* `--output` now bypasses all `.contextzip/` workspace logic and writes directly to the user-specified destination
+
+### Improved
+
+* Generated context packages are now easier to rediscover, reuse, and inspect across AI-assisted development workflows
+* Workspace output structure now provides a foundation for future features such as:
+
+  * timestamped package history
+  * metadata indexing
+  * incremental packaging
+  * AI debug sessions
+  * package caching
+
+### Fixed
+
+* Prevented `.contextzip/` contents from recursively packaging previous generated archives
+* Improved fallback behaviour when workspace creation fails due to filesystem permissions or read-only directories
+
+## [0.2.3] — 2026-05-19
+
+### Added
+- Dedicated Ruby ecosystem exclusion rules via new `contextzip.rules.ruby` module
+- Automatic exclusion of common Ruby / Rails artifacts:
+  - Bundler directories and lockfiles
+  - Rails logs, temp files, assets, storage, and Spring cache
+  - Built gems and compiled Ruby extensions
+  - Coverage and generated documentation directories
+- Additional package discovery keywords for AI tooling and code packaging:
+  - `claude`
+  - `chatgpt`
+  - `code-packaging`
+
+### Changed
+- Ruby project detection now uses the dedicated Ruby rule module instead of the generic base rules
+- Git-based packaging now enforces base exclusion safety rules even for tracked files
+- Repository governance and metadata files are now excluded by default:
+  - `CHANGELOG*`
+  - `LICENSE*`
+  - `CONTRIBUTING*`
+  - `SECURITY.md`
+  - `.github` issue / PR templates
+- `.gitignore` is no longer excluded automatically from packaged context archives
+
+### Fixed
+- Prevented git-tracked sensitive files (e.g. `.env`, secrets, binaries) from being included in `--git-changes` mode
+- Improved ZIP packaging resilience when file stat operations fail during archive creation
+- Fixed progress tracking during ZIP generation to avoid repeated filesystem stat calls
+- Fixed Ruby framework detection routing so Ruby projects receive ecosystem-specific exclusion behaviour
+
+---
+
+## [0.2.2] - 2026-05-16
+
+### Added
+- `contextzip exclude PATTERN…` subcommand — exclude multiple files and folders
+  in a single invocation without repeating `-e` (e.g. `contextzip exclude CHANGELOG.md LICENSE .github/`)
+- `contextzip include PATH…` subcommand — symmetric counterpart to `exclude`;
+  packages only the specified paths (e.g. `contextzip include src/ app/`)
+- All modifier flags (`--dry-run`, `--verbose`, `--output`, `--no-clipboard`,
+  `--git-changes`, `--no-gitignore`) work on both subcommands
+
+### Changed
+- `-e` / `--exclude` flag on the main command restored and kept for full
+  backwards compatibility alongside the new subcommand
+- Warning messages for large files now mention both `-e PATTERN` and
+  `contextzip exclude PATTERN` as remediation options
+- `_normalize_pattern` promoted to a named module-level function (testable,
+  documented); behaviour is unchanged
+
+### Fixed
+- Removed the previous positional-argument approach to exclusions on the main
+  command, which was ambiguous and undiscoverable
+
+---
+
+## [0.2.1] — 2026-05-16
+
+### Fixed
+- `--exclude` / `-e` patterns containing Windows-style paths (e.g. `.\CHANGELOG.md`) were silently ignored due to backslash and leading `.\` — patterns are now normalized to forward-slash posix paths before matching
+- Files passed to `-e` were not being excluded from the ZIP despite appearing in the exclusion list
+
+### Improved
+- `-e` now accepts multiple space-separated patterns in a single flag invocation: `-e file1 file2 folder/` in addition to the existing repeatable form `-e file1 -e file2`
+- Folder exclusion via `-e folder/*` is now supported and normalized to `folder/` automatically
+
+## [0.2.0] — 2026-05-15
+
+### Added
+- `--git-changes` mode for packaging only files reported as changed by git
+- Automatic detection of:
+  - staged files
+  - unstaged modifications
+  - untracked files
+- Dedicated git-aware packaging pipeline optimised for AI/code review workflows
+- Rich git change summary panel with staged/unstaged/untracked breakdown
+- Verbose git mode output showing categorized changed files
+- Graceful handling for:
+  - repositories with no changes
+  - deleted files
+  - submodules
+  - repositories outside the selected project tree
+  - missing git installations
+  - non-git directories
+- Support for monorepo-aware repository root resolution
+- Binary and large-file checks now also apply in git-changes mode
+
+### Improved
+- File resolution architecture refactored to support multiple packaging strategies cleanly
+- Internal file scanning pipeline separated from git-based file selection logic
+- CLI output consistency improved between standard scan mode and git-changes mode
+
+### Developer Notes
+- Introduced new `contextzip.git` module for git integration and porcelain parsing
+- Added `resolve_files_from_git()` pipeline for pre-selected file resolution
+- Added structured `GitChanges` and `GitError` models for cleaner error handling and extensibility
+
+---
+
+## [0.1.2] — 2026-05-15
+
+### Added
+- Smart framework and language detection (Next.js, Node.js, Python, Django, FastAPI, Rust, Go, Ruby)
+- Automatic exclusion rules per detected ecosystem
+- `.gitignore` patterns respected automatically (`--no-gitignore` to bypass)
+- `--include` flag for scoping to specific directories (exact path-boundary matching)
+- `--exclude` flag for additional gitignore-style exclusion patterns
+- `--dry-run` flag to preview without creating any files
+- `--verbose` flag showing every file with its size
+- `--output` flag for custom ZIP destination
+- `--no-clipboard` flag to skip clipboard/folder-open step
+- Tiered clipboard strategy: file-on-clipboard (macOS/Linux), Explorer with file selected (Windows), path fallback
+- Warnings for large files (≥ 1 MB), binary files, and skipped files (dangling symlinks, permission errors)
+- Rich terminal output with panels, progress bars, and colour-coded detection results
+- Compression stats (ratio, size before/after) shown after ZIP creation
+
+---
+
+## [0.1.1] — 2026-05-15
+
+### Fixed
+- LICENSE link in README now points to GitHub instead of a relative path that broke on PyPI
+- License metadata updated to SPDX string format (`"MIT"`) to comply with setuptools ≥ 77
+
+---

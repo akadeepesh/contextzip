@@ -13,61 +13,64 @@ import click
 from rich.console import Console
 from rich.markup import escape
 
-from contextzip import __version__
-from contextzip.config import (
-    get_api_key,
-    delete_api_key,
-    config_path,
-    diagnose_api_key,
-    save_workspace_location,
-    delete_workspace_location,
-)
-from contextzip.git import get_changed_files, GitError
-from contextzip.project_config import (
-    load_project_config,
-    has_legacy_project_config,
-    is_known_ai_provider,
-)
-
+from contextzip import __version__, jsonout
+from contextzip import models as models_mod
+from contextzip import root as root_mod
+from contextzip import tokens as tokens_mod
 from contextzip.cli_display import (
-    status,
-    ok,
-    warn,
     err,
-    info,
-    print_detection,
-    print_git_deleted_and_submodules,
+    fail,
+    fancy,
     git_scan_label_and_detail,
-    print_git_verbose_files,
-    scan_label_and_detail,
-    print_scan_summary,
-    print_scan_and_pack,
-    print_file_warnings,
-    print_package_result,
-    print_zip_write_warnings,
-    print_report_hint,
-    print_clipboard_result,
+    info,
+    literal,
+    ok,
+    plain_output,
     print_apply_plan,
     print_apply_result,
     print_auto_cleanup,
-    print_redaction_summary,
-    print_root_notice,
-    print_most_tokens,
+    print_clipboard_result,
+    print_detection,
+    print_file_warnings,
     print_fit,
-    literal,
-    print_token_breakdown,
+    print_git_deleted_and_submodules,
+    print_git_verbose_files,
+    print_most_tokens,
+    print_package_result,
     print_package_summary,
-    plain_output,
-    fancy,
-    fail,
+    print_redaction_summary,
+    print_report_hint,
+    print_root_notice,
+    print_scan_and_pack,
+    print_scan_summary,
+    print_token_breakdown,
+    print_zip_write_warnings,
     prog_name,
+    scan_label_and_detail,
+    status,
+    warn,
 )
-from contextzip import jsonout
-from contextzip import models as models_mod
-from contextzip import tokens as tokens_mod
-from contextzip import root as root_mod
+from contextzip.config import (
+    config_path,
+    delete_api_key,
+    delete_workspace_location,
+    diagnose_api_key,
+    get_api_key,
+    save_workspace_location,
+)
+from contextzip.git import GitError, get_changed_files
+from contextzip.project_config import (
+    has_legacy_project_config,
+    is_known_ai_provider,
+    load_project_config,
+)
 from contextzip.remote_names import looks_like_remote
-from contextzip.root import ROOT_KIND_LABELS, ProjectRoot, find_project_root, to_root_relative
+from contextzip.root import (
+    ROOT_KIND_LABELS,
+    ProjectRoot,
+    find_project_root,
+    to_root_relative,
+)
 
 console = Console()
 
@@ -1557,7 +1560,8 @@ def _removal_consent(plan, *, remove_moved: bool, allow_delete: bool) -> tuple[b
 
 def _archive_if_inbox(plan, project_dir: Path, project_cfg) -> None:
     """A zip with nothing left to apply is done — move it out of the inbox."""
-    from contextzip.applier import _move_zip_to_applied, _workspace_dir as _ws
+    from contextzip.applier import _move_zip_to_applied
+    from contextzip.applier import _workspace_dir as _ws
 
     try:
         dest = _move_zip_to_applied(plan.zip_path, project_dir, _ws(project_dir), retain=project_cfg.applied_zip_retention)
@@ -1843,8 +1847,8 @@ def cmd_config(
 
     from contextzip.packager import _resolve_workspace_location
     from contextzip.project_config import (
-        load_project_config,
         has_legacy_project_config,
+        load_project_config,
         project_config_path,
     )
 
@@ -2151,9 +2155,9 @@ def cmd_mcp() -> None:
     import sys
 
     try:
-        from contextzip.mcp_server import serve
-
         import mcp.server.mcpserver  # noqa: F401  (fail here, with a clear message, if it's missing)
+
+        from contextzip.mcp_server import serve
     except ImportError:
         console_err = Console(stderr=True)
         if sys.version_info < (3, 10):
@@ -3208,7 +3212,7 @@ def _package(
         large = int(scan.project_cfg.limits.max_file_size_mb * 1024 * 1024)
         scan.resolved = _apply_picked(scan.resolved, picked, large_file_warn_bytes=large)
         scan.scan_label, scan.scan_detail = scan_label_and_detail(scan.resolved, git_mode=False)
-    project_root, project_dir, fetched = scan.project_root, scan.project_dir, scan.fetched
+    project_dir, fetched = scan.project_dir, scan.fetched
     project_cfg, detection, resolved = scan.project_cfg, scan.detection, scan.resolved
     scan_label, scan_detail = scan.scan_label, scan.scan_detail
     fit_targets = scan.fit_targets

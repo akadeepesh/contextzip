@@ -69,9 +69,9 @@ def _load_patterns(ecosystems: list[str]) -> dict:
     cleaners: the optional hook functions a module defines (refine_start,
     error_type, extract_paths, clean_block — see rules/errors/java.py).
     """
-    from contextzip.rules.errors import python as _py_rules
-    from contextzip.rules.errors import node as _node_rules
     from contextzip.rules.errors import java as _java_rules
+    from contextzip.rules.errors import node as _node_rules
+    from contextzip.rules.errors import python as _py_rules
 
     error_start: list[re.Pattern] = []
     path: list[re.Pattern] = []

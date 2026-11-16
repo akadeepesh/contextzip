@@ -7,7 +7,7 @@ from unittest import mock
 from click.testing import CliRunner
 
 from contextzip import cli
-from contextzip.remote import FetchedRemote, RemoteSpec
+from contextzip.remote import FetchedRemote
 from contextzip.tokens import estimate_tokens, format_tokens
 from tests.helpers import TempProject, backdate
 

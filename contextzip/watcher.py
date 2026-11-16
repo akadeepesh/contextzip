@@ -41,8 +41,8 @@ from pathlib import Path
 
 from rich.console import Console
 
+from contextzip.cli_display import err, info, ok, warn
 from contextzip.error_parser import process_buffer
-from contextzip.cli_display import ok, warn, err, info
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -438,9 +438,9 @@ def _read_single_key() -> str:
 
 def _read_key_unix() -> str:
     try:
+        import select
         import termios
         import tty
-        import select
 
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
@@ -506,9 +506,9 @@ def _package_debug_context(
         if is_full_session:
             # Full session capture — no error block extraction, take everything
             from contextzip.error_parser import (
+                build_prompt_txt,
                 strip_ansi,
                 strip_noise,
-                build_prompt_txt,
             )
 
             clean_text = strip_ansi(raw_text)
@@ -592,8 +592,8 @@ def _write_debug_zip(
       source-files.zip    (inner zip with referenced source files)
     """
     from contextzip.packager import (
-        _workspace_dir,
         _ensure_workspace_gitignore,
+        _workspace_dir,
         _write_member,
         output_subdir_for_mode,
     )

@@ -122,8 +122,8 @@ class ApplyZipTests(TempProject):
         self.package()  # full snapshot
         # a later, unrelated git-changes style run touching only main.py
         from contextzip.api import FileCollection
-        from contextzip.packager import create_zip_silent
         from contextzip.filters import ResolveResult
+        from contextzip.packager import create_zip_silent
 
         self.write("backend/api/main.py", "print('later')\n")
         rr = ResolveResult(included=[self.root / "backend/api/main.py"])

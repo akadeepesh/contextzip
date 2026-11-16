@@ -51,7 +51,6 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 _OUTPUT_DIRNAME = "output"
 _LEGACY_BACKUPS_DIRNAME = "backups"
 _INBOX_DIRNAME = "inbox"

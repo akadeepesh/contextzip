@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from contextzip.detector import detect
-from contextzip.filters import build_force_include_spec, build_spec, normalize_pattern, resolve_files
+from contextzip.filters import (
+    build_force_include_spec,
+    build_spec,
+    normalize_pattern,
+    resolve_files,
+)
 from contextzip.picker_model import PickerModel, literal_pattern
 from contextzip.project_config import load_project_config
 from tests.helpers import TempProject

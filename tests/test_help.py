@@ -138,7 +138,6 @@ class SubcommandHelpTests(TempProject):
     def test_every_subcommand_has_examples_first(self):
         ctx = click.Context(cli.main)
         for name in cli.main.list_commands(ctx):
-            cmd = cli.main.get_command(ctx, name)
             text = _help(name)
             self.assertIn("Examples", text, name)
             body = text.split("Examples", 1)[1]

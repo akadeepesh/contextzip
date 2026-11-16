@@ -17,7 +17,6 @@ import json
 import os
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # Config directory resolution (no platformdirs dependency)
 # ---------------------------------------------------------------------------

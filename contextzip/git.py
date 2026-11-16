@@ -21,7 +21,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # Status codes from `git status --porcelain`
 # ---------------------------------------------------------------------------

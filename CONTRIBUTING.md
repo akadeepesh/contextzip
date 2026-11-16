@@ -102,7 +102,7 @@ contextzip --dry-run --verbose
 
 1. Fork the repo and create a branch: `git checkout -b fix/your-description`
 2. Make your changes
-3. Run `python -m pytest`, and `contextzip --dry-run --verbose` on a real project
+3. Run `ruff check .` (`pip install ruff`; CI runs it too), `python -m pytest`, and `contextzip --dry-run --verbose` on a real project
 4. Commit with a clear message: `git commit -m "add: Elixir/Mix rule set"`
 5. Push and open a PR against `main`
 

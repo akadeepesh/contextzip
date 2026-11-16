@@ -114,7 +114,7 @@ def build_app(
     from textual import events
     from textual.app import App, ComposeResult
     from textual.binding import Binding
-    from textual.geometry import Region, Size
+    from textual.geometry import Size
     from textual.screen import ModalScreen
     from textual.scroll_view import ScrollView
     from textual.strip import Strip

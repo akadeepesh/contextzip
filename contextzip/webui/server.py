@@ -31,12 +31,12 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 from rich.console import Console
 
+from contextzip.cli_display import err, info, ok, warn
 from contextzip.cli_onboard import open_browser_silent
-from contextzip.cli_display import ok, warn, err, info
 from contextzip.filters import classify_with_rules, scan_all_files
 from contextzip.project_config import load_project_config, project_config_path
 from contextzip.webui import suggestions as _suggestions

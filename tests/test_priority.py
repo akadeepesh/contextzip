@@ -116,7 +116,11 @@ class PriorityTests(TempProject):
 
 class GitChangesPriorityTests(TempProject):
     def test_command_exclude_beats_config_include(self):
-        from contextzip.filters import build_force_include_spec, make_spec, resolve_files_from_git
+        from contextzip.filters import (
+            build_force_include_spec,
+            make_spec,
+            resolve_files_from_git,
+        )
 
         files = [self.write("docs/guide.md", "x"), self.write("src/app.ts", "x")]
         force = build_force_include_spec(["docs/"])

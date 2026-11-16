@@ -9,7 +9,7 @@ from unittest import mock
 
 from click.testing import CliRunner
 
-from contextzip import cli, jsonout, models
+from contextzip import cli, jsonout
 from contextzip.cli_display import print_fit
 from contextzip.models import TARGETS, Target, fit, resolve
 from contextzip.project_config import load_project_config

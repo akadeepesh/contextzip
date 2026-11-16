@@ -53,7 +53,6 @@ from contextzip.git import GitError, GitErrorKind, get_changed_files
 from contextzip.packager import PackageResult, create_zip_silent
 from contextzip.project_config import load_project_config
 
-
 # ---------------------------------------------------------------------------
 # Public result type
 # ---------------------------------------------------------------------------

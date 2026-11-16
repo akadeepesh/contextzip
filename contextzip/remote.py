@@ -65,6 +65,7 @@ _WINDOWS_BAD_CHARS = set('<>:"|?*')
 
 # Short forms: gh:owner/repo, gl:group/project, bb:workspace/repo.
 from contextzip.remote_names import _OTHER_HOSTS, _SHORTHANDS, looks_like_remote  # noqa: E402,F401
+
 # Hosts recognised only to say they aren't supported yet.
 
 

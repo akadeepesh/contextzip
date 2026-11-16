@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from contextzip.ai.gemini import select_files, GeminiRateLimitError
+from contextzip.ai.gemini import GeminiRateLimitError, select_files
 from contextzip.filters import ResolveResult
 
 # Sentinels — tell the CLI which selection path was taken

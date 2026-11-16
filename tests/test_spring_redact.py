@@ -8,7 +8,12 @@ import zipfile
 from contextzip.api import create_zip, get_files
 from contextzip.applier import FileStatus, build_plan, discard_plan, execute_plan
 from contextzip.packager import _write_member
-from contextzip.redact import REDACTED, SPRING_VALUE, is_spring_config, redact_spring_config
+from contextzip.redact import (
+    REDACTED,
+    SPRING_VALUE,
+    is_spring_config,
+    redact_spring_config,
+)
 from tests.helpers import TempProject
 
 PROPS = """\

@@ -59,3 +59,14 @@ include = ["contextzip*"]
 [tool.setuptools.package-data]
 # The o200k_base vocabulary, so token counts never need the network (see tokens.py).
 contextzip = ["data/tiktoken/*"]
+
+[tool.ruff]
+# The oldest Python CI tests.
+target-version = "py39"
+extend-exclude = ["build", "dist", "pyodide", "contextzip/data", "promo-video", "roadmap", "video", "vscode", "npm"]
+
+[tool.ruff.lint]
+# A small starting set: pycodestyle errors, pyflakes and import order.
+# Line length (E501) is left for later.
+select = ["E", "F", "I"]
+ignore = ["E501"]

@@ -830,7 +830,8 @@ def build_plan(
 
     # The reply may echo the CONTEXTZIP.md we sent: it names the snapshot it
     # answers and can list moved/deleted files. It's never applied as a file.
-    from contextzip.guide import find_in_zip, parse as parse_guide
+    from contextzip.guide import find_in_zip
+    from contextzip.guide import parse as parse_guide
 
     guide = None
     guide_name = find_in_zip(list(extracted))

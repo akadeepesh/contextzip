@@ -279,7 +279,7 @@ def error_type(block_lines: list[str]) -> str | None:
         if m and top is None:
             top = m.group(1)
     is_jvm = root is not None or any(
-        _FRAME_PARTS_RE.match(l) or l.startswith("Exception in thread") for l in block_lines
+        _FRAME_PARTS_RE.match(ln) or ln.startswith("Exception in thread") for ln in block_lines
     )
     if top and is_jvm:
         if root and _short(root) != _short(top):
@@ -287,15 +287,15 @@ def error_type(block_lines: list[str]) -> str | None:
         return _short(top)
     if root:
         return _short(root)
-    if any(_SPRING_FAILED_RE.match(l) for l in block_lines):
+    if any(_SPRING_FAILED_RE.match(ln) for ln in block_lines):
         return "Application failed to start"
-    if any(_any(l, _COMPILE_ERR_RES) or _MAVEN_COMPILE_HDR_RE.match(l) for l in block_lines):
+    if any(_any(ln, _COMPILE_ERR_RES) or _MAVEN_COMPILE_HDR_RE.match(ln) for ln in block_lines):
         return "Compilation error"
-    if any(_GRADLE_TEST_FAILED_RE.match(l) for l in block_lines) or any(
-        re.match(r"^\[ERROR\] (?:Tests run:|Failures:)", l) for l in block_lines
+    if any(_GRADLE_TEST_FAILED_RE.match(ln) for ln in block_lines) or any(
+        re.match(r"^\[ERROR\] (?:Tests run:|Failures:)", ln) for ln in block_lines
     ):
         return "Test failure"
-    if any(re.search(r"Failed to execute goal|BUILD FAILURE", l) or _GRADLE_SUMMARY_RE.match(l) for l in block_lines):
+    if any(re.search(r"Failed to execute goal|BUILD FAILURE", ln) or _GRADLE_SUMMARY_RE.match(ln) for ln in block_lines):
         return "Build failure"
     return None
 

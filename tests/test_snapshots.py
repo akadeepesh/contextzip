@@ -73,8 +73,8 @@ class SnapshotTests(TempProject):
         self.assertEqual(pruned, {"0002", "0003"})
 
     def test_guide_can_be_turned_off(self):
-        from contextzip.packager import create_zip_silent
         from contextzip.filters import ResolveResult
+        from contextzip.packager import create_zip_silent
 
         pkg = create_zip_silent(ResolveResult(included=[self.root / "src/app.py"]), self.root, None, guide=False)
         with zipfile.ZipFile(pkg.zip_path) as zf:

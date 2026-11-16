@@ -9,7 +9,13 @@ from unittest import mock
 import httpx
 
 from contextzip import remote
-from contextzip.remote import RemoteError, RemoteSpec, fetch, looks_like_remote, parse_target
+from contextzip.remote import (
+    RemoteError,
+    RemoteSpec,
+    fetch,
+    looks_like_remote,
+    parse_target,
+)
 from tests.helpers import TempProject
 
 SHA = "a" * 40

@@ -65,8 +65,8 @@ def _load_patterns(ecosystems: list[str]) -> dict:
     Returns a dict with keys: error_start, path, noise — each a list of
     compiled re.Pattern objects.
     """
-    from contextzip.rules.errors import python as _py_rules
     from contextzip.rules.errors import node as _node_rules
+    from contextzip.rules.errors import python as _py_rules
 
     error_start: list[re.Pattern] = []
     path: list[re.Pattern] = []

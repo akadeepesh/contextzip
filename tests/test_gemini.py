@@ -30,7 +30,10 @@ class GeminiRequestTests(unittest.TestCase):
     def test_output_budget_scales_with_max_files(self):
         _, small = self.call(max_files=5)
         _, big = self.call(max_files=60)
-        budget = lambda c: c.kwargs["json"]["generationConfig"]["maxOutputTokens"]
+
+        def budget(c):
+            return c.kwargs["json"]["generationConfig"]["maxOutputTokens"]
+
         self.assertEqual(budget(small), 512)
         self.assertGreaterEqual(budget(big), 60 * 40)
         self.assertLessEqual(gemini._max_output_tokens(10_000), 8192)

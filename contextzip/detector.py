@@ -46,7 +46,6 @@ from pathlib import Path
 from contextzip import stacks
 from contextzip.stacks import STACKS, Stack
 
-
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------

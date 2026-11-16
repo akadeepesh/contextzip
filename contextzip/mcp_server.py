@@ -197,8 +197,8 @@ def build_server():
         (open_pull_request, "Open a pull request from an AI reply", ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=True)),
         (list_snapshots, "List a project's snapshots", read_only),
     ]
-    for fn, title, annotations in tools:
-        server.tool(title=title, annotations=annotations)(fn)
+    for fn, title, hints in tools:
+        server.tool(title=title, annotations=hints)(fn)
     return server
 
 

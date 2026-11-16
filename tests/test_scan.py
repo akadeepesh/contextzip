@@ -6,7 +6,6 @@ plain file-by-file check gives.
 
 from __future__ import annotations
 
-import os
 import time
 import unittest
 from pathlib import Path

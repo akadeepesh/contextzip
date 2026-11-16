@@ -247,7 +247,9 @@ def nested_git_roots(root: Path, max_depth: int = 3) -> list[Path]:
     the outer repo's `git status` reports an embedded repo as one opaque
     entry and never lists the changes inside it.
     """
-    from contextzip.filters import _ALWAYS_PRUNED_DIRNAMES  # lazy: avoids an import cycle
+    from contextzip.filters import (
+        _ALWAYS_PRUNED_DIRNAMES,  # lazy: avoids an import cycle
+    )
 
     found: list[Path] = []
     root = root.resolve()

@@ -14,11 +14,15 @@ from pathlib import Path
 
 from rich.console import Console
 
-from contextzip.cli_display import print_ai_selection, err, warn, info, status
+from contextzip.cli_display import (
+    console,  # noqa: E402  (one console, so --json silences it)
+    err,
+    info,
+    print_ai_selection,
+    status,
+    warn,
+)
 from contextzip.filters import normalize_pattern  # noqa: F401  (re-exported for cli.py)
-
-from contextzip.cli_display import console  # noqa: E402  (one console, so --json silences it)
-
 
 # ---------------------------------------------------------------------------
 # AI selection (full run — produces ZIP)
@@ -49,8 +53,8 @@ def run_ai_selection(
     Handles progress display, heuristic-fallback warning, and Gemini
     errors. Raises SystemExit(1) on hard failure.
     """
-    from contextzip.ai.selector import ai_select, USED_HEURISTIC
     from contextzip.ai.gemini import GeminiError
+    from contextzip.ai.selector import USED_HEURISTIC, ai_select
 
     with status("[cyan]Asking Gemini to select relevant files…[/]", con=con):
         try:
@@ -93,8 +97,8 @@ def run_ai_selection_preview(
     Run AI selection and display the result without creating a ZIP.
     Used when --dry-run and --prompt are combined.
     """
-    from contextzip.ai.selector import ai_select, USED_HEURISTIC
     from contextzip.ai.gemini import GeminiError
+    from contextzip.ai.selector import USED_HEURISTIC, ai_select
 
     with status("[cyan]Asking Gemini to select relevant files…[/]", con=con):
         try:

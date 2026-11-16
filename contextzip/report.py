@@ -15,10 +15,10 @@ import datetime as _dt
 from collections import Counter
 from pathlib import Path
 
-from contextzip.filters import summarise_exclusions
-from contextzip.cli_display import human_size
-from contextzip.tokens import estimate_tokens, format_tokens
 from contextzip.applier import inbox_dir
+from contextzip.cli_display import human_size
+from contextzip.filters import summarise_exclusions
+from contextzip.tokens import estimate_tokens, format_tokens
 
 
 def report_path_for(zip_path: Path) -> Path:
@@ -269,7 +269,7 @@ def write_apply_report(
         for rel, reason in getattr(result, "not_removed", []):
             w(f"  kept    : {rel} — {reason}")
         if getattr(result, "zip_kept", False):
-            w(f"  zip     : kept in the inbox — some files still need a decision")
+            w("  zip     : kept in the inbox — some files still need a decision")
         else:
             w(f"  archived: {result.applied_zip_path}")
         w("")

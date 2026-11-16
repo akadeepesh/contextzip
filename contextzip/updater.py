@@ -17,14 +17,11 @@ should degrade to "couldn't check right now", not crash the CLI.
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import shlex
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from contextzip import __version__ as installed_version
 

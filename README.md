@@ -4,9 +4,10 @@
 
 # contextzip
 
-### Send your codebase to any AI chat. Get the changes back.
+### Your whole codebase in a free AI chat. The changes written back.
 
-One command zips the right files for Claude or ChatGPT.<br>
+No paid plan, no coding agent, no API key.<br>
+One command zips the right files for free ChatGPT, Claude or Gemini.<br>
 Another writes the AI's reply into your project, without losing your own edits.
 
 [![PyPI](https://img.shields.io/pypi/v/contextzip?color=3fb950&label=pypi)](https://pypi.org/project/contextzip/)

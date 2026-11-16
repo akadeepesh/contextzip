@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "contextzip"
 version = "0.9.0"
-description = "Intelligently package your codebase for AI tools"
+description = "Use free ChatGPT, Claude or Gemini on your whole codebase: send the right files as a ZIP, get the changes written back"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Deepesh", email = "akadeepesh@gmail.com" }
 ]
-keywords = ["ai", "cli", "developer-tools", "context", "zip", "llm", "claude", "chatgpt", "code-packaging"]
+keywords = ["ai", "cli", "developer-tools", "context", "zip", "llm", "claude", "chatgpt", "gemini", "free", "code-packaging"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

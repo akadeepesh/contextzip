@@ -1,8 +1,8 @@
 {
   "name": "@contextzip/cli",
   "version": "0.9.0",
-  "description": "Package exactly the right parts of your codebase for any AI tool, in one command. Then write the AI's changes back.",
-  "keywords": ["ai", "cli", "context", "zip", "llm", "claude", "chatgpt", "codebase"],
+  "description": "Use free ChatGPT, Claude or Gemini on your whole codebase. Send the right files as a ZIP, get the changes written back. No paid plan, no agent, no API key.",
+  "keywords": ["ai", "cli", "context", "zip", "llm", "claude", "chatgpt", "gemini", "free", "codebase"],
   "homepage": "https://www.contextzipcli.com",
   "bugs": "https://github.com/akadeepesh/contextzip/issues",
   "repository": {

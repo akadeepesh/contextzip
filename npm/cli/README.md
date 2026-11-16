@@ -1,6 +1,6 @@
 # @contextzip/cli
 
-**Package exactly the right parts of your codebase for any AI tool, in one command.**
+**Use free ChatGPT, Claude or Gemini on your whole codebase. No paid plan, no coding agent, no API key.**
 
 contextzip detects your stack, leaves out dependencies, build output and secrets, and puts a lean ZIP of the right files on your clipboard, ready to paste into Claude, ChatGPT or any upload box. When the AI sends changed files back, `cz apply-zip` writes them into the right folders and merges around edits you've made since.
 

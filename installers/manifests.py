@@ -20,7 +20,7 @@ from pathlib import Path
 
 REPO = "akadeepesh/contextzip"
 HOMEPAGE = "https://www.contextzipcli.com"
-DESCRIPTION = "Package exactly the right parts of your codebase for any AI tool"
+DESCRIPTION = "Use free ChatGPT, Claude or Gemini on your whole codebase, changes written back"
 
 
 def asset_url(version: str, filename: str) -> str:

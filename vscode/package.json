@@ -1,7 +1,7 @@
 {
   "name": "contextzip",
   "displayName": "contextzip",
-  "description": "Package the right files of your project for Claude, ChatGPT or any AI chat, then apply the AI's changes back without losing your edits.",
+  "description": "Use free ChatGPT, Claude or Gemini on your whole project: send the right files as a ZIP, then apply the AI's changes back without losing your edits.",
   "version": "0.1.2",
   "publisher": "contextzip",
   "icon": "media/icon.png",
@@ -30,6 +30,8 @@
     "ai",
     "claude",
     "chatgpt",
+    "gemini",
+    "free",
     "context",
     "zip",
     "llm",

@@ -1,6 +1,6 @@
 # contextzip for VS Code
 
-**Package the right files of your project for Claude, ChatGPT or any AI chat. Then apply the AI's changes back, without losing your own edits.**
+**Use free ChatGPT, Claude or Gemini on your whole project, no paid plan or coding agent needed. Package the right files, then apply the AI's changes back without losing your own edits.**
 
 Web chats are great at whole-project changes, but getting a project in and the answer back out is tedious. This extension does both ends:
 

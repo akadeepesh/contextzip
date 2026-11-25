@@ -16,6 +16,7 @@ Another writes the AI's reply into your project, without losing your own edits.
 [![Tests](https://img.shields.io/github/actions/workflow/status/akadeepesh/contextzip/tests.yml?branch=main&label=tests)](https://github.com/akadeepesh/contextzip/actions/workflows/tests.yml)
 [![Downloads](https://static.pepy.tech/personalized-badge/contextzip?period=total&units=INTERNATIONAL_SYSTEM&left_color=GREY&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/contextzip)
 [![License: MIT](https://img.shields.io/badge/license-MIT-3fb950.svg)](https://github.com/akadeepesh/contextzip/blob/main/LICENSE)
+[![akadeepesh/contextzip MCP server](https://glama.ai/mcp/servers/akadeepesh/contextzip/badges/score.svg)](https://glama.ai/mcp/servers/akadeepesh/contextzip)
 
 **[Try it in your browser](https://www.contextzipcli.com)** &nbsp;·&nbsp;
 [Docs](https://www.contextzipcli.com/docs/getting-started) &nbsp;·&nbsp;

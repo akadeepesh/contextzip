@@ -109,6 +109,11 @@ updater_mod = _LazyModule("contextzip.updater")
 remote_mod = _LazyModule("contextzip.remote")
 
 
+def _mask_api_key(key: str) -> str:
+    """Return a masked display string revealing at most the last 4 chars (no prefix entropy)."""
+    return f"****{key[-4:]}" if len(key) > 8 else "****"
+
+
 def _interactive() -> bool:
     """True when there's a person at a terminal to ask. Never under --json."""
     import sys
@@ -1838,7 +1843,7 @@ def cmd_config(
     from_env = bool(os.environ.get("GEMINI_API_KEY", "").strip())
 
     if key:
-        masked = key[:8] + "…" + key[-4:] if len(key) > 12 else "****"
+        masked = _mask_api_key(key)
         source = "environment variable" if from_env else str(config_path())
         ok("Gemini API key configured", f"{masked} · {source}")
     else:

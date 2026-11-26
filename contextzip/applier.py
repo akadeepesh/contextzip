@@ -1186,9 +1186,25 @@ def _classify(
     return entry
 
 
+def _cleanup_extraction_dir(extraction_dir: Path | None) -> None:
+    """Remove a temporary extraction directory only if it is confined inside the system temp root."""
+    if extraction_dir is None or extraction_dir.is_symlink():
+        return
+    try:
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        target = extraction_dir.resolve()
+    except OSError:
+        return
+    if target == temp_root or not target.is_relative_to(temp_root):
+        return
+    if not target.name.startswith("contextzip-apply-"):
+        return
+    shutil.rmtree(target, ignore_errors=True)
+
+
 def discard_plan(plan: ApplyPlan) -> None:
     """Clean up the temp extraction dir without writing anything (dry-run / declined)."""
-    shutil.rmtree(plan.extraction_dir, ignore_errors=True)
+    _cleanup_extraction_dir(plan.extraction_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -1341,7 +1357,7 @@ def execute_plan(
     else:
         applied_zip_path = _move_zip_to_applied(plan.zip_path, project_dir, workspace_root, retain=retain)
         kept = False
-    shutil.rmtree(plan.extraction_dir, ignore_errors=True)
+    _cleanup_extraction_dir(plan.extraction_dir)
 
     if plan.manifest_path is not None and (written or removed) and not kept:
         from contextzip.snapshots import mark_applied
